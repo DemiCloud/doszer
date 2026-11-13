@@ -198,7 +198,10 @@ Disc images in the build are converted:
 | Data track | ISO 9660 image of the track's 2048-byte user data |
 | Audio track | Ogg Vorbis or PCM WAV per `[pack].audio`, 44.1 kHz, 2 channels |
 
-A CUE sheet referencing the converted tracks replaces the original.
+A CUE sheet referencing the converted tracks replaces the original, named
+`<name>.cue` (`<name> (<id>).cue` if more than one `[[source.media]]` entry
+is converted), where `<name>` is the manifest's effective name (§8.3) and
+`<id>` is the entry's `id`.
 
 ### 6.5 Rewrite
 

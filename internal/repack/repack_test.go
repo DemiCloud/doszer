@@ -467,3 +467,150 @@ files = ["**/*.BAT"]
 		t.Errorf("dosbox.bat = %q, want %q (rewrite + CRLF normalization applied)", got, want)
 	}
 }
+
+// stripManifest rewrites path without its DOSZ.TOML entry, as if it were a
+// legacy archive with no embedded manifest at all.
+func stripManifest(t *testing.T, path string) {
+	t.Helper()
+	r, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	for _, f := range r.File {
+		if strings.EqualFold(f.Name, manifest.FileName) {
+			continue
+		}
+		fw, err := w.CreateHeader(&f.FileHeader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.Copy(fw, rc); err != nil {
+			t.Fatal(err)
+		}
+		rc.Close()
+	}
+	r.Close()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunManifestPathRetrofitsMissingManifest(t *testing.T) {
+	in := buildArchive(t, plainManifest, map[string]string{"GAME.EXE": "x"})
+	stripManifest(t, in)
+
+	manifestPath := filepath.Join(t.TempDir(), "external.toml")
+	if err := os.WriteFile(manifestPath, []byte(plainManifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := repack.Run(repack.Options{InputPath: in, OutputPath: out, ManifestPath: manifestPath}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	entries := readZip(t, out)
+	data := readZipFile(t, entries["DOSZ.TOML"])
+	m, err := manifest.Parse([]byte(data), "fallback")
+	if err != nil {
+		t.Fatalf("re-embedded manifest does not parse: %v\n%s", err, data)
+	}
+	if m.Name != "Test Game" {
+		t.Errorf("Name = %q, want %q", m.Name, "Test Game")
+	}
+}
+
+func TestRunWithoutManifestPathOrEmbeddedManifestFails(t *testing.T) {
+	in := buildArchive(t, plainManifest, map[string]string{"GAME.EXE": "x"})
+	stripManifest(t, in)
+
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := repack.Run(repack.Options{InputPath: in, OutputPath: out}); err == nil {
+		t.Fatal("Run: expected an error with no manifest available")
+	}
+}
+
+func TestRunManifestPathOverridesEmbeddedManifest(t *testing.T) {
+	in := buildArchive(t, plainManifest, map[string]string{"GAME.EXE": "x"})
+
+	manifestPath := filepath.Join(t.TempDir(), "external.toml")
+	overrideBody := strings.Replace(plainManifest, "Test Game", "Overridden Game", 1)
+	if err := os.WriteFile(manifestPath, []byte(overrideBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := repack.Run(repack.Options{InputPath: in, OutputPath: out, ManifestPath: manifestPath}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	entries := readZip(t, out)
+	data := readZipFile(t, entries["DOSZ.TOML"])
+	m, err := manifest.Parse([]byte(data), "fallback")
+	if err != nil {
+		t.Fatalf("re-embedded manifest does not parse: %v\n%s", err, data)
+	}
+	if m.Name != "Overridden Game" {
+		t.Errorf("Name = %q, want %q (ManifestPath should override the embedded manifest)", m.Name, "Overridden Game")
+	}
+}
+
+// openRawBytes reads f's content without decompressing it.
+func openRawBytes(t *testing.T, f *zip.File) []byte {
+	t.Helper()
+	r, err := f.OpenRaw()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(io.LimitReader(r, int64(f.CompressedSize64)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestRepackPassesThroughUnchangedCompressedBytes(t *testing.T) {
+	// Large and repetitive enough that archive/zip's Deflate compressor
+	// actually produces a multi-block compressed stream, so a corrupted
+	// pass-through (e.g. wrong size or CRC) wouldn't go unnoticed.
+	content := strings.Repeat("The quick brown fox jumps over the lazy dog. ", 4096)
+	in := buildArchive(t, plainManifest, map[string]string{"GAME.EXE": content})
+
+	inEntries := readZip(t, in)
+	inGame := inEntries["GAME.EXE"]
+	if inGame.Method != zip.Deflate {
+		t.Fatalf("GAME.EXE Method = %d, want Deflate - test assumes the default pack.store", inGame.Method)
+	}
+	wantRaw := openRawBytes(t, inGame)
+
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := repack.Run(repack.Options{InputPath: in, OutputPath: out}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	outEntries := readZip(t, out)
+	outGame := outEntries["GAME.EXE"]
+	if outGame.CRC32 != inGame.CRC32 {
+		t.Fatalf("GAME.EXE CRC32 = %#x, want %#x", outGame.CRC32, inGame.CRC32)
+	}
+	gotRaw := openRawBytes(t, outGame)
+	if !bytes.Equal(gotRaw, wantRaw) {
+		t.Errorf("GAME.EXE's compressed bytes changed across an untouched repack (%d bytes -> %d bytes); "+
+			"an entry nothing in the pipeline reads or changes should be copied through unchanged, not recompressed", len(wantRaw), len(gotRaw))
+	}
+
+	// The content itself must still decompress correctly.
+	got := readZipFile(t, outGame)
+	if got != content {
+		t.Error("GAME.EXE content changed across an untouched repack")
+	}
+}

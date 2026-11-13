@@ -315,14 +315,16 @@ func runRepack(args []string) error {
 	fs := flag.NewFlagSet("repack", flag.ContinueOnError)
 	dryRun := fs.Bool("dry-run", false, "print the rebuild plan without writing an archive")
 	strict := fs.Bool("strict", false, "fail if any layout.trim or layout.rewrite rule matches nothing")
+	manifestPath := fs.String("manifest", "", "use this manifest instead of the archive's embedded one")
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), `doszer repack - rebuild an archive from its embedded manifest
 
 Usage: doszer repack [options] <input.dosz> [<output.dosz>]
 
 Options:
-  -dry-run    print the rebuild plan without writing an archive
-  -strict     fail if a trim/rewrite rule matches nothing
+  -dry-run       print the rebuild plan without writing an archive
+  -manifest STR  use this manifest instead of the archive's embedded one
+  -strict        fail if a trim/rewrite rule matches nothing
 `)
 	}
 
@@ -337,7 +339,7 @@ Options:
 		return errUsage
 	}
 
-	opts := repack.Options{InputPath: fs.Arg(0), DryRun: *dryRun, Strict: *strict}
+	opts := repack.Options{InputPath: fs.Arg(0), DryRun: *dryRun, Strict: *strict, ManifestPath: *manifestPath}
 	if fs.NArg() == 2 {
 		opts.OutputPath = fs.Arg(1)
 	}

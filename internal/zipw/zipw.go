@@ -54,6 +54,29 @@ func (w *Writer) Add(name string, r io.Reader, store bool, modified time.Time) e
 	return err
 }
 
+// AddRaw writes one entry whose content is already compressed, copying it
+// through unchanged rather than compressing it: method, crc32 and both
+// sizes must already describe body exactly, as they would for the zip.File
+// an already-compressed entry was read from.
+func (w *Writer) AddRaw(name string, method uint16, crc32 uint32, compressedSize, uncompressedSize uint64, body io.Reader, modified time.Time) error {
+	fh := &zip.FileHeader{
+		Name:               name,
+		Method:             method,
+		CRC32:              crc32,
+		CompressedSize64:   compressedSize,
+		UncompressedSize64: uncompressedSize,
+	}
+	fh.ExternalAttrs = 0
+	fh.ModifiedDate, fh.ModifiedTime = toDOSTime(modified)
+
+	fw, err := w.zw.CreateRaw(fh)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(fw, body)
+	return err
+}
+
 // Close finishes writing the archive.
 func (w *Writer) Close() error {
 	return w.zw.Close()

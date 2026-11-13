@@ -64,8 +64,11 @@ func Template(o TemplateOptions) string {
 # files = ["**/*.INI", "**/*.BAT"]
 
 [pack]
-# Extensions stored uncompressed. ogg is always stored.
-# store = ["iso", "bin"]
+# Extensions stored uncompressed. ogg is always stored. Rarely needed for
+# a disc image: DOSBox Pure decompresses a large Deflate entry in full
+# once per session and caches an index for random access after that, so
+# compressing it only costs time on first launch, not every launch.
+# store = ["bin"]
 
 # CD audio encoding: "ogg" (default) or "wav".
 # audio = "ogg"

@@ -100,7 +100,7 @@ Verified against DOSBox Pure 1.0 Preview 8 source.
 | Command | State |
 |---|---|
 | `init` | Implemented |
-| `build` | Implemented except whole-disc-image conversion (§6.4) |
+| `build` | Implemented except ISO/Ogg/WAV conversion (§6.4); the CUE-renaming part of §6.4 is done |
 | `install` | Not implemented |
 | `repack` | Implemented |
 | `verify` | Implemented |
@@ -128,28 +128,59 @@ if none matches or a hash differs, then resolves `[[extract]]`'s `from`
 path through `internal/iso9660` against the matched media's data track
 (materialized to a temp file via `internal/cue`).
 
-`repack` (`internal/repack`) rebuilds an archive from nothing but its own
-embedded manifest - no source directory, since none is available. The
-archive's own entries stand in for §6.1's collect step (extract and media
-identification don't apply - whatever they'd have produced is already in
-the archive), then §6.2 onward runs exactly as it does for `build`:
-`build.Run` and `build.Repack` now share a `runPipeline` helper, so trim,
-flatten, rewrite and §6.6 text normalization genuinely apply, not just the
-runtime-file regeneration. This matters for retrofitting a manifest onto a
-legacy (non-doszer) archive, not only for re-packing one doszer already
-built - an earlier version of this command only regenerated the runtime
-files, silently skipping layout.trim/rewrite/§6.6 against a freshly
-inserted manifest, which a real retrofit attempt caught. It also
-canonicalizes an archive that didn't conform to §8's determinism to begin
-with, since output always goes through the same `internal/zipw` writer
-`build` uses.
+`repack` (`internal/repack`) rebuilds an archive from nothing but a
+manifest - no source directory, since none is available. By default that
+manifest is the one already embedded in the archive; `-manifest` supplies
+a different one instead (an edited copy, or one retrofitted onto an
+archive with no embedded manifest at all - the input no longer needs a
+`DOSZ.TOML` of its own). The archive's own entries stand in for §6.1's
+collect step (extract and media identification don't apply - whatever
+they'd have produced is already in the archive), then §6.2 onward runs
+exactly as it does for `build`: `build.Run` and `build.Repack` now share a
+`runPipeline` helper, so trim, flatten, rewrite and §6.6 text normalization
+genuinely apply, not just the runtime-file regeneration. This matters for
+retrofitting a manifest onto a legacy (non-doszer) archive, not only for
+re-packing one doszer already built - an earlier version of this command
+only regenerated the runtime files, silently skipping
+layout.trim/rewrite/§6.6 against a freshly inserted manifest, which a real
+retrofit attempt caught. It also canonicalizes an archive that didn't
+conform to §8's determinism to begin with, since output always goes
+through the same `internal/zipw` writer `build` uses.
+
+An entry the pipeline never reads or changes, and whose store decision
+(§8.1) still matches the compression method it already had, is copied
+through in its already-compressed form (`build.RawSource`,
+`zipw.Writer.AddRaw`, `archive/zip`'s `OpenRaw`/`CreateRaw`) instead of
+being decompressed and recompressed - repack's main cost on an archive
+most of whose content a given run leaves untouched. Measured on a real
+1.7 GB, 1246-entry archive (stored, uncompressed disc images): 57s when a
+test manifest's `pack.store` didn't match the input's actual stored
+extension (every entry recompressed, since the store decision changed),
+7.5s once it did (nearly all entries passed through raw). This changes the
+archive's physical ZIP layout for a passed-through entry (no data
+descriptor, sizes/CRC32 written directly in the local header, since they're
+already known) without changing §9 equivalence; repacking a freshly-built
+archive once reaches this layout for everything untouched, repacking it
+again is then byte-for-byte stable.
+
+`renameMediaCue` (`internal/build/medianame.go`) is the part of §6.4 this
+implements now: a CUE sheet whose track layout (audio/data sequence, read
+directly from its text - not re-hashed) matches a declared
+`[[source.media]]` entry is renamed to `<name>.cue` (or `<name> (<id>).cue`
+if more than one matches), updating `boot.disc` to match if it referenced
+the old name. It runs for both `build` and `repack`, since a legacy
+archive's over-long, dump-specific CUE name (e.g. a Redump filename with
+region/version tags) is exactly what a retrofit needs fixed, not only a
+fresh build. Converting the tracks themselves (ISO/Ogg/WAV) is still
+pending - see Next steps.
 
 ## Next steps
 
-1. Media conversion (§6.4): ISO/Ogg/WAV output and rewritten CUE for a disc
-   image already sitting in the build. The Ogg/WAV CUE `FILE` type keyword
-   DOSBox Pure's `cdrom_image.cpp` expects needs verifying against its
-   source before writing this (ground rule: verify, don't assume).
+1. Media conversion (§6.4): ISO/Ogg/WAV output for a disc image already
+   sitting in the build (the CUE-renaming part is done - see Status). The
+   Ogg/WAV CUE `FILE` type keyword DOSBox Pure's `cdrom_image.cpp` expects
+   needs verifying against its source before writing this (ground rule:
+   verify, don't assume).
 2. `install`: VHD (dynamic and fixed) and FAT32 reading, template diffing,
    `.pure.zip` extraction, launching DOSBox Pure, consuming
    `internal/config`'s `SystemDir`/`SaveDir`/`DosboxPure`/`Templates`.

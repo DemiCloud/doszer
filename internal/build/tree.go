@@ -1,6 +1,7 @@
 package build
 
 import (
+	"io"
 	"os"
 	"path"
 	"sort"
@@ -13,12 +14,25 @@ import (
 // Exported for Repack's callers, which must supply it for the same reason.
 var Epoch = time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
 
-// fileEntry is one file in the build, backed by disk or by in-memory
-// content, with the modification time §8.2 requires its archive entry to
-// carry.
+// RawSource is an entry's original, already-compressed form in a zip
+// archive, letting Repack's caller (internal/repack) defer decompressing
+// an entry until something in the pipeline actually needs its content.
+type RawSource struct {
+	Method           uint16 // zip.Store or zip.Deflate
+	CRC32            uint32
+	CompressedSize   uint64
+	UncompressedSize uint64
+	Decompressed     func() ([]byte, error)    // the entry's full, decompressed content
+	Raw              func() (io.Reader, error) // the entry's still-compressed bytes, for pass-through
+}
+
+// fileEntry is one file in the build, backed by disk, by in-memory content,
+// or by a RawSource, with the modification time §8.2 requires its archive
+// entry to carry.
 type fileEntry struct {
-	diskPath string // absolute path to the backing file; "" if data is set
-	data     []byte // in-memory content; authoritative when non-nil
+	diskPath string     // absolute path to the backing file; "" if data/source is set
+	data     []byte     // in-memory content; authoritative when non-nil
+	source   *RawSource // original compressed form; set only until data is filled
 	modified time.Time
 }
 
@@ -30,21 +44,52 @@ func dataEntry(data []byte, modified time.Time) *fileEntry {
 	return &fileEntry{data: data, modified: modified}
 }
 
-// bytes returns the entry's content, reading from disk if necessary.
+func sourceEntry(source *RawSource, modified time.Time) *fileEntry {
+	return &fileEntry{source: source, modified: modified}
+}
+
+// bytes returns the entry's content, decompressing (and caching) a
+// RawSource-backed entry if necessary.
 func (e *fileEntry) bytes() ([]byte, error) {
 	if e.data != nil {
 		return e.data, nil
+	}
+	if e.source != nil {
+		data, err := e.source.Decompressed()
+		if err != nil {
+			return nil, err
+		}
+		e.data = data
+		return data, nil
 	}
 	return os.ReadFile(e.diskPath)
 }
 
 // open streams the entry's content, avoiding a copy for disk-backed entries.
+// A RawSource-backed entry is fully decompressed here too: open is only
+// used once writeArchive has already decided not to pass the entry's raw
+// compressed bytes straight through (see rawPassthrough).
 func (e *fileEntry) open() (*os.File, []byte, error) {
 	if e.data != nil {
 		return nil, e.data, nil
 	}
+	if e.source != nil {
+		data, err := e.bytes()
+		return nil, data, err
+	}
 	f, err := os.Open(e.diskPath)
 	return f, nil, err
+}
+
+// rawPassthrough returns the entry's RawSource if nothing has read or
+// replaced its content since it was collected, so writeArchive can copy its
+// already-compressed bytes through unchanged instead of decompressing and
+// recompressing them.
+func (e *fileEntry) rawPassthrough() *RawSource {
+	if e.data != nil {
+		return nil
+	}
+	return e.source
 }
 
 // fileSet is the build in progress. Paths match case-insensitively (§2),

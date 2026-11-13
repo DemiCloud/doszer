@@ -28,9 +28,16 @@ func NormalizeCRLF(data []byte) []byte {
 	return []byte(s)
 }
 
-// normalizeText applies §6.6 to every text file in fs.
+// normalizeText applies §6.6 to every text file in fs. A file whose name
+// doesn't match a text pattern is never opened, and one whose content is
+// already normalized is left as its original entry - both so an entry
+// writeArchive can otherwise pass straight through (§8.1) isn't needlessly
+// read or replaced.
 func normalizeText(fs *fileSet) error {
 	for _, p := range fs.paths() {
+		if !matchAny(textNamePatterns, path.Base(p)) {
+			continue
+		}
 		e, _ := fs.get(p)
 		content, err := e.bytes()
 		if err != nil {
@@ -39,7 +46,10 @@ func normalizeText(fs *fileSet) error {
 		if !IsTextFile(p, content) {
 			continue
 		}
-		fs.set(p, dataEntry(NormalizeCRLF(content), e.modified))
+		normalized := NormalizeCRLF(content)
+		if !bytes.Equal(normalized, content) {
+			fs.set(p, dataEntry(normalized, e.modified))
+		}
 	}
 	return nil
 }

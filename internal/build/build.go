@@ -5,6 +5,7 @@
 package build
 
 import (
+	"archive/zip"
 	"bytes"
 	"fmt"
 	"io"
@@ -80,8 +81,14 @@ func Run(opts Options) (*Result, error) {
 // modification time (§8.2) to carry forward - typically whatever was
 // already recorded on the archive's own entry, or Epoch for an entry with
 // no source of its own (e.g. a [[file]] entry layered on top).
+//
+// Exactly one of Data or Source should be set. Source lets Repack defer
+// decompressing an entry until the pipeline actually reads or changes its
+// content, so writeArchive can copy an untouched entry's already-compressed
+// bytes straight through instead of decompressing and recompressing it.
 type Entry struct {
 	Data     []byte
+	Source   *RawSource
 	Modified time.Time
 }
 
@@ -94,7 +101,11 @@ type Entry struct {
 func Repack(entries map[string]Entry, m *manifest.Manifest, opts Options) (*Result, error) {
 	fs := newFileSet()
 	for p, e := range entries {
-		fs.set(p, dataEntry(e.Data, e.Modified))
+		if e.Source != nil {
+			fs.set(p, sourceEntry(e.Source, e.Modified))
+		} else {
+			fs.set(p, dataEntry(e.Data, e.Modified))
+		}
 	}
 	return runPipeline(fs, m, opts)
 }
@@ -122,6 +133,10 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options) (*Result, erro
 
 	if opts.DryRun {
 		res.Suggestions, res.BinaryReferences = suggestRewrites(fs, dropped)
+	}
+
+	if err := renameMediaCue(fs, m.Source.Media, &m.Boot, effectiveName); err != nil {
+		return nil, err
 	}
 
 	hits, rewriteWarnings, err := applyRewrite(fs, m.Layout.Rewrite)
@@ -172,13 +187,37 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options) (*Result, erro
 	return res, nil
 }
 
-// writeArchive writes every file in fs to w as a deterministic ZIP (§8).
+// writeArchive writes every file in fs to w as a deterministic ZIP (§8). An
+// entry whose content was never read or changed by the pipeline, and whose
+// store decision (§8.1) still matches the compression method it already
+// had, is copied through in its already-compressed form rather than being
+// decompressed and recompressed - repack's main cost on an archive most of
+// whose content a given run leaves untouched.
 func writeArchive(fs *fileSet, m *manifest.Manifest, w io.Writer) error {
 	zw := zipw.New(w)
 
 	for _, p := range fs.paths() {
 		e, _ := fs.get(p)
 		store := ShouldStore(p, m.Pack.Store)
+		wantMethod := uint16(zip.Deflate)
+		if store {
+			wantMethod = zip.Store
+		}
+
+		if src := e.rawPassthrough(); src != nil && src.Method == wantMethod {
+			raw, err := src.Raw()
+			if err != nil {
+				return fmt.Errorf("%s: %w", p, err)
+			}
+			err = zw.AddRaw(p, src.Method, src.CRC32, src.CompressedSize, src.UncompressedSize, raw, e.modified)
+			if c, ok := raw.(io.Closer); ok {
+				c.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("%s: %w", p, err)
+			}
+			continue
+		}
 
 		f, data, err := e.open()
 		if err != nil {
