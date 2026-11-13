@@ -12,13 +12,15 @@ var shellForbidden = []string{
 	"WINDOWS/WIN.INI", "WINDOWS/SYSTEM.INI", "WINDOWS/PROGMAN.INI", "WINDOWS/*.GRP",
 }
 
-// validateArchiveContent enforces §11's archive-content rules.
-func validateArchiveContent(fs *fileSet, model manifest.Model) error {
+// ValidateArchiveContent enforces §11's archive-content rules against a
+// path listing: a build in progress, or an already-built archive's entry
+// names (`doszer verify`).
+func ValidateArchiveContent(paths []string, model manifest.Model) error {
 	var errs []error
 
 	if model == manifest.ModelShell {
 		for _, pattern := range shellForbidden {
-			for _, p := range fs.paths() {
+			for _, p := range paths {
 				if matchGlob(pattern, p) {
 					errs = append(errs, fmt.Errorf("%s: shell-owned file not allowed in the archive under the shell model", p))
 				}
@@ -27,7 +29,7 @@ func validateArchiveContent(fs *fileSet, model manifest.Model) error {
 	}
 
 	if model == manifest.ModelShell || model == manifest.ModelOS {
-		for _, p := range fs.paths() {
+		for _, p := range paths {
 			if matchGlob("DOSBOX.BAT", p) {
 				errs = append(errs, fmt.Errorf("%s: DOSBOX.BAT not allowed in the archive under the %s model", p, model))
 			}

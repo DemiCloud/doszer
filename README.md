@@ -15,7 +15,7 @@ Conformance level: Builder, plus `[[extract]]` and §7 media identification
 Early development. `init` and `build` are implemented, including
 `[[extract]]` and media identification (§7); `build` cannot yet convert a
 whole disc image already sitting in the build (§6.4 - ISO/Ogg/WAV output,
-rewritten CUE). `install`, `repack` and `verify` are not yet implemented.
+rewritten CUE). `verify` is implemented. `install` and `repack` are not yet.
 
 ## Requirements
 

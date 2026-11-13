@@ -108,7 +108,7 @@ func Run(opts Options) (*Result, error) {
 
 	exclude(fs)
 
-	if err := validateArchiveContent(fs, m.Model()); err != nil {
+	if err := ValidateArchiveContent(fs.paths(), m.Model()); err != nil {
 		return nil, err
 	}
 
@@ -149,7 +149,7 @@ func writeArchive(fs *fileSet, m *manifest.Manifest, w io.Writer) error {
 
 	for _, p := range fs.paths() {
 		e, _ := fs.get(p)
-		store := shouldStore(p, m.Pack.Store)
+		store := ShouldStore(p, m.Pack.Store)
 
 		f, data, err := e.open()
 		if err != nil {
@@ -173,8 +173,9 @@ func writeArchive(fs *fileSet, m *manifest.Manifest, w io.Writer) error {
 	return zw.Close()
 }
 
-// shouldStore reports whether a path must use the Store method (§8.1).
-func shouldStore(p string, storeExts []string) bool {
+// ShouldStore reports whether a path must use the Store method (§8.1):
+// an extension listed in pack.store, or .ogg always.
+func ShouldStore(p string, storeExts []string) bool {
 	ext := strings.TrimPrefix(path.Ext(p), ".")
 	if strings.EqualFold(ext, "ogg") {
 		return true

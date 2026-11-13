@@ -1,0 +1,352 @@
+package verify_test
+
+import (
+	"archive/zip"
+	"bytes"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/DemiCloud/doszer/internal/build"
+	"github.com/DemiCloud/doszer/internal/verify"
+)
+
+func writeFile(t *testing.T, dir, rel, content string) {
+	t.Helper()
+	path := filepath.Join(dir, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// buildArchive builds a real, conforming archive from a minimal source, and
+// returns its path.
+func buildArchive(t *testing.T, manifestBody string) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeFile(t, dir, "DOSZ.TOML", manifestBody)
+	writeFile(t, dir, "GAME.EXE", "binary")
+
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := build.Run(build.Options{SourceDir: dir, OutputPath: out}); err != nil {
+		t.Fatalf("build.Run: %v", err)
+	}
+	return out
+}
+
+const plainManifest = `
+format = 1
+name   = "Test Game"
+
+[boot]
+exec = 'C:\GAME.EXE'
+`
+
+func TestVerifyAcceptsAConformingArchive(t *testing.T) {
+	path := buildArchive(t, plainManifest)
+	if err := verify.Verify(path); err != nil {
+		t.Errorf("Verify(conforming archive) = %v, want nil", err)
+	}
+}
+
+func TestVerifyRejectsMissingArchive(t *testing.T) {
+	if err := verify.Verify(filepath.Join(t.TempDir(), "nope.dosz")); err == nil {
+		t.Fatal("Verify should fail for a missing file")
+	}
+}
+
+func TestVerifyRejectsMissingManifest(t *testing.T) {
+	path := buildArchive(t, plainManifest)
+	rewriteZip(t, path, func(w *zip.Writer, f *zip.File) error {
+		if f.Name == "DOSZ.TOML" {
+			return nil // drop it
+		}
+		return copyEntry(w, f)
+	})
+
+	err := verify.Verify(path)
+	if err == nil || !contains(err.Error(), "missing DOSZ.TOML") {
+		t.Fatalf("Verify() = %v, want an error about the missing manifest", err)
+	}
+}
+
+func TestVerifyRejectsNonEpochTimestamp(t *testing.T) {
+	path := buildArchive(t, plainManifest)
+	rewriteZip(t, path, func(w *zip.Writer, f *zip.File) error {
+		if f.Name != "GAME.EXE" {
+			return copyEntry(w, f)
+		}
+		fh := f.FileHeader
+		fh.Modified = time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		fw, err := w.CreateHeader(&fh)
+		if err != nil {
+			return err
+		}
+		data, err := readEntry(f)
+		if err != nil {
+			return err
+		}
+		_, err = fw.Write(data)
+		return err
+	})
+
+	err := verify.Verify(path)
+	if err == nil || !contains(err.Error(), "modification time") {
+		t.Fatalf("Verify() = %v, want a modification-time error", err)
+	}
+}
+
+func TestVerifyRejectsNonZeroExternalAttrs(t *testing.T) {
+	path := buildArchive(t, plainManifest)
+	rewriteZip(t, path, func(w *zip.Writer, f *zip.File) error {
+		if f.Name != "GAME.EXE" {
+			return copyEntry(w, f)
+		}
+		fh := f.FileHeader
+		fh.ExternalAttrs = 0o644 << 16
+		fw, err := w.CreateHeader(&fh)
+		if err != nil {
+			return err
+		}
+		data, err := readEntry(f)
+		if err != nil {
+			return err
+		}
+		_, err = fw.Write(data)
+		return err
+	})
+
+	err := verify.Verify(path)
+	if err == nil || !contains(err.Error(), "external attributes") {
+		t.Fatalf("Verify() = %v, want an external-attributes error", err)
+	}
+}
+
+func TestVerifyRejectsUnsortedEntries(t *testing.T) {
+	path := buildArchive(t, plainManifest)
+	rewriteZipReordered(t, path, func(files []*zip.File) []*zip.File {
+		// Swap the first two entries, breaking sort order.
+		if len(files) >= 2 {
+			files[0], files[1] = files[1], files[0]
+		}
+		return files
+	})
+
+	err := verify.Verify(path)
+	if err == nil || !contains(err.Error(), "not ordered by path") {
+		t.Fatalf("Verify() = %v, want an ordering error", err)
+	}
+}
+
+func TestVerifyRejectsWrongStoreMethod(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "DOSZ.TOML", `
+format = 1
+name   = "Test Game"
+
+[boot]
+exec = 'C:\GAME.EXE'
+
+[pack]
+store = ["iso"]
+`)
+	writeFile(t, dir, "DATA.ISO", "iso content")
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := build.Run(build.Options{SourceDir: dir, OutputPath: out}); err != nil {
+		t.Fatalf("build.Run: %v", err)
+	}
+
+	rewriteZip(t, out, func(w *zip.Writer, f *zip.File) error {
+		if f.Name != "DATA.ISO" {
+			return copyEntry(w, f)
+		}
+		fh := f.FileHeader
+		fh.Method = zip.Deflate
+		fw, err := w.CreateHeader(&fh)
+		if err != nil {
+			return err
+		}
+		data, err := readEntry(f)
+		if err != nil {
+			return err
+		}
+		_, err = fw.Write(data)
+		return err
+	})
+
+	err := verify.Verify(out)
+	if err == nil || !contains(err.Error(), "must be stored") {
+		t.Fatalf("Verify() = %v, want a store-method error", err)
+	}
+}
+
+func TestVerifyRejectsForbiddenShellFile(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "DOSZ.TOML", `
+format = 1
+name   = "Shell Game"
+
+[boot]
+shell = "dosbox_pure/Win31"
+`)
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := build.Run(build.Options{SourceDir: dir, OutputPath: out}); err != nil {
+		t.Fatalf("build.Run: %v", err)
+	}
+
+	rewriteZip(t, out, func(w *zip.Writer, f *zip.File) error {
+		if err := copyEntry(w, f); err != nil {
+			return err
+		}
+		if f.Name == "DOSZ.TOML" {
+			fw, err := w.Create("WINDOWS/WIN.INI")
+			if err != nil {
+				return err
+			}
+			_, err = fw.Write([]byte("junk"))
+			return err
+		}
+		return nil
+	})
+
+	err := verify.Verify(out)
+	if err == nil || !contains(err.Error(), "shell-owned file") {
+		t.Fatalf("Verify() = %v, want a shell-owned-file error", err)
+	}
+}
+
+func TestVerifyRejectsMissingAutoboot(t *testing.T) {
+	path := buildArchive(t, plainManifest)
+	rewriteZip(t, path, func(w *zip.Writer, f *zip.File) error {
+		if f.Name == "AUTOBOOT.DBP" {
+			return nil
+		}
+		return copyEntry(w, f)
+	})
+
+	err := verify.Verify(path)
+	if err == nil || !contains(err.Error(), "missing AUTOBOOT.DBP") {
+		t.Fatalf("Verify() = %v, want a missing-AUTOBOOT.DBP error", err)
+	}
+}
+
+func TestVerifyRejectsNonEmptyParentMarker(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "DOSZ.TOML", `
+format = 1
+name   = "Child Game"
+
+[boot]
+exec   = 'C:\GAME.EXE'
+parent = "Shared.shell"
+`)
+	writeFile(t, dir, "GAME.EXE", "binary")
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := build.Run(build.Options{SourceDir: dir, OutputPath: out}); err != nil {
+		t.Fatalf("build.Run: %v", err)
+	}
+
+	rewriteZip(t, out, func(w *zip.Writer, f *zip.File) error {
+		if f.Name != "Shared.shell.parent" {
+			return copyEntry(w, f)
+		}
+		fw, err := w.CreateHeader(&f.FileHeader)
+		if err != nil {
+			return err
+		}
+		_, err = fw.Write([]byte("not empty"))
+		return err
+	})
+
+	err := verify.Verify(out)
+	if err == nil || !contains(err.Error(), "must be zero bytes") {
+		t.Fatalf("Verify() = %v, want a non-zero-parent-marker error", err)
+	}
+}
+
+// --- test helpers: rewrite an existing archive, entry by entry ---
+
+func readEntry(f *zip.File) ([]byte, error) {
+	rc, err := f.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(rc); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func copyEntry(w *zip.Writer, f *zip.File) error {
+	fw, err := w.CreateHeader(&f.FileHeader)
+	if err != nil {
+		return err
+	}
+	data, err := readEntry(f)
+	if err != nil {
+		return err
+	}
+	_, err = fw.Write(data)
+	return err
+}
+
+// rewriteZip rewrites path's entries through visit, which may copy, modify,
+// drop or add entries via w.
+func rewriteZip(t *testing.T, path string, visit func(w *zip.Writer, f *zip.File) error) {
+	t.Helper()
+	r, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	for _, f := range r.File {
+		if err := visit(w, f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// rewriteZipReordered rewrites path with its entries passed through
+// reorder, to produce an archive whose entries aren't stored in sorted
+// order (zip.Writer itself doesn't care about order).
+func rewriteZipReordered(t *testing.T, path string, reorder func([]*zip.File) []*zip.File) {
+	t.Helper()
+	r, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	for _, f := range reorder(r.File) {
+		if err := copyEntry(w, f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func contains(s, substr string) bool {
+	return bytes.Contains([]byte(s), []byte(substr))
+}

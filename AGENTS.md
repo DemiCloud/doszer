@@ -86,15 +86,19 @@ Verified against DOSBox Pure 1.0 Preview 8 source.
 | `build` | Implemented except whole-disc-image conversion (§6.4) |
 | `install` | Not implemented |
 | `repack` | Not implemented |
-| `verify` | Not implemented |
+| `verify` | Implemented |
 
 Manifest parsing and every manifest rule in specification §11 are
 implemented and tested. `build` implements §6 in full except media
 conversion (§6.4: converting a disc image already sitting in the build to
 ISO/Ogg/WAV with a rewritten CUE, independent of `[[extract]]`), and
 enforces the archive-content rules of §11 (shell-owned files, `DOSBOX.BAT`).
-Those rules still apply independently to `verify`, once implemented, for
-archives built by other implementations.
+`verify` (`internal/verify`) applies those same rules, plus §8's
+determinism checks and §6.8's runtime-file presence, to an already-built
+archive and its embedded manifest - including one not built by doszer.
+`build.ValidateArchiveContent` and `build.ShouldStore` are exported from
+`internal/build` specifically so `verify` can reuse them rather than
+duplicate the rules.
 
 `[[extract]]` and media identification (§7) are implemented: `build` finds
 the CUE sheet in the source tree matching each declared `[[source.media]]`
@@ -109,7 +113,10 @@ path through `internal/iso9660` against the matched media's data track
    image already sitting in the build. The Ogg/WAV CUE `FILE` type keyword
    DOSBox Pure's `cdrom_image.cpp` expects needs verifying against its
    source before writing this (ground rule: verify, don't assume).
-2. `repack` and `verify`.
+2. `repack`: rebuild an archive from its embedded manifest. `verify`
+   already has the archive-reading half of this (open, find DOSZ.TOML,
+   parse it); repack adds re-running the build pipeline against the
+   embedded manifest's source media and comparing the result (§9).
 3. `install`: VHD (dynamic and fixed) and FAT32 reading, template diffing,
    `.pure.zip` extraction, launching DOSBox Pure, consuming
    `internal/config`'s `SystemDir`/`SaveDir`/`DosboxPure`/`Templates`.

@@ -25,10 +25,9 @@ func TestValidateArchiveContent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fs := newTestSet(tt.paths...)
-			err := validateArchiveContent(fs, tt.model)
+			err := ValidateArchiveContent(tt.paths, tt.model)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("validateArchiveContent() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ValidateArchiveContent() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

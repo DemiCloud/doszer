@@ -14,6 +14,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/verify"
 )
 
 // errUsage signals that usage was already printed.
@@ -33,7 +34,7 @@ func init() {
 		{"build", "build an archive from a source directory", runBuild},
 		{"install", "run an installer and extract the result into a source", notImplemented("install")},
 		{"repack", "rebuild an archive from its embedded manifest", notImplemented("repack")},
-		{"verify", "check an archive against its manifest and the specification", notImplemented("verify")},
+		{"verify", "check an archive against its manifest and the specification", runVerify},
 	}
 }
 
@@ -269,6 +270,35 @@ func printBuildPlan(res *build.Result, dryRun bool) {
 	for _, w := range res.Warnings() {
 		fmt.Fprintf(os.Stderr, "[WARN] %s\n", w)
 	}
+}
+
+// runVerify implements `doszer verify <file.dosz>`.
+func runVerify(args []string) error {
+	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Fprint(fs.Output(), `doszer verify - check an archive against its manifest and the specification
+
+Usage: doszer verify <file.dosz>
+`)
+	}
+
+	if err := fs.Parse(reorder(fs, args)); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return errUsage
+		}
+		return err
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return errUsage
+	}
+
+	if err := verify.Verify(fs.Arg(0)); err != nil {
+		return err
+	}
+
+	fmt.Printf("%s conforms to the specification\n", fs.Arg(0))
+	return nil
 }
 
 // reorder moves flags ahead of positional args so options may follow the
