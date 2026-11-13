@@ -36,30 +36,30 @@ const (
 type Manifest struct {
 	Format  int        `toml:"format"`
 	Name    string     `toml:"name"`
-	Notes   string     `toml:"notes"`
-	Boot    Boot       `toml:"boot"`
-	Layout  Layout     `toml:"layout"`
-	Pack    Pack       `toml:"pack"`
-	Source  Source     `toml:"source"`
-	Extract []Extract  `toml:"extract"`
-	File    []FileSpec `toml:"file"`
+	Notes   string     `toml:"notes,omitempty"`
+	Boot    Boot       `toml:"boot,omitempty"`
+	Layout  Layout     `toml:"layout,omitempty"`
+	Pack    Pack       `toml:"pack,omitempty"`
+	Source  Source     `toml:"source,omitempty"`
+	Extract []Extract  `toml:"extract,omitempty"`
+	File    []FileSpec `toml:"file,omitempty"`
 }
 
 // Boot selects the boot model and startup behaviour (spec §5.3).
 type Boot struct {
-	Exec   string `toml:"exec"`
-	Shell  string `toml:"shell"`
-	OS     string `toml:"os"`
-	Parent string `toml:"parent"`
-	Disc   string `toml:"disc"`
-	Skip   *int   `toml:"skip"`
+	Exec   string `toml:"exec,omitempty"`
+	Shell  string `toml:"shell,omitempty"`
+	OS     string `toml:"os,omitempty"`
+	Parent string `toml:"parent,omitempty"`
+	Disc   string `toml:"disc,omitempty"`
+	Skip   *int   `toml:"skip,omitempty"`
 }
 
 // Layout controls trimming, flattening and rewriting (spec §5.4).
 type Layout struct {
-	Trim    []string  `toml:"trim"`
-	Flatten bool      `toml:"flatten"`
-	Rewrite []Rewrite `toml:"rewrite"`
+	Trim    []string  `toml:"trim,omitempty"`
+	Flatten bool      `toml:"flatten,omitempty"`
+	Rewrite []Rewrite `toml:"rewrite,omitempty"`
 }
 
 // Rewrite is a literal, case-insensitive text replacement.
@@ -71,20 +71,20 @@ type Rewrite struct {
 
 // Pack controls archive compression and audio encoding (spec §5.5).
 type Pack struct {
-	Store []string `toml:"store"`
-	Audio string   `toml:"audio"`
+	Store []string `toml:"store,omitempty"`
+	Audio string   `toml:"audio,omitempty"`
 }
 
 // Source identifies the media an archive is built from (spec §5.6).
 type Source struct {
-	Media []Media `toml:"media"`
+	Media []Media `toml:"media,omitempty"`
 }
 
 // Media is one disc image, identified by its normalized track hashes.
 type Media struct {
 	ID     string  `toml:"id"`
-	Label  string  `toml:"label"`
-	Redump string  `toml:"redump"`
+	Label  string  `toml:"label,omitempty"`
+	Redump string  `toml:"redump,omitempty"`
 	Tracks []Track `toml:"tracks"`
 }
 

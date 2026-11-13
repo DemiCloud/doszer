@@ -3,6 +3,7 @@ package zipw
 
 import (
 	"archive/zip"
+	"compress/flate"
 	"io"
 )
 
@@ -22,7 +23,13 @@ type Writer struct {
 
 // New returns a Writer that writes to w.
 func New(w io.Writer) *Writer {
-	return &Writer{zw: zip.NewWriter(w)}
+	zw := zip.NewWriter(w)
+	// archive/zip's own Deflate compressor uses flate level 5; use
+	// BestCompression instead, scoped to this Writer only.
+	zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) {
+		return flate.NewWriter(w, flate.BestCompression)
+	})
+	return &Writer{zw: zw}
 }
 
 // Add writes one entry, using Store if store is set, else Deflate.
