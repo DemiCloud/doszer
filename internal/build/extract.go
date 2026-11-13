@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"time"
 
 	"github.com/DemiCloud/doszer/internal/cue"
 	"github.com/DemiCloud/doszer/internal/iso9660"
@@ -51,7 +52,7 @@ func applyExtracts(fs *fileSet, media map[string]resolvedMedia, extracts []manif
 		if err != nil {
 			return fmt.Errorf("extract: media %q: %s: %w", ex.Media, ex.From, err)
 		}
-		fs.set(ex.To, dataEntry(data))
+		fs.set(ex.To, dataEntry(data, sourceModified(entry.Modified)))
 	}
 
 	return nil
@@ -119,8 +120,17 @@ func extractDir(fs *fileSet, img *iso9660.Image, dir iso9660.Entry, destDir stri
 		if err != nil {
 			return fmt.Errorf("%s: %w", dest, err)
 		}
-		fs.set(dest, dataEntry(data))
+		fs.set(dest, dataEntry(data, sourceModified(e.Modified)))
 	}
 
 	return nil
+}
+
+// sourceModified falls back to Epoch when a source has no modification
+// time of its own (§8.2).
+func sourceModified(t time.Time) time.Time {
+	if t.IsZero() {
+		return Epoch
+	}
+	return t
 }

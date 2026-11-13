@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/manifest"
@@ -137,10 +138,15 @@ func TestRunBuildsDeterministicArchive(t *testing.T) {
 		t.Error("OTHER.BIN should be deflated")
 	}
 
-	// §8.2: fixed timestamp, zero external attributes, no extra fields.
+	// §8.2: zero external attributes, no extra fields, for every entry.
+	// Only the generated files (AUTOBOOT.DBP, DOSZ.TOML) use the fixed
+	// epoch; a collected file keeps its own source timestamp.
+	generated := map[string]bool{"AUTOBOOT.DBP": true, "DOSZ.TOML": true}
 	for name, f := range entries {
-		if f.Modified.UTC().Format("2006-01-02T15:04:05") != "1980-01-01T00:00:00" {
-			t.Errorf("%s: Modified = %v, want 1980-01-01 00:00:00", name, f.Modified)
+		wantEpoch := generated[name]
+		gotEpoch := f.Modified.UTC().Format("2006-01-02T15:04:05") == "1980-01-01T00:00:00"
+		if gotEpoch != wantEpoch {
+			t.Errorf("%s: Modified = %v, epoch = %v, want epoch = %v", name, f.Modified, gotEpoch, wantEpoch)
 		}
 		if f.ExternalAttrs != 0 {
 			t.Errorf("%s: ExternalAttrs = %d, want 0", name, f.ExternalAttrs)
@@ -162,6 +168,35 @@ func TestRunBuildsDeterministicArchive(t *testing.T) {
 	}
 	if !sort.StringsAreSorted(ordered) {
 		t.Errorf("archive entries not sorted: %v", ordered)
+	}
+}
+
+func TestRunPreservesSourceTimestamp(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "DOSZ.TOML", `
+format = 1
+name   = "Timestamp Game"
+
+[boot]
+exec = 'C:\GAME.EXE'
+`)
+	writeFile(t, dir, "GAME.EXE", "binary")
+
+	sourcePath := filepath.Join(dir, "GAME.EXE")
+	sourceTime := time.Date(1994, 6, 15, 10, 30, 0, 0, time.UTC)
+	if err := os.Chtimes(sourcePath, sourceTime, sourceTime); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := build.Run(build.Options{SourceDir: dir, OutputPath: out}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	entries := readZip(t, out)
+	got := entries["GAME.EXE"].Modified.UTC()
+	if !got.Equal(sourceTime) {
+		t.Errorf("GAME.EXE Modified = %v, want the source file's own mtime %v (§8.2)", got, sourceTime)
 	}
 }
 
@@ -515,11 +550,11 @@ files = ["**/*.BAT"]
 		t.Fatalf("Parse: %v", err)
 	}
 
-	entries := map[string][]byte{
-		"GAME.EXE":          []byte("binary"),
-		"README.SKC":        []byte("trim me"),
-		"AUTOEXEC.BAT":      []byte("OLDPATH\nSECOND LINE\n"), // LF only, no CRLF yet
-		"GAMENAME/DATA.DAT": []byte("nested"),
+	entries := map[string]build.Entry{
+		"GAME.EXE":          {Data: []byte("binary"), Modified: build.Epoch},
+		"README.SKC":        {Data: []byte("trim me"), Modified: build.Epoch},
+		"AUTOEXEC.BAT":      {Data: []byte("OLDPATH\nSECOND LINE\n"), Modified: build.Epoch}, // LF only, no CRLF yet
+		"GAMENAME/DATA.DAT": {Data: []byte("nested"), Modified: build.Epoch},
 	}
 
 	res, err := build.Repack(entries, m, build.Options{OutputPath: filepath.Join(t.TempDir(), "out.dosz")})

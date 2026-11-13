@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"testing"
+	"time"
 )
 
 // dirRecord builds one Directory Record (ECMA-119 §9.1).
@@ -234,5 +235,40 @@ func TestReadDirSkipsZeroPaddingToSectorBoundary(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].Name != "A.TXT" {
 		t.Errorf("entries = %+v, want just A.TXT", entries)
+	}
+}
+
+func TestParseRecordingTime(t *testing.T) {
+	// 1994-03-15 12:30:45, recorded at GMT+2 (8 intervals of 15 minutes).
+	b := []byte{94, 3, 15, 12, 30, 45, 8}
+	got := parseRecordingTime(b)
+	want := time.Date(1994, 3, 15, 12, 30, 45, 0, time.FixedZone("", 2*60*60)).UTC()
+	if !got.Equal(want) {
+		t.Errorf("parseRecordingTime(%v) = %v, want %v", b, got, want)
+	}
+}
+
+func TestParseRecordingTimeUnset(t *testing.T) {
+	if got := parseRecordingTime(make([]byte, 7)); !got.IsZero() {
+		t.Errorf("parseRecordingTime(zero bytes) = %v, want zero time", got)
+	}
+}
+
+func TestParseRecordingTimeInvalid(t *testing.T) {
+	// Month 13 is out of range.
+	b := []byte{94, 13, 40, 25, 70, 70, 0}
+	if got := parseRecordingTime(b); !got.IsZero() {
+		t.Errorf("parseRecordingTime(invalid) = %v, want zero time", got)
+	}
+}
+
+func TestDirRecordIncludesModified(t *testing.T) {
+	dir := buildFixture(t)
+	e, err := dir.Lookup("FILE1.TXT")
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if !e.Modified.IsZero() {
+		t.Errorf("Modified = %v, want zero (fixture never sets a date)", e.Modified)
 	}
 }

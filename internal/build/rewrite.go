@@ -39,7 +39,7 @@ func applyRewrite(fs *fileSet, rules []manifest.Rewrite) ([]RewriteHit, []string
 			if n == 0 {
 				continue
 			}
-			fs.set(p, dataEntry([]byte(replaced)))
+			fs.set(p, dataEntry([]byte(replaced), e.modified))
 			total += n
 			hits = append(hits, RewriteHit{Rule: i, Path: p})
 		}

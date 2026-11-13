@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/manifest"
@@ -119,6 +120,66 @@ func TestRepackDefaultOutputPath(t *testing.T) {
 	}
 }
 
+func TestRepackPreservesEntryTimestamp(t *testing.T) {
+	in := buildArchive(t, plainManifest, map[string]string{"GAME.EXE": "x"})
+
+	// Rewrite GAME.EXE's timestamp via the legacy DOS fields directly (not
+	// FileHeader.Modified, to avoid archive/zip adding its own extra
+	// timestamp field on this rewrite), as if this were a legacy archive
+	// with a real date.
+	sourceTime := time.Date(1994, 6, 15, 10, 30, 0, 0, time.UTC)
+	dosDate := uint16(sourceTime.Day() + int(sourceTime.Month())<<5 + (sourceTime.Year()-1980)<<9)
+	dosTimeField := uint16(sourceTime.Second()/2 + sourceTime.Minute()<<5 + sourceTime.Hour()<<11)
+
+	r, err := zip.OpenReader(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	for _, f := range r.File {
+		fh := f.FileHeader
+		// Zero Modified before CreateHeader: archive/zip derives
+		// ModifiedDate/ModifiedTime from it (overwriting any override
+		// below) and adds its own extra timestamp field whenever it's
+		// non-zero, which §8.2 forbids.
+		fh.Modified = time.Time{}
+		if f.Name == "GAME.EXE" {
+			fh.ModifiedDate, fh.ModifiedTime = dosDate, dosTimeField
+		}
+		fw, err := w.CreateHeader(&fh)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.Copy(fw, rc); err != nil {
+			t.Fatal(err)
+		}
+		rc.Close()
+	}
+	r.Close()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(in, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := repack.Run(repack.Options{InputPath: in, OutputPath: out}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	entries := readZip(t, out)
+	got := entries["GAME.EXE"].Modified.UTC()
+	if !got.Equal(sourceTime) {
+		t.Errorf("GAME.EXE Modified = %v, want the preserved source time %v (§8.2)", got, sourceTime)
+	}
+}
+
 func TestRepackIsDeterministic(t *testing.T) {
 	in := buildArchive(t, plainManifest, map[string]string{"GAME.EXE": "x"})
 	out := filepath.Join(t.TempDir(), "out.dosz")
@@ -128,9 +189,12 @@ func TestRepackIsDeterministic(t *testing.T) {
 	}
 
 	entries := readZip(t, out)
+	generated := map[string]bool{"AUTOBOOT.DBP": true, "DOSZ.TOML": true}
 	for name, f := range entries {
-		if got := f.Modified.UTC().Format("2006-01-02T15:04:05"); got != "1980-01-01T00:00:00" {
-			t.Errorf("%s: Modified = %v", name, f.Modified)
+		wantEpoch := generated[name]
+		gotEpoch := f.Modified.UTC().Format("2006-01-02T15:04:05") == "1980-01-01T00:00:00"
+		if gotEpoch != wantEpoch {
+			t.Errorf("%s: Modified = %v, epoch = %v, want epoch = %v", name, f.Modified, gotEpoch, wantEpoch)
 		}
 		if f.ExternalAttrs != 0 {
 			t.Errorf("%s: ExternalAttrs = %d, want 0", name, f.ExternalAttrs)

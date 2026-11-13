@@ -39,7 +39,11 @@ func collect(sourceDir string, m *manifest.Manifest) (*fileSet, error) {
 		if err != nil {
 			return err
 		}
-		result.set(rel, diskEntry(abs))
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		result.set(rel, diskEntry(abs, info.ModTime()))
 		return nil
 	})
 	if err != nil {
@@ -57,7 +61,7 @@ func collect(sourceDir string, m *manifest.Manifest) (*fileSet, error) {
 	}
 
 	for _, f := range m.File {
-		result.set(f.Path, dataEntry([]byte(*f.Text)))
+		result.set(f.Path, dataEntry([]byte(*f.Text), Epoch))
 	}
 
 	return result, nil

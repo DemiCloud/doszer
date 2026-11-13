@@ -39,7 +39,7 @@ func normalizeText(fs *fileSet) error {
 		if !IsTextFile(p, content) {
 			continue
 		}
-		fs.set(p, dataEntry(NormalizeCRLF(content)))
+		fs.set(p, dataEntry(NormalizeCRLF(content), e.modified))
 	}
 	return nil
 }

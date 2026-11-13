@@ -74,14 +74,46 @@ func TestVerifyRejectsMissingManifest(t *testing.T) {
 	}
 }
 
-func TestVerifyRejectsNonEpochTimestamp(t *testing.T) {
+func TestVerifyAcceptsNonEpochOrdinaryFile(t *testing.T) {
+	// An ordinary collected file keeps its own source timestamp (§8.2);
+	// verify must not reject that.
 	path := buildArchive(t, plainManifest)
 	rewriteZip(t, path, func(w *zip.Writer, f *zip.File) error {
 		if f.Name != "GAME.EXE" {
 			return copyEntry(w, f)
 		}
 		fh := f.FileHeader
-		fh.Modified = time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		fh.Modified = time.Time{}
+		fh.ModifiedDate, fh.ModifiedTime = toDOSTime(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
+		fw, err := w.CreateHeader(&fh)
+		if err != nil {
+			return err
+		}
+		data, err := readEntry(f)
+		if err != nil {
+			return err
+		}
+		_, err = fw.Write(data)
+		return err
+	})
+
+	if err := verify.Verify(path); err != nil {
+		t.Errorf("Verify() = %v, want nil (an ordinary file's own timestamp is not checked)", err)
+	}
+}
+
+func TestVerifyRejectsNonEpochAutoboot(t *testing.T) {
+	// AUTOBOOT.DBP is generated (§6.8) and must use the fixed epoch
+	// (§8.2), even if its content still matches the manifest's boot
+	// settings.
+	path := buildArchive(t, plainManifest)
+	rewriteZip(t, path, func(w *zip.Writer, f *zip.File) error {
+		if f.Name != "AUTOBOOT.DBP" {
+			return copyEntry(w, f)
+		}
+		fh := f.FileHeader
+		fh.Modified = time.Time{}
+		fh.ModifiedDate, fh.ModifiedTime = toDOSTime(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC))
 		fw, err := w.CreateHeader(&fh)
 		if err != nil {
 			return err
@@ -95,8 +127,8 @@ func TestVerifyRejectsNonEpochTimestamp(t *testing.T) {
 	})
 
 	err := verify.Verify(path)
-	if err == nil || !contains(err.Error(), "modification time") {
-		t.Fatalf("Verify() = %v, want a modification-time error", err)
+	if err == nil || !contains(err.Error(), "fixed epoch") {
+		t.Fatalf("Verify() = %v, want a fixed-epoch error", err)
 	}
 }
 
@@ -107,6 +139,7 @@ func TestVerifyRejectsNonZeroExternalAttrs(t *testing.T) {
 			return copyEntry(w, f)
 		}
 		fh := f.FileHeader
+		fh.Modified = time.Time{}
 		fh.ExternalAttrs = 0o644 << 16
 		fw, err := w.CreateHeader(&fh)
 		if err != nil {
@@ -165,6 +198,7 @@ store = ["iso"]
 			return copyEntry(w, f)
 		}
 		fh := f.FileHeader
+		fh.Modified = time.Time{}
 		fh.Method = zip.Deflate
 		fw, err := w.CreateHeader(&fh)
 		if err != nil {
@@ -352,7 +386,13 @@ func readEntry(f *zip.File) ([]byte, error) {
 }
 
 func copyEntry(w *zip.Writer, f *zip.File) error {
-	fw, err := w.CreateHeader(&f.FileHeader)
+	fh := f.FileHeader
+	// Zero Modified before CreateHeader: archive/zip derives
+	// ModifiedDate/ModifiedTime from it and adds its own extra timestamp
+	// field whenever it's non-zero, which §8.2 forbids. The legacy fields
+	// already carry the real timestamp; copying them is enough.
+	fh.Modified = time.Time{}
+	fw, err := w.CreateHeader(&fh)
 	if err != nil {
 		return err
 	}
@@ -417,4 +457,11 @@ func rewriteZipReordered(t *testing.T, path string, reorder func([]*zip.File) []
 
 func contains(s, substr string) bool {
 	return bytes.Contains([]byte(s), []byte(substr))
+}
+
+// toDOSTime converts t to MS-DOS date/time encoding (2-second resolution).
+func toDOSTime(t time.Time) (date, timeField uint16) {
+	date = uint16(t.Day() + int(t.Month())<<5 + (t.Year()-1980)<<9)
+	timeField = uint16(t.Second()/2 + t.Minute()<<5 + t.Hour()<<11)
+	return date, timeField
 }

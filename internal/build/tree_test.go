@@ -9,7 +9,7 @@ import (
 func newTestSet(paths ...string) *fileSet {
 	fs := newFileSet()
 	for _, p := range paths {
-		fs.set(p, dataEntry([]byte(p)))
+		fs.set(p, dataEntry([]byte(p), Epoch))
 	}
 	return fs
 }

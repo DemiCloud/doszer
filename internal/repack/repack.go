@@ -41,7 +41,7 @@ func Run(opts Options) (*build.Result, error) {
 	defer r.Close()
 
 	var mf *zip.File
-	entries := make(map[string][]byte, len(r.File))
+	entries := make(map[string]build.Entry, len(r.File))
 	for _, f := range r.File {
 		if strings.EqualFold(f.Name, manifest.FileName) {
 			mf = f
@@ -51,7 +51,9 @@ func Run(opts Options) (*build.Result, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %s: %w", opts.InputPath, f.Name, err)
 		}
-		entries[f.Name] = data
+		// Preserve whatever modification time (§8.2) was already on this
+		// entry, rather than synthesizing one.
+		entries[f.Name] = build.Entry{Data: data, Modified: f.Modified}
 	}
 	if mf == nil {
 		return nil, fmt.Errorf("%s: missing %s (§8.3)", opts.InputPath, manifest.FileName)
@@ -69,9 +71,10 @@ func Run(opts Options) (*build.Result, error) {
 	}
 
 	// §6.1's final layering step: [[file]] entries replace a collected
-	// file at the same path, same as build's collect().
+	// file at the same path, same as build's collect(). A [[file]] entry
+	// has no source of its own, so it gets the fixed epoch (§8.2).
 	for _, f := range m.File {
-		entries[f.Path] = []byte(*f.Text)
+		entries[f.Path] = build.Entry{Data: []byte(*f.Text), Modified: build.Epoch}
 	}
 
 	return build.Repack(entries, m, build.Options{

@@ -3,6 +3,7 @@ package build
 import (
 	"bytes"
 	"testing"
+	"time"
 )
 
 func TestIsTextFile(t *testing.T) {
@@ -51,9 +52,11 @@ func TestNormalizeCRLF(t *testing.T) {
 }
 
 func TestNormalizeTextOnlyTouchesTextFiles(t *testing.T) {
+	sourceTime := time.Date(1994, 1, 1, 0, 0, 0, 0, time.UTC)
+
 	fs := newFileSet()
-	fs.set("AUTOEXEC.BAT", dataEntry([]byte("echo hi")))
-	fs.set("GAME.EXE", dataEntry([]byte("binary\nwith\nlf")))
+	fs.set("AUTOEXEC.BAT", dataEntry([]byte("echo hi"), sourceTime))
+	fs.set("GAME.EXE", dataEntry([]byte("binary\nwith\nlf"), Epoch))
 
 	if err := normalizeText(fs); err != nil {
 		t.Fatalf("normalizeText: %v", err)
@@ -62,6 +65,9 @@ func TestNormalizeTextOnlyTouchesTextFiles(t *testing.T) {
 	bat, _ := fs.get("AUTOEXEC.BAT")
 	if got, _ := bat.bytes(); string(got) != "echo hi\r\n" {
 		t.Errorf("AUTOEXEC.BAT = %q, want %q", got, "echo hi\r\n")
+	}
+	if !bat.modified.Equal(sourceTime) {
+		t.Errorf("AUTOEXEC.BAT modified = %v, want text normalization to preserve the source time %v (§8.2)", bat.modified, sourceTime)
 	}
 
 	exe, _ := fs.get("GAME.EXE")

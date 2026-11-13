@@ -2,6 +2,7 @@ package build
 
 import (
 	"testing"
+	"time"
 
 	"github.com/DemiCloud/doszer/internal/manifest"
 )
@@ -74,7 +75,7 @@ func TestEffectiveManifestSetsName(t *testing.T) {
 
 func TestAddRuntimeFiles(t *testing.T) {
 	fs := newFileSet()
-	fs.set(manifest.FileName, dataEntry([]byte("stale")))
+	fs.set(manifest.FileName, dataEntry([]byte("stale"), time.Date(1994, 1, 1, 0, 0, 0, 0, time.UTC)))
 
 	m := &manifest.Manifest{
 		Format: manifest.FormatVersion,
@@ -86,9 +87,14 @@ func TestAddRuntimeFiles(t *testing.T) {
 		t.Fatalf("addRuntimeFiles: %v", err)
 	}
 
-	if _, ok := fs.get("AUTOBOOT.DBP"); !ok {
-		t.Error("missing AUTOBOOT.DBP")
+	autoboot, ok := fs.get("AUTOBOOT.DBP")
+	if !ok {
+		t.Fatal("missing AUTOBOOT.DBP")
 	}
+	if !autoboot.modified.Equal(Epoch) {
+		t.Errorf("AUTOBOOT.DBP modified = %v, want the fixed epoch %v (§8.2)", autoboot.modified, Epoch)
+	}
+
 	parent, ok := fs.get("Shared.shell.parent")
 	if !ok {
 		t.Fatal("missing Shared.shell.parent")
@@ -96,10 +102,16 @@ func TestAddRuntimeFiles(t *testing.T) {
 	if data, _ := parent.bytes(); len(data) != 0 {
 		t.Errorf("Shared.shell.parent should be zero bytes, got %d", len(data))
 	}
+	if !parent.modified.Equal(Epoch) {
+		t.Errorf("Shared.shell.parent modified = %v, want the fixed epoch %v (§8.2)", parent.modified, Epoch)
+	}
 
 	manifestEntry, ok := fs.get(manifest.FileName)
 	if !ok {
 		t.Fatal("missing DOSZ.TOML")
+	}
+	if !manifestEntry.modified.Equal(Epoch) {
+		t.Errorf("DOSZ.TOML modified = %v, want the fixed epoch %v (§8.2), not the stale source time", manifestEntry.modified, Epoch)
 	}
 	if data, _ := manifestEntry.bytes(); string(data) == "stale" {
 		t.Error("DOSZ.TOML was not replaced by the generated runtime file")

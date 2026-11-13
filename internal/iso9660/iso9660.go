@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 )
 
 // sectorSize is the logical block size assumed throughout: 2048 bytes, the
@@ -18,10 +19,11 @@ const sectorSize = 2048
 
 // Entry is one file or directory in the filesystem.
 type Entry struct {
-	Name  string // without any ";N" version suffix
-	IsDir bool
-	LBA   uint32
-	Size  uint32
+	Name     string // without any ";N" version suffix
+	IsDir    bool
+	LBA      uint32
+	Size     uint32
+	Modified time.Time // zero if the directory record's date is unset or invalid
 }
 
 // Image is an opened ISO 9660 filesystem.
@@ -152,10 +154,11 @@ func parseDirRecord(b []byte) (Entry, error) {
 	id := string(b[33 : 33+idLen])
 
 	return Entry{
-		Name:  stripVersion(id),
-		IsDir: flags&dirFlag != 0,
-		LBA:   lba,
-		Size:  size,
+		Name:     stripVersion(id),
+		IsDir:    flags&dirFlag != 0,
+		LBA:      lba,
+		Size:     size,
+		Modified: parseRecordingTime(b[18:25]),
 	}, nil
 }
 
@@ -165,4 +168,27 @@ func stripVersion(id string) string {
 		return id[:i]
 	}
 	return id
+}
+
+// parseRecordingTime parses a Directory Record's 7-byte recording
+// date/time field (ECMA-119 §9.1.5): years since 1900, month, day, hour,
+// minute, second, then a GMT offset in signed 15-minute intervals. Returns
+// the zero time.Time if the field is unset or not a valid date - parsed
+// leniently, same as the rest of this package.
+func parseRecordingTime(b []byte) time.Time {
+	if len(b) < 7 || (b[0] == 0 && b[1] == 0 && b[2] == 0) {
+		return time.Time{}
+	}
+
+	year := 1900 + int(b[0])
+	month := time.Month(b[1])
+	day, hour, min, sec := int(b[2]), int(b[3]), int(b[4]), int(b[5])
+	offset := int(int8(b[6])) * 15 * 60
+	loc := time.FixedZone("", offset)
+
+	t := time.Date(year, month, day, hour, min, sec, 0, loc)
+	if t.Month() != month || t.Day() != day {
+		return time.Time{} // out-of-range fields normalized away: not a real date
+	}
+	return t.UTC()
 }

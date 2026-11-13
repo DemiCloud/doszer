@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/zipw"
@@ -75,16 +76,25 @@ func Run(opts Options) (*Result, error) {
 	return runPipeline(fs, m, opts)
 }
 
+// Entry is one already-collected file for Repack: its content and the
+// modification time (§8.2) to carry forward - typically whatever was
+// already recorded on the archive's own entry, or Epoch for an entry with
+// no source of its own (e.g. a [[file]] entry layered on top).
+type Entry struct {
+	Data     []byte
+	Modified time.Time
+}
+
 // Repack runs §6.2 onward (trim through the deterministic write) against an
 // already-collected set of entries, rather than a source directory: used by
 // `doszer repack` to rebuild an archive from nothing but its own embedded
 // manifest, treating the archive's own content as the collected build.
 // entries' keys are archive-relative paths; DOSZ.TOML must not be among
 // them (§6.1 excludes it from collect, same as a source directory).
-func Repack(entries map[string][]byte, m *manifest.Manifest, opts Options) (*Result, error) {
+func Repack(entries map[string]Entry, m *manifest.Manifest, opts Options) (*Result, error) {
 	fs := newFileSet()
-	for p, data := range entries {
-		fs.set(p, dataEntry(data))
+	for p, e := range entries {
+		fs.set(p, dataEntry(e.Data, e.Modified))
 	}
 	return runPipeline(fs, m, opts)
 }
@@ -180,7 +190,7 @@ func writeArchive(fs *fileSet, m *manifest.Manifest, w io.Writer) error {
 			r = f
 		}
 
-		addErr := zw.Add(p, r, store)
+		addErr := zw.Add(p, r, store, e.modified)
 		if f != nil {
 			f.Close()
 		}

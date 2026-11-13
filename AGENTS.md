@@ -55,9 +55,9 @@ Planned packages: `internal/vhd` and `internal/fat` (disk image reading for
 - `internal/zipw` registers its own Deflate compressor at
   `flate.BestCompression` (level 9), scoped to its own `*zip.Writer`:
   `archive/zip`'s built-in one uses level 5 (`register.go`'s
-  `newFlateWriter`), not even `flate.DefaultCompression` (6). Still weaker
-  than a multi-pass encoder like 7-Zip's; that gap is a known, open
-  tradeoff (see Reference), not a bug.
+  `newFlateWriter`), not even `flate.DefaultCompression` (6). Still
+  weaker than a multi-pass encoder like 7-Zip's - investigated going
+  further (see Resolved questions) and found no responsible option yet.
 - Manifest fields use `omitempty` (`internal/manifest/manifest.go`) so a
   re-serialized manifest (`internal/build`'s `effectiveManifest`, used via
   `addRuntimeFiles` by both `build` and `repack`) doesn't emit every unset
@@ -158,29 +158,51 @@ with, since output always goes through the same `internal/zipw` writer
 consumer yet: no command currently needs `system_dir`, `save_dir`,
 `dosbox_pure` or `templates`.
 
-## Open questions
+## Resolved questions
 
-Raised by a real retrofit attempt (repacking a legacy archive); not yet
-decided, so not yet acted on:
+Raised by a real retrofit attempt (repacking a legacy archive):
 
-- **§8.2's fixed 1980-01-01 timestamp discards original file dates.**
-  A collected/extracted file's real mtime (e.g. a 1993 game's) is lost;
-  only the three generated runtime files (`AUTOBOOT.DBP`, the parent
-  marker, `DOSZ.TOML`) arguably need a fixed timestamp for determinism,
-  since §9 equivalence is defined over uncompressed content only anyway -
-  timestamps were never part of it. Changing this is a spec change
-  (ground rule: `spec/MANIFEST.md` first), not just a code change, and
-  needs its own reasoning about whether a per-file source timestamp is
-  itself deterministic enough to rely on (e.g. after a checkout or a
-  re-extraction from media) before `§8.2` is reworded.
-- **Deflate still trails a multi-pass encoder (e.g. 7-Zip) by a few
-  percent**, even at `flate.BestCompression` (see Conventions). Spec §9
-  doesn't require closing this gap (equivalence is over uncompressed
-  content), so it's a quality tradeoff, not a bug. Options if it's worth
-  pursuing: a stronger pure-Go encoder (e.g. a zopfli port - still
-  standard, deterministic Deflate, just a slower search), or a pluggable
-  compressor setting. Either is a new dependency or a user-facing option,
-  so it wants a decision, not a silent pick.
+- **§8.2's fixed 1980-01-01 timestamp discarded original file dates.**
+  Fixed: §8.2 now requires a collected or extracted file's own
+  modification time (the source directory file's mtime, or the date
+  recorded in the media's file system for an extracted one); only the
+  three generated files (`AUTOBOOT.DBP`, the parent marker, `DOSZ.TOML`)
+  use the fixed epoch, since they have no source of their own.
+  `internal/zipw.Writer.Add` takes the modification time per entry now,
+  converting it to MS-DOS date/time fields directly (never
+  `FileHeader.Modified`, for the same extra-field reason as before) and
+  clamping to the representable 1980-2107 range. `fileEntry` carries this
+  through `internal/build`'s pipeline - `rewrite`/`normalizeText` preserve
+  it when they change content, `collect` reads it from `os.DirEntry.Info`,
+  `internal/iso9660` parses it from each Directory Record's recording
+  date/time field (ECMA-119 §9.1.5), and `repack` carries forward whatever
+  was already on the input archive's own entries. `verify` checks the
+  epoch only on the three generated files, not on an ordinary entry, since
+  it has no independent way to know what an arbitrary file's timestamp
+  should be.
+- **Deflate trails a multi-pass encoder (e.g. 7-Zip) by a few percent**,
+  even at `flate.BestCompression`. Investigated going further and decided
+  against it, for now:
+  - A pure-Go zopfli port (`foobaz/go-zopfli`) exists but has no stated
+    license, no dated commits or releases, and reports ~100 kB/s
+    throughput - for a game's largest files (a data track can be
+    hundreds of MB), that's minutes added to every build, not a one-time
+    release cost.
+  - `klauspost/compress/flate` is a maintained, permissively-licensed,
+    widely-adopted drop-in, but its own docs note that "the size of
+    actual Write calls will affect output size" - a real determinism
+    risk for a spec whose own §8.2/§9 exist specifically to guarantee
+    reproducible output - for a reportedly modest, data-dependent ratio
+    gain, not a zopfli-level fix.
+  - Shelling out to a second external binary (7z or similar) would
+    contradict this file's own "only ffmpeg" convention above; that's a
+    bigger, deliberate convention change, not a silent addition.
+
+  None of these is a responsible "just do it" pick. If the gap matters
+  enough to revisit, the conversation should start with whether
+  `klauspost/compress`'s determinism caveat is actually triggered by this
+  codebase's specific write pattern (`io.Copy`'s fixed-size buffering
+  through `zipw.Add`) rather than assuming the worst case.
 
 ## Reference
 

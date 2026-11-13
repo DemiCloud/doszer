@@ -11,13 +11,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/manifest"
 )
-
-// epoch is the fixed modification time spec §8.2 requires.
-const epoch = "1980-01-01T00:00:00Z"
 
 // Verify checks archivePath and returns every way it fails to conform, or
 // nil if it conforms.
@@ -43,6 +41,9 @@ func Verify(archivePath string) error {
 		errs = append(errs, fmt.Errorf("missing %s (§8.3)", manifest.FileName))
 		return errors.Join(errs...)
 	}
+	if !isEpoch(mf.Modified) {
+		errs = append(errs, fmt.Errorf("%s: a generated file must use the fixed epoch (§8.2)", mf.Name))
+	}
 
 	data, err := readZipFile(mf)
 	if err != nil {
@@ -62,8 +63,19 @@ func Verify(archivePath string) error {
 	return errors.Join(errs...)
 }
 
-// checkDeterministic enforces §8.2's structural requirements, independent
-// of the embedded manifest.
+// isEpoch reports whether t is the fixed 1980-01-01 00:00:00 timestamp
+// §8.2 requires for a generated file.
+func isEpoch(t time.Time) bool {
+	return t.UTC().Format("2006-01-02T15:04:05Z") == "1980-01-01T00:00:00Z"
+}
+
+// checkDeterministic enforces the structural part of §8.2 that applies to
+// every entry regardless of its source: compression method, external
+// attributes, extra fields and path order. A collected or extracted
+// entry's modification time is its source's own (§8.2), which verify has
+// no independent way to check; only the three generated files (checked
+// against the manifest in checkWithManifest and in Verify) must use the
+// fixed epoch.
 func checkDeterministic(files []*zip.File) []error {
 	var errs []error
 
@@ -73,9 +85,6 @@ func checkDeterministic(files []*zip.File) []error {
 
 		if f.Method != zip.Store && f.Method != zip.Deflate {
 			errs = append(errs, fmt.Errorf("%s: compression method must be Store or Deflate (§8.1)", f.Name))
-		}
-		if got := f.Modified.UTC().Format("2006-01-02T15:04:05Z"); got != epoch {
-			errs = append(errs, fmt.Errorf("%s: modification time is %s, want %s (§8.2)", f.Name, got, epoch))
 		}
 		if f.ExternalAttrs != 0 {
 			errs = append(errs, fmt.Errorf("%s: external attributes must be zero (§8.2)", f.Name))
@@ -129,9 +138,14 @@ func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.
 		f, ok := findFold(byName, "AUTOBOOT.DBP")
 		if !ok {
 			errs = append(errs, fmt.Errorf("missing AUTOBOOT.DBP (§6.8)"))
-		} else if content, err := readZipFile(f); err == nil {
-			if want := build.BuildAutoboot(&m.Boot); !bytes.Equal(content, want) {
-				errs = append(errs, fmt.Errorf("%s: content does not match the manifest's boot settings (§6.8), got %q want %q", f.Name, content, want))
+		} else {
+			if !isEpoch(f.Modified) {
+				errs = append(errs, fmt.Errorf("%s: a generated file must use the fixed epoch (§8.2)", f.Name))
+			}
+			if content, err := readZipFile(f); err == nil {
+				if want := build.BuildAutoboot(&m.Boot); !bytes.Equal(content, want) {
+					errs = append(errs, fmt.Errorf("%s: content does not match the manifest's boot settings (§6.8), got %q want %q", f.Name, content, want))
+				}
 			}
 		}
 	}
@@ -144,6 +158,8 @@ func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.
 			errs = append(errs, fmt.Errorf("missing %s (§6.8)", name))
 		case f.UncompressedSize64 != 0:
 			errs = append(errs, fmt.Errorf("%s: must be zero bytes (§6.8)", f.Name))
+		case !isEpoch(f.Modified):
+			errs = append(errs, fmt.Errorf("%s: a generated file must use the fixed epoch (§8.2)", f.Name))
 		}
 	}
 

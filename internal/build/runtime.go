@@ -55,18 +55,18 @@ func effectiveManifest(m *manifest.Manifest, name string) ([]byte, error) {
 // addRuntimeFiles generates §6.8's files, replacing any file of the same name.
 func addRuntimeFiles(fs *fileSet, m *manifest.Manifest, effectiveName string) error {
 	if NeedsAutoboot(&m.Boot) {
-		fs.set("AUTOBOOT.DBP", dataEntry(BuildAutoboot(&m.Boot)))
+		fs.set("AUTOBOOT.DBP", dataEntry(BuildAutoboot(&m.Boot), Epoch))
 	}
 
 	if m.Boot.Parent != "" {
-		fs.set(m.Boot.Parent+".parent", dataEntry([]byte{}))
+		fs.set(m.Boot.Parent+".parent", dataEntry([]byte{}, Epoch))
 	}
 
 	data, err := effectiveManifest(m, effectiveName)
 	if err != nil {
 		return err
 	}
-	fs.set(manifest.FileName, dataEntry(data))
+	fs.set(manifest.FileName, dataEntry(data, Epoch))
 
 	return nil
 }

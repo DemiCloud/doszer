@@ -2,6 +2,7 @@ package build
 
 import (
 	"testing"
+	"time"
 
 	"github.com/DemiCloud/doszer/internal/manifest"
 )
@@ -24,10 +25,12 @@ func TestReplaceFoldCaseInsensitive(t *testing.T) {
 }
 
 func TestApplyRewrite(t *testing.T) {
+	sourceTime := time.Date(1994, 1, 1, 0, 0, 0, 0, time.UTC)
+
 	fs := newFileSet()
-	fs.set("A.INI", dataEntry([]byte(`DIR=C:\OLD`)))
-	fs.set("B.INI", dataEntry([]byte(`DIR=C:\OTHER`)))
-	fs.set("A.EXE", dataEntry([]byte(`C:\OLD binary blob`)))
+	fs.set("A.INI", dataEntry([]byte(`DIR=C:\OLD`), sourceTime))
+	fs.set("B.INI", dataEntry([]byte(`DIR=C:\OTHER`), Epoch))
+	fs.set("A.EXE", dataEntry([]byte(`C:\OLD binary blob`), Epoch))
 
 	rules := []manifest.Rewrite{
 		{From: `C:\OLD`, To: `C:\NEW`, Files: []string{"*.INI"}},
@@ -46,6 +49,9 @@ func TestApplyRewrite(t *testing.T) {
 	a, _ := fs.get("A.INI")
 	if got, _ := a.bytes(); string(got) != `DIR=C:\NEW` {
 		t.Errorf("A.INI = %q", got)
+	}
+	if !a.modified.Equal(sourceTime) {
+		t.Errorf("A.INI modified = %v, want rewrite to preserve the source time %v (§8.2)", a.modified, sourceTime)
 	}
 
 	// The binary file must not be touched even though it contains the text.
