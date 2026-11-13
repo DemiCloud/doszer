@@ -28,14 +28,15 @@ specification, not this code, defines the format.
 ```
 cmd/doszer/          CLI entry point and command dispatch
 internal/manifest/   DOSZ.TOML parsing, key checking, validation, init template
+internal/build/      build pipeline (spec §6), archive-content validation (§11)
+internal/zipw/       deterministic ZIP writer (spec §8)
 spec/MANIFEST.md     The specification (normative)
 README.md            doszer usage, configuration, install workflow
 ```
 
-Planned packages: `internal/build` (pipeline), `internal/zipw` (deterministic
-ZIP writer), `internal/cue` (CUE parsing, track splitting), `internal/iso9660`,
-`internal/vhd` and `internal/fat` (disk image reading for `install`),
-`internal/config` (configuration layering).
+Planned packages: `internal/cue` (CUE parsing, track splitting),
+`internal/iso9660`, `internal/vhd` and `internal/fat` (disk image reading for
+`install`), `internal/config` (configuration layering).
 
 ## Conventions
 
@@ -80,25 +81,26 @@ Verified against DOSBox Pure 1.0 Preview 8 source.
 | Command | State |
 |---|---|
 | `init` | Implemented |
-| `build` | Not implemented |
+| `build` | Implemented except `[[extract]]` and media processing (§6.4) |
 | `install` | Not implemented |
 | `repack` | Not implemented |
 | `verify` | Not implemented |
 
 Manifest parsing and every manifest rule in specification §11 are
-implemented and tested. Archive-content rules in §11 (shell-owned files,
-`DOSBOX.BAT`) belong to `build` and `verify`.
+implemented and tested. `build` implements §6 in full except `[[extract]]`
+(§6.1) and media conversion (§6.4), which it rejects with a clear error, and
+enforces the archive-content rules of §11 (shell-owned files, `DOSBOX.BAT`).
+Those rules still apply independently to `verify`, once implemented, for
+archives built by other implementations.
 
 ## Next steps
 
-1. `build`, following specification §6 in order: collect, trim, flatten
-   (with rewrite suggestions for `--dry-run`), rewrite, text normalization,
-   exclusion, runtime files, deterministic ZIP output (§8).
+1. Media processing (`internal/cue`, `internal/iso9660`): CUE parsing, track
+   splitting, ISO extraction, normalized track hashes (§7), Ogg/WAV output,
+   then `[[extract]]` support in `build`.
 2. Configuration layering (`internal/config`).
-3. Media processing: CUE parsing, track splitting, ISO extraction, normalized
-   track hashes (§7), Ogg/WAV output.
-4. `repack` and `verify`.
-5. `install`: VHD (dynamic and fixed) and FAT32 reading, template diffing,
+3. `repack` and `verify`.
+4. `install`: VHD (dynamic and fixed) and FAT32 reading, template diffing,
    `.pure.zip` extraction, launching DOSBox Pure.
 
 ## Reference

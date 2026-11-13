@@ -1,0 +1,177 @@
+package build
+
+import (
+	"os"
+	"path"
+	"sort"
+	"strings"
+)
+
+// fileEntry is one file in the build, backed by disk or by in-memory content.
+type fileEntry struct {
+	diskPath string // absolute path to the backing file; "" if data is set
+	data     []byte // in-memory content; authoritative when non-nil
+}
+
+func diskEntry(path string) *fileEntry { return &fileEntry{diskPath: path} }
+func dataEntry(data []byte) *fileEntry { return &fileEntry{data: data} }
+
+// bytes returns the entry's content, reading from disk if necessary.
+func (e *fileEntry) bytes() ([]byte, error) {
+	if e.data != nil {
+		return e.data, nil
+	}
+	return os.ReadFile(e.diskPath)
+}
+
+// open streams the entry's content, avoiding a copy for disk-backed entries.
+func (e *fileEntry) open() (*os.File, []byte, error) {
+	if e.data != nil {
+		return nil, e.data, nil
+	}
+	f, err := os.Open(e.diskPath)
+	return f, nil, err
+}
+
+// fileSet is the build in progress. Paths match case-insensitively (§2),
+// keeping the most recently set casing.
+type fileSet struct {
+	files map[string]*fileEntry // canonical-case path -> entry
+	index map[string]string     // lower-case path -> canonical-case path
+}
+
+func newFileSet() *fileSet {
+	return &fileSet{files: map[string]*fileEntry{}, index: map[string]string{}}
+}
+
+// set adds or replaces path case-insensitively, adopting path's casing.
+func (fs *fileSet) set(path string, e *fileEntry) {
+	lower := strings.ToLower(path)
+	if existing, ok := fs.index[lower]; ok && existing != path {
+		delete(fs.files, existing)
+	}
+	fs.files[path] = e
+	fs.index[lower] = path
+}
+
+func (fs *fileSet) delete(path string) {
+	lower := strings.ToLower(path)
+	if existing, ok := fs.index[lower]; ok {
+		delete(fs.files, existing)
+		delete(fs.index, lower)
+	}
+}
+
+func (fs *fileSet) get(path string) (*fileEntry, bool) {
+	existing, ok := fs.index[strings.ToLower(path)]
+	if !ok {
+		return nil, false
+	}
+	return fs.files[existing], true
+}
+
+// paths returns every path, sorted by UTF-8 byte order (§8.2).
+func (fs *fileSet) paths() []string {
+	out := make([]string, 0, len(fs.files))
+	for p := range fs.files {
+		out = append(out, p)
+	}
+	sort.Strings(out) // already byte-wise over UTF-8
+	return out
+}
+
+// dirNode is a directory in the tree flatten builds from a fileSet.
+type dirNode struct {
+	files map[string]*fileEntry
+	dirs  map[string]*dirNode
+}
+
+func newDirNode() *dirNode {
+	return &dirNode{files: map[string]*fileEntry{}, dirs: map[string]*dirNode{}}
+}
+
+func buildTree(fs *fileSet) *dirNode {
+	root := newDirNode()
+	for p, e := range fs.files {
+		parts := strings.Split(p, "/")
+		cur := root
+		for i, part := range parts {
+			if i == len(parts)-1 {
+				cur.files[part] = e
+				continue
+			}
+			child, ok := cur.dirs[part]
+			if !ok {
+				child = newDirNode()
+				cur.dirs[part] = child
+			}
+			cur = child
+		}
+	}
+	return root
+}
+
+// flattenNode collapses single-subdirectory-only directories bottom-up
+// (§6.3), recording each collapsed name into dropped.
+func flattenNode(n *dirNode, dropped *[]string) {
+	for _, child := range n.dirs {
+		flattenNode(child, dropped)
+	}
+	n.dirs = collapseChildren(n.dirs, dropped)
+}
+
+// collapseChildren walks each entry's chain of single-subdirectory-only
+// directories down to where it bottoms out, and keeps that node instead.
+func collapseChildren(dirs map[string]*dirNode, dropped *[]string) map[string]*dirNode {
+	result := make(map[string]*dirNode, len(dirs))
+	for name, child := range dirs {
+		curName, curNode := name, child
+		for len(curNode.files) == 0 && len(curNode.dirs) == 1 {
+			*dropped = append(*dropped, curName)
+			for subName, subNode := range curNode.dirs {
+				curName, curNode = subName, subNode
+			}
+		}
+		result[curName] = curNode
+	}
+	return result
+}
+
+func collectPaths(n *dirNode, prefix string, out *fileSet) {
+	for name, e := range n.files {
+		out.set(path.Join(prefix, name), e)
+	}
+	for name, child := range n.dirs {
+		collectPaths(child, path.Join(prefix, name), out)
+	}
+}
+
+// flatten applies §6.3 to fs in place, returning changed paths (old -> new)
+// and the directory names collapsed away.
+func flatten(fs *fileSet, enabled bool) (moved map[string]string, dropped []string) {
+	if !enabled {
+		return nil, nil
+	}
+
+	byEntry := make(map[*fileEntry]string, len(fs.files))
+	for p, e := range fs.files {
+		byEntry[e] = p
+	}
+
+	root := buildTree(fs)
+	flattenNode(root, &dropped)
+
+	newFS := newFileSet()
+	collectPaths(root, "", newFS)
+
+	moved = map[string]string{}
+	for p, e := range newFS.files {
+		if old, ok := byEntry[e]; ok && old != p {
+			moved[old] = p
+		}
+	}
+
+	fs.files = newFS.files
+	fs.index = newFS.index
+	return moved, dropped
+}

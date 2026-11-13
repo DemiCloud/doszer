@@ -1,0 +1,60 @@
+package build
+
+import (
+	"testing"
+
+	"github.com/DemiCloud/doszer/internal/manifest"
+)
+
+func TestReplaceFold(t *testing.T) {
+	got, n := replaceFold(`SET PATH=C:\OLDPATH\BIN`, `C:\OLDPATH`, `C:\GAME`)
+	if n != 1 {
+		t.Errorf("n = %d, want 1", n)
+	}
+	if want := `SET PATH=C:\GAME\BIN`; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestReplaceFoldCaseInsensitive(t *testing.T) {
+	got, n := replaceFold(`path=c:\oldpath`, `C:\OLDPATH`, `C:\NEW`)
+	if n != 1 || got != `path=C:\NEW` {
+		t.Errorf("got %q, n=%d", got, n)
+	}
+}
+
+func TestApplyRewrite(t *testing.T) {
+	fs := newFileSet()
+	fs.set("A.INI", dataEntry([]byte(`DIR=C:\OLD`)))
+	fs.set("B.INI", dataEntry([]byte(`DIR=C:\OTHER`)))
+	fs.set("A.EXE", dataEntry([]byte(`C:\OLD binary blob`)))
+
+	rules := []manifest.Rewrite{
+		{From: `C:\OLD`, To: `C:\NEW`, Files: []string{"*.INI"}},
+		{From: "NOPE", To: "x", Files: []string{"*.INI"}},
+	}
+
+	hits, warnings, err := applyRewrite(fs, rules)
+	if err != nil {
+		t.Fatalf("applyRewrite: %v", err)
+	}
+
+	if len(hits) != 1 || hits[0].Path != "A.INI" || hits[0].Rule != 0 {
+		t.Errorf("hits = %+v, want one hit on A.INI for rule 0", hits)
+	}
+
+	a, _ := fs.get("A.INI")
+	if got, _ := a.bytes(); string(got) != `DIR=C:\NEW` {
+		t.Errorf("A.INI = %q", got)
+	}
+
+	// The binary file must not be touched even though it contains the text.
+	exe, _ := fs.get("A.EXE")
+	if got, _ := exe.bytes(); string(got) != `C:\OLD binary blob` {
+		t.Errorf("A.EXE was rewritten: %q", got)
+	}
+
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want one warning for the NOPE rule", warnings)
+	}
+}

@@ -11,8 +11,9 @@ Conformance level: Builder (Recipe planned).
 
 ## Status
 
-Early development. `init` is implemented; `build`, `install`, `repack` and
-`verify` are not yet.
+Early development. `init` and `build` are implemented; `build` cannot yet
+process media or `[[extract]]` entries. `install`, `repack` and `verify` are
+not yet implemented.
 
 ## Requirements
 

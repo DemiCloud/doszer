@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/manifest"
 )
 
@@ -29,7 +30,7 @@ var commands []command
 func init() {
 	commands = []command{
 		{"init", "write a commented DOSZ.TOML into a source directory", runInit},
-		{"build", "build an archive from a source directory", notImplemented("build")},
+		{"build", "build an archive from a source directory", runBuild},
 		{"install", "run an installer and extract the result into a source", notImplemented("install")},
 		{"repack", "rebuild an archive from its embedded manifest", notImplemented("repack")},
 		{"verify", "check an archive against its manifest and the specification", notImplemented("verify")},
@@ -62,11 +63,12 @@ func run(args []string) error {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprintf(w, "Usage: doszer <command> [arguments]\n\nCommands:\n")
+	fmt.Fprint(w, "doszer - build .dosz archives for DOSBox Pure from DOSZ.TOML manifests\n\n")
+	fmt.Fprint(w, "Usage: doszer <command> [arguments]\n\nCommands:\n")
 	for _, c := range commands {
 		fmt.Fprintf(w, "  %-8s %s\n", c.name, c.summary)
 	}
-	fmt.Fprintf(w, "\nRun 'doszer <command> -h' for command options.\n")
+	fmt.Fprint(w, "\nRun 'doszer <command> -h' for command options.\n")
 }
 
 // logError writes a timestamped error to stderr.
@@ -90,11 +92,20 @@ func runInit(args []string) error {
 	fs.StringVar(&o.Shell, "shell", "", "shell model: system shell path, without extension")
 	fs.StringVar(&o.OS, "os", "", "OS image model: OS image path, without extension")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "Usage: doszer init [options] <source>\n\nOptions:\n")
-		fs.PrintDefaults()
+		fmt.Fprint(fs.Output(), `doszer init - write a commented DOSZ.TOML into a source directory
+
+Usage: doszer init [options] <source>
+
+Options:
+  -exec STR   plain model: DOS program to run at startup
+  -force      overwrite an existing manifest
+  -name STR   canonical name (default: source directory name)
+  -os STR     OS image model: OS image path, without extension
+  -shell STR  shell model: system shell path, without extension
+`)
 	}
 
-	if err := fs.Parse(reorder(args)); err != nil {
+	if err := fs.Parse(reorder(fs, args)); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return errUsage
 		}
@@ -155,9 +166,114 @@ func runInit(args []string) error {
 	return nil
 }
 
-// reorder moves flags ahead of positional arguments so options may follow
-// the source path (flag stops parsing at the first non-flag argument).
-func reorder(args []string) []string {
+// runBuild implements `doszer build <source> [<output.dosz>]`.
+func runBuild(args []string) error {
+	fs := flag.NewFlagSet("build", flag.ContinueOnError)
+	name := fs.String("name", "", "override the manifest's effective name")
+	dryRun := fs.Bool("dry-run", false, "print the build plan without writing an archive")
+	strict := fs.Bool("strict", false, "fail if any layout.trim or layout.rewrite rule matches nothing")
+	fs.Usage = func() {
+		fmt.Fprint(fs.Output(), `doszer build - build an archive from a source directory
+
+Usage: doszer build [options] <source> [<output.dosz>]
+
+Options:
+  -dry-run    print the build plan without writing an archive
+  -name STR   override the manifest's effective name
+  -strict     fail if a trim/rewrite rule matches nothing
+`)
+	}
+
+	if err := fs.Parse(reorder(fs, args)); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return errUsage
+		}
+		return err
+	}
+	if fs.NArg() < 1 || fs.NArg() > 2 {
+		fs.Usage()
+		return errUsage
+	}
+
+	opts := build.Options{
+		SourceDir: fs.Arg(0),
+		Name:      *name,
+		DryRun:    *dryRun,
+		Strict:    *strict,
+	}
+	if fs.NArg() == 2 {
+		opts.OutputPath = fs.Arg(1)
+	}
+
+	res, err := build.Run(opts)
+	if res != nil {
+		printBuildPlan(res, opts.DryRun)
+	}
+	if err != nil {
+		return err
+	}
+
+	if opts.DryRun {
+		fmt.Printf("Dry run: would write %s (%d entries)\n", res.OutputPath, len(res.Entries))
+	} else {
+		fmt.Printf("Built %s (%d entries)\n", res.OutputPath, len(res.Entries))
+	}
+	return nil
+}
+
+// printBuildPlan reports what a build did or would do. Trim/flatten/rewrite
+// details are --dry-run only; warnings print either way.
+func printBuildPlan(res *build.Result, dryRun bool) {
+	if dryRun {
+		if len(res.Trimmed) > 0 {
+			fmt.Printf("Trim removes %d file(s):\n", len(res.Trimmed))
+			for _, p := range res.Trimmed {
+				fmt.Printf("  - %s\n", p)
+			}
+		}
+
+		if len(res.Moved) > 0 {
+			fmt.Printf("Flatten renames %d path(s):\n", len(res.Moved))
+			for _, m := range res.Moved {
+				fmt.Printf("  %s -> %s\n", m.From, m.To)
+			}
+		}
+
+		for i, rule := range res.Manifest.Layout.Rewrite {
+			var files []string
+			for _, h := range res.RewriteHits {
+				if h.Rule == i {
+					files = append(files, h.Path)
+				}
+			}
+			if len(files) > 0 {
+				fmt.Printf("Rewrite %q -> %q changes %d file(s):\n", rule.From, rule.To, len(files))
+				for _, p := range files {
+					fmt.Printf("  - %s\n", p)
+				}
+			}
+		}
+
+		if len(res.Suggestions) > 0 {
+			fmt.Println("Suggested rewrite rules, for paths flatten changed:")
+			for _, s := range res.Suggestions {
+				fmt.Println(s)
+			}
+		}
+
+		for _, w := range res.BinaryReferences {
+			fmt.Fprintf(os.Stderr, "[WARN] %s\n", w)
+		}
+	}
+
+	for _, w := range res.Warnings() {
+		fmt.Fprintf(os.Stderr, "[WARN] %s\n", w)
+	}
+}
+
+// reorder moves flags ahead of positional args so options may follow the
+// source path; it consults fs to tell bool flags from value-taking ones.
+func reorder(fs *flag.FlagSet, args []string) []string {
 	var flags, positional []string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -167,7 +283,7 @@ func reorder(args []string) []string {
 		}
 		if len(a) > 1 && a[0] == '-' {
 			flags = append(flags, a)
-			if !hasValue(a) && i+1 < len(args) && !isBoolFlag(a) {
+			if !hasValue(a) && i+1 < len(args) && !isBoolFlag(fs, a) {
 				flags = append(flags, args[i+1])
 				i++
 			}
@@ -187,10 +303,20 @@ func hasValue(flagArg string) bool {
 	return false
 }
 
-func isBoolFlag(flagArg string) bool {
+// isBoolFlag reports whether flagArg is a bool flag on fs, or -h/-help.
+func isBoolFlag(fs *flag.FlagSet, flagArg string) bool {
 	name := flagArg
 	for len(name) > 0 && name[0] == '-' {
 		name = name[1:]
 	}
-	return name == "force" || name == "h" || name == "help"
+	if name == "h" || name == "help" {
+		return true
+	}
+
+	f := fs.Lookup(name)
+	if f == nil {
+		return false
+	}
+	b, ok := f.Value.(interface{ IsBoolFlag() bool })
+	return ok && b.IsBoolFlag()
 }
