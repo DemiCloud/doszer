@@ -1,6 +1,8 @@
 # Build output
 /doszer
 /doszer.exe
+/build/
+/dist/
 *.test
 
 # Test/coverage artifacts

@@ -25,8 +25,9 @@ rewritten CUE). `verify` is implemented. `install` and `repack` are not yet.
 ## Building
 
 ```bash
-go build ./cmd/doszer
-go test ./...
+make build   # → build/doszer
+make test
+make help    # every target
 ```
 
 ## Commands

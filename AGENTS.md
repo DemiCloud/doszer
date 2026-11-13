@@ -33,6 +33,8 @@ internal/zipw/       deterministic ZIP writer (spec §8)
 internal/config/     configuration layering (README "Configuration")
 internal/cue/        CUE parsing, track byte ranges, normalized track hash (§7.2)
 internal/iso9660/    ISO 9660 reader, for [[extract]] (§5.7)
+internal/verify/     doszer verify: an archive against its manifest and spec §8/§11
+Makefile             build/test/vet/install/release (see `make help`)
 spec/MANIFEST.md     The specification (normative)
 README.md            doszer usage, configuration, install workflow
 ```
@@ -42,7 +44,9 @@ Planned packages: `internal/vhd` and `internal/fat` (disk image reading for
 
 ## Conventions
 
-- Go 1.24+. Code MUST pass `gofmt`, `go vet` and `go test ./...`.
+- Go 1.24+. Code MUST pass `gofmt`, `go vet` and `go test ./...` (`make vet`,
+  `make test`); `make build` for a local binary, `make help` for every
+  target.
 - Standard library first. Add a dependency only when reimplementing it would
   be substantial; current dependencies: `github.com/pelletier/go-toml/v2`.
 - External programs: only `ffmpeg`, for Ogg Vorbis encoding (no maintained

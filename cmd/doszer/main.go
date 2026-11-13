@@ -20,6 +20,9 @@ import (
 // errUsage signals that usage was already printed.
 var errUsage = errors.New("usage")
 
+// version is set via -ldflags "-X main.version=..." (see Makefile).
+var version = "dev"
+
 type command struct {
 	name    string
 	summary string
@@ -52,6 +55,10 @@ func run(args []string) error {
 		usage(os.Stderr)
 		return errUsage
 	}
+	if args[0] == "-V" || args[0] == "--version" || args[0] == "version" {
+		fmt.Println("doszer", version)
+		return nil
+	}
 
 	for _, c := range commands {
 		if c.name == args[0] {
@@ -70,6 +77,7 @@ func usage(w io.Writer) {
 		fmt.Fprintf(w, "  %-8s %s\n", c.name, c.summary)
 	}
 	fmt.Fprint(w, "\nRun 'doszer <command> -h' for command options.\n")
+	fmt.Fprint(w, "doszer --version/-V/version shows the version.\n")
 }
 
 // logError writes a timestamped error to stderr.
