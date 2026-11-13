@@ -2,6 +2,10 @@ package build_test
 
 import (
 	"archive/zip"
+	"bytes"
+	"crypto/sha1"
+	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -229,7 +233,7 @@ func TestRunDryRunWritesNothing(t *testing.T) {
 	}
 }
 
-func TestRunRejectsExtract(t *testing.T) {
+func TestRunFailsWhenMediaNotFound(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "DOSZ.TOML", `
 format = 1
@@ -246,9 +250,206 @@ to    = "GAME"
 `)
 
 	_, err := build.Run(build.Options{SourceDir: dir, OutputPath: filepath.Join(t.TempDir(), "out.dosz")})
-	if err == nil || !strings.Contains(err.Error(), "extract") {
-		t.Fatalf("Run error = %v, want an error mentioning extract", err)
+	if err == nil || !strings.Contains(err.Error(), "disc1") {
+		t.Fatalf("Run error = %v, want an error naming the unresolved media", err)
 	}
+}
+
+func TestRunExtractsFromMedia(t *testing.T) {
+	dir := t.TempDir()
+
+	iso := buildMinimalISO(t, "DATA.TXT", []byte("extracted content"))
+	writeFile(t, dir, "DISC/game.bin", string(iso))
+	writeFile(t, dir, "DISC/game.cue", "FILE \"game.bin\" BINARY\nTRACK 01 MODE1/2048\nINDEX 01 00:00:00\n")
+
+	sum := sha1.Sum(iso)
+	writeFile(t, dir, "DOSZ.TOML", fmt.Sprintf(`
+format = 1
+name   = "Extract Game"
+
+[[source.media]]
+id = "disc1"
+tracks = [{ type = "data", sha1 = "%x" }]
+
+[[extract]]
+media = "disc1"
+from  = "DATA.TXT"
+to    = "GAME/DATA.TXT"
+`, sum))
+
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	res, err := build.Run(build.Options{SourceDir: dir, OutputPath: out})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	found := false
+	for _, e := range res.Entries {
+		if e == "GAME/DATA.TXT" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Entries = %v, missing GAME/DATA.TXT", res.Entries)
+	}
+
+	entries := readZip(t, out)
+	if got := readZipFile(t, entries["GAME/DATA.TXT"]); got != "extracted content" {
+		t.Errorf("GAME/DATA.TXT = %q", got)
+	}
+}
+
+func TestRunExtractsDirectoryRecursively(t *testing.T) {
+	dir := t.TempDir()
+
+	iso := buildISOWithSubdir(t, "RESOURCE", map[string][]byte{
+		"A.DAT": []byte("file a"),
+		"B.DAT": []byte("file b"),
+	})
+	writeFile(t, dir, "DISC/game.bin", string(iso))
+	writeFile(t, dir, "DISC/game.cue", "FILE \"game.bin\" BINARY\nTRACK 01 MODE1/2048\nINDEX 01 00:00:00\n")
+
+	sum := sha1.Sum(iso)
+	writeFile(t, dir, "DOSZ.TOML", fmt.Sprintf(`
+format = 1
+name   = "Extract Dir Game"
+
+[[source.media]]
+id = "disc1"
+tracks = [{ type = "data", sha1 = "%x" }]
+
+[[extract]]
+media = "disc1"
+from  = "RESOURCE"
+to    = "GAME/RESOURCE"
+`, sum))
+
+	res, err := build.Run(build.Options{SourceDir: dir, OutputPath: filepath.Join(t.TempDir(), "out.dosz")})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	want := []string{"GAME/RESOURCE/A.DAT", "GAME/RESOURCE/B.DAT"}
+	for _, w := range want {
+		found := false
+		for _, e := range res.Entries {
+			if e == w {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("Entries = %v, missing %s", res.Entries, w)
+		}
+	}
+}
+
+const isoSectorSize = 2048
+
+// isoDirRecord builds one ECMA-119 Directory Record.
+func isoDirRecord(id string, isDir bool, lba, size uint32) []byte {
+	total := 33 + len(id)
+	if total%2 != 0 {
+		total++
+	}
+	rec := make([]byte, total)
+	rec[0] = byte(total)
+	binary.LittleEndian.PutUint32(rec[2:6], lba)
+	binary.BigEndian.PutUint32(rec[6:10], lba)
+	binary.LittleEndian.PutUint32(rec[10:14], size)
+	binary.BigEndian.PutUint32(rec[14:18], size)
+	if isDir {
+		rec[25] = 0x02
+	}
+	rec[32] = byte(len(id))
+	copy(rec[33:], id)
+	return rec
+}
+
+func isoPadSector(b []byte) []byte {
+	out := make([]byte, isoSectorSize)
+	copy(out, b)
+	return out
+}
+
+// isoVolumeDescriptors returns the system area, PVD (with the given root
+// directory record) and terminator: every ISO image's first 18 sectors.
+func isoVolumeDescriptors(root []byte, rootLBA uint32, rootSize int) []byte {
+	var out bytes.Buffer
+	out.Write(make([]byte, 16*isoSectorSize))
+
+	pvd := make([]byte, isoSectorSize)
+	pvd[0] = 1
+	copy(pvd[1:6], "CD001")
+	pvd[6] = 1
+	copy(pvd[156:190], isoDirRecord("\x00", true, rootLBA, uint32(rootSize)))
+	out.Write(pvd)
+
+	term := make([]byte, isoSectorSize)
+	term[0] = 255
+	copy(term[1:6], "CD001")
+	out.Write(term)
+
+	return out.Bytes()
+}
+
+// buildMinimalISO builds a minimal valid ISO 9660 image (ECMA-119) with a
+// single file at its root, for exercising extract end to end.
+func buildMinimalISO(t *testing.T, fileName string, content []byte) []byte {
+	t.Helper()
+
+	const fileLBA, rootLBA = 18, 19
+	root := bytes.Join([][]byte{
+		isoDirRecord("\x00", true, 0, 0),
+		isoDirRecord("\x01", true, 0, 0),
+		isoDirRecord(fileName+";1", false, fileLBA, uint32(len(content))),
+	}, nil)
+
+	var out bytes.Buffer
+	out.Write(isoVolumeDescriptors(root, rootLBA, len(root)))
+	out.Write(isoPadSector(content)) // sector 18: file
+	out.Write(isoPadSector(root))    // sector 19: root directory
+	return out.Bytes()
+}
+
+// buildISOWithSubdir builds a minimal ISO 9660 image with one subdirectory
+// containing two files, for exercising recursive directory extraction.
+func buildISOWithSubdir(t *testing.T, subdir string, files map[string][]byte) []byte {
+	t.Helper()
+
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	const firstFileLBA = 18
+	subdirLBA := uint32(firstFileLBA + len(names))
+	rootLBA := subdirLBA + 1
+
+	subdirRecords := [][]byte{
+		isoDirRecord("\x00", true, 0, 0),
+		isoDirRecord("\x01", true, 0, 0),
+	}
+	var fileSectors bytes.Buffer
+	for i, name := range names {
+		lba := uint32(firstFileLBA + i)
+		subdirRecords = append(subdirRecords, isoDirRecord(name+";1", false, lba, uint32(len(files[name]))))
+		fileSectors.Write(isoPadSector(files[name]))
+	}
+	subdirContent := bytes.Join(subdirRecords, nil)
+
+	root := bytes.Join([][]byte{
+		isoDirRecord("\x00", true, 0, 0),
+		isoDirRecord("\x01", true, 0, 0),
+		isoDirRecord(subdir, true, subdirLBA, uint32(len(subdirContent))),
+	}, nil)
+
+	var out bytes.Buffer
+	out.Write(isoVolumeDescriptors(root, rootLBA, len(root)))
+	out.Write(fileSectors.Bytes())
+	out.Write(isoPadSector(subdirContent)) // subdirLBA
+	out.Write(isoPadSector(root))          // rootLBA
+	return out.Bytes()
 }
 
 func TestRunStrictFailsOnUnmatchedTrim(t *testing.T) {

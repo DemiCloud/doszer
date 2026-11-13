@@ -10,13 +10,12 @@ import (
 	"github.com/DemiCloud/doszer/internal/manifest"
 )
 
-// collect performs §6.1. [[extract]] needs media processing (§6.4), not yet
-// implemented, so a manifest using it is rejected.
+// collect performs §6.1: the source directory's files, excluding
+// DOSZ.TOML, then every [[extract]] entry, then every [[file]] entry.
+//
+// Media conversion (§6.4 - disc images already sitting in the build,
+// independent of [[extract]]) is not implemented yet.
 func collect(sourceDir string, m *manifest.Manifest) (*fileSet, error) {
-	if len(m.Extract) > 0 {
-		return nil, fmt.Errorf("build: [[extract]] is not implemented yet (requires media processing)")
-	}
-
 	result := newFileSet()
 
 	err := filepath.WalkDir(sourceDir, func(p string, d fs.DirEntry, err error) error {
@@ -45,6 +44,16 @@ func collect(sourceDir string, m *manifest.Manifest) (*fileSet, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("collect: %w", err)
+	}
+
+	if len(m.Source.Media) > 0 {
+		media, err := locateMedia(sourceDir, m.Source.Media)
+		if err != nil {
+			return nil, err
+		}
+		if err := applyExtracts(result, media, m.Extract); err != nil {
+			return nil, err
+		}
 	}
 
 	for _, f := range m.File {

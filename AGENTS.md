@@ -31,12 +31,13 @@ internal/manifest/   DOSZ.TOML parsing, key checking, validation, init template
 internal/build/      build pipeline (spec §6), archive-content validation (§11)
 internal/zipw/       deterministic ZIP writer (spec §8)
 internal/config/     configuration layering (README "Configuration")
+internal/cue/        CUE parsing, track byte ranges, normalized track hash (§7.2)
+internal/iso9660/    ISO 9660 reader, for [[extract]] (§5.7)
 spec/MANIFEST.md     The specification (normative)
 README.md            doszer usage, configuration, install workflow
 ```
 
-Planned packages: `internal/cue` (CUE parsing, track splitting),
-`internal/iso9660`, `internal/vhd` and `internal/fat` (disk image reading for
+Planned packages: `internal/vhd` and `internal/fat` (disk image reading for
 `install`).
 
 ## Conventions
@@ -82,23 +83,32 @@ Verified against DOSBox Pure 1.0 Preview 8 source.
 | Command | State |
 |---|---|
 | `init` | Implemented |
-| `build` | Implemented except `[[extract]]` and media processing (§6.4) |
+| `build` | Implemented except whole-disc-image conversion (§6.4) |
 | `install` | Not implemented |
 | `repack` | Not implemented |
 | `verify` | Not implemented |
 
 Manifest parsing and every manifest rule in specification §11 are
-implemented and tested. `build` implements §6 in full except `[[extract]]`
-(§6.1) and media conversion (§6.4), which it rejects with a clear error, and
+implemented and tested. `build` implements §6 in full except media
+conversion (§6.4: converting a disc image already sitting in the build to
+ISO/Ogg/WAV with a rewritten CUE, independent of `[[extract]]`), and
 enforces the archive-content rules of §11 (shell-owned files, `DOSBOX.BAT`).
 Those rules still apply independently to `verify`, once implemented, for
 archives built by other implementations.
 
+`[[extract]]` and media identification (§7) are implemented: `build` finds
+the CUE sheet in the source tree matching each declared `[[source.media]]`
+entry by hashing its tracks (`internal/build/media.go`), rejecting the build
+if none matches or a hash differs, then resolves `[[extract]]`'s `from`
+path through `internal/iso9660` against the matched media's data track
+(materialized to a temp file via `internal/cue`).
+
 ## Next steps
 
-1. Media processing (`internal/cue`, `internal/iso9660`): CUE parsing, track
-   splitting, ISO extraction, normalized track hashes (§7), Ogg/WAV output,
-   then `[[extract]]` support in `build`.
+1. Media conversion (§6.4): ISO/Ogg/WAV output and rewritten CUE for a disc
+   image already sitting in the build. The Ogg/WAV CUE `FILE` type keyword
+   DOSBox Pure's `cdrom_image.cpp` expects needs verifying against its
+   source before writing this (ground rule: verify, don't assume).
 2. `repack` and `verify`.
 3. `install`: VHD (dynamic and fixed) and FAT32 reading, template diffing,
    `.pure.zip` extraction, launching DOSBox Pure, consuming
@@ -115,7 +125,11 @@ Behaviour worth preserving from it:
 
 - Single-BIN CUE splitting drops INDEX 00 pregap audio; compensate with a
   `PREGAP` equal to INDEX 01 minus INDEX 00 so absolute track positions are
-  unchanged.
-- Raw CD-DA in BIN files is 16-bit little-endian.
+  unchanged. Doesn't apply to `internal/cue`: it reads each track directly
+  from its resolved byte range rather than physically splitting the BIN, so
+  there's no shared absolute addressing to preserve.
+- Raw CD-DA in BIN files is 16-bit little-endian (`internal/cue` copies it
+  unchanged; no byte-swap needed for WAV, which is also little-endian).
 - Some ISO 9660 images have directory records that strict parsers reject;
-  parse leniently.
+  parse leniently (`internal/iso9660` skips a malformed record and keeps
+  going rather than failing the whole read).

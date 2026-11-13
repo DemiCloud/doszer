@@ -7,13 +7,15 @@ configuration.
 `doszer` is the reference implementation of the
 [DOSZ Manifest Specification](spec/MANIFEST.md).
 
-Conformance level: Builder (Recipe planned).
+Conformance level: Builder, plus `[[extract]]` and §7 media identification
+(Recipe, except §6.4's whole-disc-image conversion).
 
 ## Status
 
-Early development. `init` and `build` are implemented; `build` cannot yet
-process media or `[[extract]]` entries. `install`, `repack` and `verify` are
-not yet implemented.
+Early development. `init` and `build` are implemented, including
+`[[extract]]` and media identification (§7); `build` cannot yet convert a
+whole disc image already sitting in the build (§6.4 - ISO/Ogg/WAV output,
+rewritten CUE). `install`, `repack` and `verify` are not yet implemented.
 
 ## Requirements
 

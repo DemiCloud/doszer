@@ -1,6 +1,7 @@
 // Package build implements `doszer build`: spec §6's processing model,
-// producing a deterministic archive per §8. Media processing (§6.4) and
-// [[extract]] are not implemented yet.
+// producing a deterministic archive per §8. [[extract]] (§5.7) and media
+// identification (§7) are implemented; converting whole disc images already
+// sitting in the build (§6.4) is not, yet.
 package build
 
 import (
