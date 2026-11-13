@@ -22,8 +22,8 @@ func TestIsTextFile(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		if got := isTextFile(tt.path, tt.content); got != tt.want {
-			t.Errorf("isTextFile(%q, %q) = %v, want %v", tt.path, tt.content, got, tt.want)
+		if got := IsTextFile(tt.path, tt.content); got != tt.want {
+			t.Errorf("IsTextFile(%q, %q) = %v, want %v", tt.path, tt.content, got, tt.want)
 		}
 	}
 }
@@ -43,8 +43,8 @@ func TestNormalizeCRLF(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := normalizeCRLF([]byte(tt.in)); !bytes.Equal(got, []byte(tt.want)) {
-				t.Errorf("normalizeCRLF(%q) = %q, want %q", tt.in, got, tt.want)
+			if got := NormalizeCRLF([]byte(tt.in)); !bytes.Equal(got, []byte(tt.want)) {
+				t.Errorf("NormalizeCRLF(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
 	}

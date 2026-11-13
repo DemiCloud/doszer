@@ -52,6 +52,18 @@ Planned packages: `internal/vhd` and `internal/fat` (disk image reading for
   be substantial; current dependencies: `github.com/pelletier/go-toml/v2`.
 - External programs: only `ffmpeg`, for Ogg Vorbis encoding (no maintained
   pure-Go encoder). Invoke it with `-fflags +bitexact`.
+- `internal/zipw` registers its own Deflate compressor at
+  `flate.BestCompression` (level 9), scoped to its own `*zip.Writer`:
+  `archive/zip`'s built-in one uses level 5 (`register.go`'s
+  `newFlateWriter`), not even `flate.DefaultCompression` (6). Still weaker
+  than a multi-pass encoder like 7-Zip's; that gap is a known, open
+  tradeoff (see Reference), not a bug.
+- Manifest fields use `omitempty` (`internal/manifest/manifest.go`) so a
+  re-serialized manifest (`internal/build`'s `effectiveManifest`, used via
+  `addRuntimeFiles` by both `build` and `repack`) doesn't emit every unset
+  field as noise (`exec = ''`, `extract = []`, etc.) - confirmed against
+  go-toml/v2 to omit a whole empty table, not just an empty scalar, before
+  relying on it.
 - Errors: wrap with context, return to `main`, which prints
   `[YYYY-MM-DD HH:MM:SS] ERROR: <message>` to stderr and exits 1. Validation
   collects every error and reports them together (`errors.Join`).
@@ -99,11 +111,15 @@ conversion (§6.4: converting a disc image already sitting in the build to
 ISO/Ogg/WAV with a rewritten CUE, independent of `[[extract]]`), and
 enforces the archive-content rules of §11 (shell-owned files, `DOSBOX.BAT`).
 `verify` (`internal/verify`) applies those same rules, plus §8's
-determinism checks and §6.8's runtime-file presence, to an already-built
+determinism checks, §6.6's text normalization, §6.7's exclusions, and
+§6.8's runtime files - checking their *content* against what the embedded
+manifest implies (e.g. AUTOBOOT.DBP's bytes must match
+`build.BuildAutoboot(&m.Boot)` exactly, not just exist), to an already-built
 archive and its embedded manifest - including one not built by doszer.
-`build.ValidateArchiveContent` and `build.ShouldStore` are exported from
-`internal/build` specifically so `verify` can reuse them rather than
-duplicate the rules.
+`build.ValidateArchiveContent`, `build.ShouldStore`, `build.IsTextFile`,
+`build.NormalizeCRLF`, `build.IsExcluded`, `build.NeedsAutoboot` and
+`build.BuildAutoboot` are exported from `internal/build` specifically so
+`verify` (and `repack`) can reuse them rather than duplicate the rules.
 
 `[[extract]]` and media identification (§7) are implemented: `build` finds
 the CUE sheet in the source tree matching each declared `[[source.media]]`
@@ -113,14 +129,20 @@ path through `internal/iso9660` against the matched media's data track
 (materialized to a temp file via `internal/cue`).
 
 `repack` (`internal/repack`) rebuilds an archive from nothing but its own
-embedded manifest - no source directory, since none is available. It
-re-emits the archive's own entries unchanged except for the three §6.8
-runtime files, which it regenerates from the current embedded manifest the
-same way `build` does (`build.EffectiveManifest`/`NeedsAutoboot`/
-`BuildAutoboot`, now exported for this), case-insensitively replacing
-whatever was there before under those names. This also canonicalizes an
-archive that didn't conform to §8's determinism to begin with, since output
-always goes through the same `internal/zipw` writer `build` uses.
+embedded manifest - no source directory, since none is available. The
+archive's own entries stand in for §6.1's collect step (extract and media
+identification don't apply - whatever they'd have produced is already in
+the archive), then §6.2 onward runs exactly as it does for `build`:
+`build.Run` and `build.Repack` now share a `runPipeline` helper, so trim,
+flatten, rewrite and §6.6 text normalization genuinely apply, not just the
+runtime-file regeneration. This matters for retrofitting a manifest onto a
+legacy (non-doszer) archive, not only for re-packing one doszer already
+built - an earlier version of this command only regenerated the runtime
+files, silently skipping layout.trim/rewrite/§6.6 against a freshly
+inserted manifest, which a real retrofit attempt caught. It also
+canonicalizes an archive that didn't conform to §8's determinism to begin
+with, since output always goes through the same `internal/zipw` writer
+`build` uses.
 
 ## Next steps
 
@@ -135,6 +157,30 @@ always goes through the same `internal/zipw` writer `build` uses.
 `internal/config` is implemented (README "Configuration") but has no
 consumer yet: no command currently needs `system_dir`, `save_dir`,
 `dosbox_pure` or `templates`.
+
+## Open questions
+
+Raised by a real retrofit attempt (repacking a legacy archive); not yet
+decided, so not yet acted on:
+
+- **§8.2's fixed 1980-01-01 timestamp discards original file dates.**
+  A collected/extracted file's real mtime (e.g. a 1993 game's) is lost;
+  only the three generated runtime files (`AUTOBOOT.DBP`, the parent
+  marker, `DOSZ.TOML`) arguably need a fixed timestamp for determinism,
+  since §9 equivalence is defined over uncompressed content only anyway -
+  timestamps were never part of it. Changing this is a spec change
+  (ground rule: `spec/MANIFEST.md` first), not just a code change, and
+  needs its own reasoning about whether a per-file source timestamp is
+  itself deterministic enough to rely on (e.g. after a checkout or a
+  re-extraction from media) before `§8.2` is reworded.
+- **Deflate still trails a multi-pass encoder (e.g. 7-Zip) by a few
+  percent**, even at `flate.BestCompression` (see Conventions). Spec §9
+  doesn't require closing this gap (equivalence is over uncompressed
+  content), so it's a quality tradeoff, not a bug. Options if it's worth
+  pursuing: a stronger pure-Go encoder (e.g. a zopfli port - still
+  standard, deterministic Deflate, just a slower search), or a pluggable
+  compressor setting. Either is a new dependency or a user-facing option,
+  so it wants a decision, not a silent pick.
 
 ## Reference
 

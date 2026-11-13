@@ -67,6 +67,30 @@ func Run(opts Options) (*Result, error) {
 		return nil, err
 	}
 
+	fs, err := collect(opts.SourceDir, m)
+	if err != nil {
+		return nil, err
+	}
+
+	return runPipeline(fs, m, opts)
+}
+
+// Repack runs §6.2 onward (trim through the deterministic write) against an
+// already-collected set of entries, rather than a source directory: used by
+// `doszer repack` to rebuild an archive from nothing but its own embedded
+// manifest, treating the archive's own content as the collected build.
+// entries' keys are archive-relative paths; DOSZ.TOML must not be among
+// them (§6.1 excludes it from collect, same as a source directory).
+func Repack(entries map[string][]byte, m *manifest.Manifest, opts Options) (*Result, error) {
+	fs := newFileSet()
+	for p, data := range entries {
+		fs.set(p, dataEntry(data))
+	}
+	return runPipeline(fs, m, opts)
+}
+
+// runPipeline runs §6.2 onward against fs, shared by Run and Repack.
+func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options) (*Result, error) {
 	effectiveName := m.Name
 	if opts.Name != "" {
 		effectiveName = opts.Name
@@ -75,11 +99,6 @@ func Run(opts Options) (*Result, error) {
 	outputPath := opts.OutputPath
 	if outputPath == "" {
 		outputPath = effectiveName + ".dosz"
-	}
-
-	fs, err := collect(opts.SourceDir, m)
-	if err != nil {
-		return nil, err
 	}
 
 	res := &Result{Manifest: m, EffectiveName: effectiveName, OutputPath: outputPath, fs: fs}

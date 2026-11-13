@@ -91,8 +91,14 @@ var exclusionPatterns = []string{
 // exclude removes files matching §6.7.
 func exclude(fs *fileSet) {
 	for _, p := range fs.paths() {
-		if matchAny(exclusionPatterns, path.Base(p)) {
+		if IsExcluded(p) {
 			fs.delete(p)
 		}
 	}
+}
+
+// IsExcluded reports whether a path matches one of §6.7's exclusion
+// patterns.
+func IsExcluded(p string) bool {
+	return matchAny(exclusionPatterns, path.Base(p))
 }

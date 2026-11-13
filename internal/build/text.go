@@ -9,16 +9,16 @@ import (
 // textNamePatterns are the base-name globs for text files (§6.6).
 var textNamePatterns = []string{"*.BAT", "*.INI", "*.CONF", "CONFIG.SYS"}
 
-// isTextFile reports whether a file is a text file per §6.6.
-func isTextFile(fullPath string, content []byte) bool {
+// IsTextFile reports whether a file is a text file per §6.6.
+func IsTextFile(fullPath string, content []byte) bool {
 	if !matchAny(textNamePatterns, path.Base(fullPath)) {
 		return false
 	}
 	return bytes.IndexByte(content, 0) == -1
 }
 
-// normalizeCRLF converts line endings to CRLF and ensures a trailing one (§6.6).
-func normalizeCRLF(data []byte) []byte {
+// NormalizeCRLF converts line endings to CRLF and ensures a trailing one (§6.6).
+func NormalizeCRLF(data []byte) []byte {
 	s := string(data)
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\n", "\r\n")
@@ -36,10 +36,10 @@ func normalizeText(fs *fileSet) error {
 		if err != nil {
 			return err
 		}
-		if !isTextFile(p, content) {
+		if !IsTextFile(p, content) {
 			continue
 		}
-		fs.set(p, dataEntry(normalizeCRLF(content)))
+		fs.set(p, dataEntry(NormalizeCRLF(content)))
 	}
 	return nil
 }

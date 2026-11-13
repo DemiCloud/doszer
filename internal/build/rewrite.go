@@ -31,7 +31,7 @@ func applyRewrite(fs *fileSet, rules []manifest.Rewrite) ([]RewriteHit, []string
 			if err != nil {
 				return nil, nil, err
 			}
-			if !isTextFile(p, content) {
+			if !IsTextFile(p, content) {
 				continue
 			}
 

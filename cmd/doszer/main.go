@@ -313,10 +313,16 @@ Usage: doszer verify <file.dosz>
 // runRepack implements `doszer repack <input.dosz> [<output.dosz>]`.
 func runRepack(args []string) error {
 	fs := flag.NewFlagSet("repack", flag.ContinueOnError)
+	dryRun := fs.Bool("dry-run", false, "print the rebuild plan without writing an archive")
+	strict := fs.Bool("strict", false, "fail if any layout.trim or layout.rewrite rule matches nothing")
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), `doszer repack - rebuild an archive from its embedded manifest
 
-Usage: doszer repack <input.dosz> [<output.dosz>]
+Usage: doszer repack [options] <input.dosz> [<output.dosz>]
+
+Options:
+  -dry-run    print the rebuild plan without writing an archive
+  -strict     fail if a trim/rewrite rule matches nothing
 `)
 	}
 
@@ -331,17 +337,24 @@ Usage: doszer repack <input.dosz> [<output.dosz>]
 		return errUsage
 	}
 
-	opts := repack.Options{InputPath: fs.Arg(0)}
+	opts := repack.Options{InputPath: fs.Arg(0), DryRun: *dryRun, Strict: *strict}
 	if fs.NArg() == 2 {
 		opts.OutputPath = fs.Arg(1)
 	}
 
 	res, err := repack.Run(opts)
+	if res != nil {
+		printBuildPlan(res, opts.DryRun)
+	}
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Repacked %s (%d entries)\n", res.OutputPath, len(res.Entries))
+	if opts.DryRun {
+		fmt.Printf("Dry run: would write %s (%d entries)\n", res.OutputPath, len(res.Entries))
+	} else {
+		fmt.Printf("Repacked %s (%d entries)\n", res.OutputPath, len(res.Entries))
+	}
 	return nil
 }
 

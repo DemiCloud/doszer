@@ -495,6 +495,53 @@ shell = "dosbox_pure/Win31"
 	}
 }
 
+func TestRepackRunsTheFullPipeline(t *testing.T) {
+	m, err := manifest.Parse([]byte(`
+format = 1
+name   = "Legacy Game"
+
+[boot]
+exec = 'C:\GAME.EXE'
+
+[layout]
+trim = ["**/*.SKC"]
+
+[[layout.rewrite]]
+from  = "OLDPATH"
+to    = "NEWPATH"
+files = ["**/*.BAT"]
+`), "Legacy Game")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	entries := map[string][]byte{
+		"GAME.EXE":          []byte("binary"),
+		"README.SKC":        []byte("trim me"),
+		"AUTOEXEC.BAT":      []byte("OLDPATH\nSECOND LINE\n"), // LF only, no CRLF yet
+		"GAMENAME/DATA.DAT": []byte("nested"),
+	}
+
+	res, err := build.Repack(entries, m, build.Options{OutputPath: filepath.Join(t.TempDir(), "out.dosz")})
+	if err != nil {
+		t.Fatalf("Repack: %v", err)
+	}
+
+	for _, want := range res.Entries {
+		if want == "README.SKC" {
+			t.Error("trim should have removed README.SKC")
+		}
+	}
+
+	entries2 := readZip(t, res.OutputPath)
+	if got := readZipFile(t, entries2["AUTOEXEC.BAT"]); got != "NEWPATH\r\nSECOND LINE\r\n" {
+		t.Errorf("AUTOEXEC.BAT = %q, want rewrite + CRLF normalization applied", got)
+	}
+	if _, ok := entries2["GAMENAME/DATA.DAT"]; !ok {
+		t.Error("nested entries not collected into the pipeline")
+	}
+}
+
 func equalSlices(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

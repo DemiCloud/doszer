@@ -40,8 +40,8 @@ func BuildAutoboot(b *manifest.Boot) []byte {
 	return []byte(strings.Join(lines, "\r\n"))
 }
 
-// EffectiveManifest re-serializes m with the effective name set (§8.3).
-func EffectiveManifest(m *manifest.Manifest, name string) ([]byte, error) {
+// effectiveManifest re-serializes m with the effective name set (§8.3).
+func effectiveManifest(m *manifest.Manifest, name string) ([]byte, error) {
 	effective := *m
 	effective.Name = name
 
@@ -62,7 +62,7 @@ func addRuntimeFiles(fs *fileSet, m *manifest.Manifest, effectiveName string) er
 		fs.set(m.Boot.Parent+".parent", dataEntry([]byte{}))
 	}
 
-	data, err := EffectiveManifest(m, effectiveName)
+	data, err := effectiveManifest(m, effectiveName)
 	if err != nil {
 		return err
 	}

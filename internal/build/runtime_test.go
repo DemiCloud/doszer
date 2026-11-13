@@ -58,7 +58,7 @@ func TestEffectiveManifestSetsName(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	data, err := EffectiveManifest(m, "Override Name")
+	data, err := effectiveManifest(m, "Override Name")
 	if err != nil {
 		t.Fatalf("effectiveManifest: %v", err)
 	}

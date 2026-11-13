@@ -39,7 +39,7 @@ func suggestRewrites(fs *fileSet, dropped []string) (suggestions []string, binar
 				continue
 			}
 
-			if isTextFile(p, content) {
+			if IsTextFile(p, content) {
 				textFiles = append(textFiles, p)
 			} else {
 				binaryRefs = append(binaryRefs, fmt.Sprintf("%s references %q but is not a text file (§6.6); cannot rewrite automatically", p, name))

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DemiCloud/doszer/internal/build"
@@ -316,5 +317,89 @@ shell = "dosbox_pure/Win31"
 	_, err = repack.Run(repack.Options{InputPath: in, OutputPath: filepath.Join(t.TempDir(), "out.dosz")})
 	if err == nil {
 		t.Fatal("Run should reject a shell-owned file under the shell model")
+	}
+}
+
+// buildLegacyArchive builds an archive with a plain zip.Writer, never going
+// through doszer build - simulating a pre-existing game archive someone
+// wants to retrofit a manifest onto, or any archive from a different
+// implementation.
+func buildLegacyArchive(t *testing.T, manifestBody string, files map[string]string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "legacy.dosz")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := zip.NewWriter(f)
+	write := func(name, content string) {
+		fw, err := w.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fw.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(manifest.FileName, manifestBody)
+	for name, content := range files {
+		write(name, content)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// TestRepackAppliesLayoutToALegacyArchive is the regression case a real
+// retrofit run found: repack must actually run trim/rewrite/text
+// normalization against the archive's own content when a manifest with
+// layout rules is inserted into a legacy (non-doszer-built) archive, not
+// just regenerate the runtime files.
+func TestRepackAppliesLayoutToALegacyArchive(t *testing.T) {
+	in := buildLegacyArchive(t, `
+format = 1
+name   = "Legacy Game"
+
+[boot]
+exec = 'C:\GAME.EXE'
+
+[layout]
+trim = ["**/*.SKC"]
+
+[[layout.rewrite]]
+from  = 'C:\OLDPATH'
+to    = 'C:\NEWPATH'
+files = ["**/*.BAT"]
+`, map[string]string{
+		"GAME.EXE":    "binary",
+		"INSTALL.SKC": "should be trimmed",
+		"dosbox.bat":  "@ECHO OFF\r\nC:\\OLDPATH\\GAME.EXE\r\nexit\n",
+	})
+
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	res, err := repack.Run(repack.Options{InputPath: in, OutputPath: out})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, name := range res.Entries {
+		if strings.EqualFold(filepath.Ext(name), ".skc") {
+			t.Errorf("trim should have removed %s", name)
+		}
+	}
+
+	entries := readZip(t, out)
+	if _, ok := entries["INSTALL.SKC"]; ok {
+		t.Error("INSTALL.SKC present in output, trim did not run")
+	}
+
+	got := readZipFile(t, entries["dosbox.bat"])
+	want := "@ECHO OFF\r\nC:\\NEWPATH\\GAME.EXE\r\nexit\r\n"
+	if got != want {
+		t.Errorf("dosbox.bat = %q, want %q (rewrite + CRLF normalization applied)", got, want)
 	}
 }

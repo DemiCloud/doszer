@@ -268,6 +268,74 @@ parent = "Shared.shell"
 	}
 }
 
+func TestVerifyRejectsNonCRLFTextFile(t *testing.T) {
+	path := buildArchive(t, plainManifest)
+	rewriteZip(t, path, func(w *zip.Writer, f *zip.File) error {
+		if f.Name != "AUTOBOOT.DBP" {
+			return copyEntry(w, f)
+		}
+		// Add a batch file with LF-only line endings after the fact,
+		// simulating a repack (or a legacy archive) that skipped §6.6.
+		if err := copyEntry(w, f); err != nil {
+			return err
+		}
+		fw, err := w.Create("AUTOEXEC.BAT")
+		if err != nil {
+			return err
+		}
+		_, err = fw.Write([]byte("@ECHO OFF\nGAME.EXE\n"))
+		return err
+	})
+
+	err := verify.Verify(path)
+	if err == nil || !contains(err.Error(), "not CRLF-normalized") {
+		t.Fatalf("Verify() = %v, want a CRLF-normalization error", err)
+	}
+}
+
+func TestVerifyRejectsExcludedFile(t *testing.T) {
+	path := buildArchive(t, plainManifest)
+	rewriteZip(t, path, func(w *zip.Writer, f *zip.File) error {
+		if err := copyEntry(w, f); err != nil {
+			return err
+		}
+		if f.Name != "DOSZ.TOML" {
+			return nil
+		}
+		fw, err := w.Create("desktop.ini")
+		if err != nil {
+			return err
+		}
+		_, err = fw.Write([]byte("[.ShellClassInfo]"))
+		return err
+	})
+
+	err := verify.Verify(path)
+	if err == nil || !contains(err.Error(), "must not be in the archive") {
+		t.Fatalf("Verify() = %v, want an exclusion error", err)
+	}
+}
+
+func TestVerifyRejectsStaleAutoboot(t *testing.T) {
+	path := buildArchive(t, plainManifest)
+	rewriteZip(t, path, func(w *zip.Writer, f *zip.File) error {
+		if f.Name != "AUTOBOOT.DBP" {
+			return copyEntry(w, f)
+		}
+		fw, err := w.CreateHeader(&f.FileHeader)
+		if err != nil {
+			return err
+		}
+		_, err = fw.Write([]byte("STALE"))
+		return err
+	})
+
+	err := verify.Verify(path)
+	if err == nil || !contains(err.Error(), "does not match the manifest's boot settings") {
+		t.Fatalf("Verify() = %v, want a stale-AUTOBOOT.DBP error", err)
+	}
+}
+
 // --- test helpers: rewrite an existing archive, entry by entry ---
 
 func readEntry(f *zip.File) ([]byte, error) {

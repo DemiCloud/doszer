@@ -4,6 +4,7 @@ package verify
 
 import (
 	"archive/zip"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -92,14 +93,31 @@ func checkDeterministic(files []*zip.File) []error {
 }
 
 // checkWithManifest enforces the rules that depend on the embedded
-// manifest: §8.1's store requirements, §11's archive-content rules, and the
-// presence of the runtime files §6.8 requires.
+// manifest: §8.1's store requirements, §6.6's text normalization, §6.7's
+// exclusions, §11's archive-content rules, and the runtime files §6.8
+// requires - not just their presence, but their content.
 func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.Manifest) []error {
 	var errs []error
 
 	for _, name := range names {
-		if build.ShouldStore(name, m.Pack.Store) && byName[name].Method != zip.Store {
+		f := byName[name]
+
+		if build.ShouldStore(name, m.Pack.Store) && f.Method != zip.Store {
 			errs = append(errs, fmt.Errorf("%s: must be stored, not deflated (§8.1)", name))
+		}
+		if build.IsExcluded(name) {
+			errs = append(errs, fmt.Errorf("%s: must not be in the archive (§6.7)", name))
+		}
+
+		content, err := readZipFile(f)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", name, err))
+			continue
+		}
+		if build.IsTextFile(name, content) {
+			if !bytes.Equal(content, build.NormalizeCRLF(content)) {
+				errs = append(errs, fmt.Errorf("%s: not CRLF-normalized (§6.6)", name))
+			}
 		}
 	}
 
@@ -107,9 +125,14 @@ func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.
 		errs = append(errs, err)
 	}
 
-	if needsAutoboot(&m.Boot) {
-		if _, ok := findFold(byName, "AUTOBOOT.DBP"); !ok {
+	if build.NeedsAutoboot(&m.Boot) {
+		f, ok := findFold(byName, "AUTOBOOT.DBP")
+		if !ok {
 			errs = append(errs, fmt.Errorf("missing AUTOBOOT.DBP (§6.8)"))
+		} else if content, err := readZipFile(f); err == nil {
+			if want := build.BuildAutoboot(&m.Boot); !bytes.Equal(content, want) {
+				errs = append(errs, fmt.Errorf("%s: content does not match the manifest's boot settings (§6.8), got %q want %q", f.Name, content, want))
+			}
 		}
 	}
 
@@ -125,12 +148,6 @@ func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.
 	}
 
 	return errs
-}
-
-// needsAutoboot mirrors internal/build's rule for when AUTOBOOT.DBP is
-// required (§6.8): any of exec, shell, os, disc or skip set.
-func needsAutoboot(b *manifest.Boot) bool {
-	return b.Exec != "" || b.Shell != "" || b.OS != "" || b.Disc != "" || b.Skip != nil
 }
 
 // findFold looks up name in byName case-insensitively (§2).
