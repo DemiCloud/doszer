@@ -10,13 +10,13 @@ import (
 	"github.com/DemiCloud/doszer/internal/manifest"
 )
 
-// needsAutoboot reports whether boot settings require an AUTOBOOT.DBP (§6.8).
-func needsAutoboot(b *manifest.Boot) bool {
+// NeedsAutoboot reports whether boot settings require an AUTOBOOT.DBP (§6.8).
+func NeedsAutoboot(b *manifest.Boot) bool {
 	return b.Exec != "" || b.Shell != "" || b.OS != "" || b.Disc != "" || b.Skip != nil
 }
 
-// buildAutoboot renders AUTOBOOT.DBP per §6.8.1.
-func buildAutoboot(b *manifest.Boot) []byte {
+// BuildAutoboot renders AUTOBOOT.DBP per §6.8.1.
+func BuildAutoboot(b *manifest.Boot) []byte {
 	line1 := ""
 	switch {
 	case b.Exec != "":
@@ -40,8 +40,8 @@ func buildAutoboot(b *manifest.Boot) []byte {
 	return []byte(strings.Join(lines, "\r\n"))
 }
 
-// effectiveManifest re-serializes m with the effective name set (§8.3).
-func effectiveManifest(m *manifest.Manifest, name string) ([]byte, error) {
+// EffectiveManifest re-serializes m with the effective name set (§8.3).
+func EffectiveManifest(m *manifest.Manifest, name string) ([]byte, error) {
 	effective := *m
 	effective.Name = name
 
@@ -54,15 +54,15 @@ func effectiveManifest(m *manifest.Manifest, name string) ([]byte, error) {
 
 // addRuntimeFiles generates §6.8's files, replacing any file of the same name.
 func addRuntimeFiles(fs *fileSet, m *manifest.Manifest, effectiveName string) error {
-	if needsAutoboot(&m.Boot) {
-		fs.set("AUTOBOOT.DBP", dataEntry(buildAutoboot(&m.Boot)))
+	if NeedsAutoboot(&m.Boot) {
+		fs.set("AUTOBOOT.DBP", dataEntry(BuildAutoboot(&m.Boot)))
 	}
 
 	if m.Boot.Parent != "" {
 		fs.set(m.Boot.Parent+".parent", dataEntry([]byte{}))
 	}
 
-	data, err := effectiveManifest(m, effectiveName)
+	data, err := EffectiveManifest(m, effectiveName)
 	if err != nil {
 		return err
 	}

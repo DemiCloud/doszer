@@ -36,18 +36,18 @@ func TestBuildAutoboot(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := string(buildAutoboot(&tt.boot)); got != tt.want {
-				t.Errorf("buildAutoboot(%+v) = %q, want %q", tt.boot, got, tt.want)
+			if got := string(BuildAutoboot(&tt.boot)); got != tt.want {
+				t.Errorf("BuildAutoboot(%+v) = %q, want %q", tt.boot, got, tt.want)
 			}
 		})
 	}
 }
 
 func TestNeedsAutoboot(t *testing.T) {
-	if needsAutoboot(&manifest.Boot{}) {
+	if NeedsAutoboot(&manifest.Boot{}) {
 		t.Error("empty boot should not need AUTOBOOT.DBP")
 	}
-	if !needsAutoboot(&manifest.Boot{Disc: "Disc 1"}) {
+	if !NeedsAutoboot(&manifest.Boot{Disc: "Disc 1"}) {
 		t.Error("disc alone should need AUTOBOOT.DBP")
 	}
 }
@@ -58,7 +58,7 @@ func TestEffectiveManifestSetsName(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 
-	data, err := effectiveManifest(m, "Override Name")
+	data, err := EffectiveManifest(m, "Override Name")
 	if err != nil {
 		t.Fatalf("effectiveManifest: %v", err)
 	}

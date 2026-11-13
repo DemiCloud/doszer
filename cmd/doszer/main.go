@@ -14,6 +14,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/repack"
 	"github.com/DemiCloud/doszer/internal/verify"
 )
 
@@ -36,7 +37,7 @@ func init() {
 		{"init", "write a commented DOSZ.TOML into a source directory", runInit},
 		{"build", "build an archive from a source directory", runBuild},
 		{"install", "run an installer and extract the result into a source", notImplemented("install")},
-		{"repack", "rebuild an archive from its embedded manifest", notImplemented("repack")},
+		{"repack", "rebuild an archive from its embedded manifest", runRepack},
 		{"verify", "check an archive against its manifest and the specification", runVerify},
 	}
 }
@@ -306,6 +307,41 @@ Usage: doszer verify <file.dosz>
 	}
 
 	fmt.Printf("%s conforms to the specification\n", fs.Arg(0))
+	return nil
+}
+
+// runRepack implements `doszer repack <input.dosz> [<output.dosz>]`.
+func runRepack(args []string) error {
+	fs := flag.NewFlagSet("repack", flag.ContinueOnError)
+	fs.Usage = func() {
+		fmt.Fprint(fs.Output(), `doszer repack - rebuild an archive from its embedded manifest
+
+Usage: doszer repack <input.dosz> [<output.dosz>]
+`)
+	}
+
+	if err := fs.Parse(reorder(fs, args)); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return errUsage
+		}
+		return err
+	}
+	if fs.NArg() < 1 || fs.NArg() > 2 {
+		fs.Usage()
+		return errUsage
+	}
+
+	opts := repack.Options{InputPath: fs.Arg(0)}
+	if fs.NArg() == 2 {
+		opts.OutputPath = fs.Arg(1)
+	}
+
+	res, err := repack.Run(opts)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Repacked %s (%d entries)\n", res.OutputPath, len(res.Entries))
 	return nil
 }
 

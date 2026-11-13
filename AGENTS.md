@@ -34,6 +34,7 @@ internal/config/     configuration layering (README "Configuration")
 internal/cue/        CUE parsing, track byte ranges, normalized track hash (§7.2)
 internal/iso9660/    ISO 9660 reader, for [[extract]] (§5.7)
 internal/verify/     doszer verify: an archive against its manifest and spec §8/§11
+internal/repack/     doszer repack: rebuild an archive from its own embedded manifest
 Makefile             build/test/vet/install/release (see `make help`)
 spec/MANIFEST.md     The specification (normative)
 README.md            doszer usage, configuration, install workflow
@@ -89,7 +90,7 @@ Verified against DOSBox Pure 1.0 Preview 8 source.
 | `init` | Implemented |
 | `build` | Implemented except whole-disc-image conversion (§6.4) |
 | `install` | Not implemented |
-| `repack` | Not implemented |
+| `repack` | Implemented |
 | `verify` | Implemented |
 
 Manifest parsing and every manifest rule in specification §11 are
@@ -111,17 +112,23 @@ if none matches or a hash differs, then resolves `[[extract]]`'s `from`
 path through `internal/iso9660` against the matched media's data track
 (materialized to a temp file via `internal/cue`).
 
+`repack` (`internal/repack`) rebuilds an archive from nothing but its own
+embedded manifest - no source directory, since none is available. It
+re-emits the archive's own entries unchanged except for the three §6.8
+runtime files, which it regenerates from the current embedded manifest the
+same way `build` does (`build.EffectiveManifest`/`NeedsAutoboot`/
+`BuildAutoboot`, now exported for this), case-insensitively replacing
+whatever was there before under those names. This also canonicalizes an
+archive that didn't conform to §8's determinism to begin with, since output
+always goes through the same `internal/zipw` writer `build` uses.
+
 ## Next steps
 
 1. Media conversion (§6.4): ISO/Ogg/WAV output and rewritten CUE for a disc
    image already sitting in the build. The Ogg/WAV CUE `FILE` type keyword
    DOSBox Pure's `cdrom_image.cpp` expects needs verifying against its
    source before writing this (ground rule: verify, don't assume).
-2. `repack`: rebuild an archive from its embedded manifest. `verify`
-   already has the archive-reading half of this (open, find DOSZ.TOML,
-   parse it); repack adds re-running the build pipeline against the
-   embedded manifest's source media and comparing the result (§9).
-3. `install`: VHD (dynamic and fixed) and FAT32 reading, template diffing,
+2. `install`: VHD (dynamic and fixed) and FAT32 reading, template diffing,
    `.pure.zip` extraction, launching DOSBox Pure, consuming
    `internal/config`'s `SystemDir`/`SaveDir`/`DosboxPure`/`Templates`.
 
