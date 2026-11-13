@@ -1,0 +1,24 @@
+# Build output
+/doszer
+/doszer.exe
+*.test
+
+# Test/coverage artifacts
+*.out
+
+# Example archives produced while testing locally
+*.dosz
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Editor/tool local state
+.claude/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Stray local backup, not part of the repo
+doszer.tar.gz
