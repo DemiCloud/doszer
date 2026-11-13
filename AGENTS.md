@@ -30,13 +30,14 @@ cmd/doszer/          CLI entry point and command dispatch
 internal/manifest/   DOSZ.TOML parsing, key checking, validation, init template
 internal/build/      build pipeline (spec §6), archive-content validation (§11)
 internal/zipw/       deterministic ZIP writer (spec §8)
+internal/config/     configuration layering (README "Configuration")
 spec/MANIFEST.md     The specification (normative)
 README.md            doszer usage, configuration, install workflow
 ```
 
 Planned packages: `internal/cue` (CUE parsing, track splitting),
 `internal/iso9660`, `internal/vhd` and `internal/fat` (disk image reading for
-`install`), `internal/config` (configuration layering).
+`install`).
 
 ## Conventions
 
@@ -98,10 +99,14 @@ archives built by other implementations.
 1. Media processing (`internal/cue`, `internal/iso9660`): CUE parsing, track
    splitting, ISO extraction, normalized track hashes (§7), Ogg/WAV output,
    then `[[extract]]` support in `build`.
-2. Configuration layering (`internal/config`).
-3. `repack` and `verify`.
-4. `install`: VHD (dynamic and fixed) and FAT32 reading, template diffing,
-   `.pure.zip` extraction, launching DOSBox Pure.
+2. `repack` and `verify`.
+3. `install`: VHD (dynamic and fixed) and FAT32 reading, template diffing,
+   `.pure.zip` extraction, launching DOSBox Pure, consuming
+   `internal/config`'s `SystemDir`/`SaveDir`/`DosboxPure`/`Templates`.
+
+`internal/config` is implemented (README "Configuration") but has no
+consumer yet: no command currently needs `system_dir`, `save_dir`,
+`dosbox_pure` or `templates`.
 
 ## Reference
 

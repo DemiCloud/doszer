@@ -69,10 +69,12 @@ doszer build "Example Game"
 Every setting can be given as a flag. Precedence, highest first:
 
 1. Command-line flags
-2. `<source>/DOSZ.TOML` (per-game settings)
+2. `<source>/DOSZ.TOML`'s `[x-doszer]` table (per-game settings)
 3. `./doszer.toml`
 4. `$XDG_CONFIG_HOME/doszer/config.toml` (default `~/.config/doszer/config.toml`)
 5. Built-in defaults
+
+`doszer.toml` and the user config file take the settings at top level:
 
 ```toml
 system_dir  = "/path/to/system"      # resolves and checks os/shell targets
@@ -83,6 +85,17 @@ ogg_quality = 6
 [templates]                          # pristine OS images used by install
 "dosbox_pure/Win98" = "/path/to/Win98.template"
 ```
+
+A manifest overrides them the same way, under `[x-doszer]` (spec §5.9's
+extension-key namespace, so the manifest schema doesn't reject it):
+
+```toml
+[x-doszer]
+ogg_quality = 10
+```
+
+`templates` merges by key across layers; every other setting is replaced
+whole by the most specific layer that sets it.
 
 ## Install
 
