@@ -465,3 +465,24 @@ func toDOSTime(t time.Time) (date, timeField uint16) {
 	timeField = uint16(t.Second()/2 + t.Minute()<<5 + t.Hour()<<11)
 	return date, timeField
 }
+
+func TestVerifyDetectsCorruptBinaryEntry(t *testing.T) {
+	// GAME.EXE isn't a text file, so verify streams it rather than
+	// reading it into memory; the CRC-32 check must still catch damage.
+	path := buildArchive(t, plainManifest+"\n[pack]\nstore = [\"exe\"]\n")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := bytes.Index(data, []byte("binary"))
+	if i < 0 {
+		t.Fatal("stored GAME.EXE content not found")
+	}
+	copy(data[i:], "BINARY")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := verify.Verify(path); err == nil {
+		t.Fatal("Verify accepted a corrupted entry")
+	}
+}

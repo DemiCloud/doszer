@@ -118,6 +118,15 @@ func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.
 			errs = append(errs, fmt.Errorf("%s: must not be in the archive (§6.7)", name))
 		}
 
+		// Only a file named like a text file (§6.6) needs its content in
+		// memory; every other entry is streamed, which still checks its
+		// CRC-32, so a large disc image costs no memory.
+		if !build.IsTextFile(name, nil) {
+			if err := checkCRC(f); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", name, err))
+			}
+			continue
+		}
 		content, err := readZipFile(f)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", name, err))
@@ -182,6 +191,18 @@ func findFold(byName map[string]*zip.File, name string) (*zip.File, bool) {
 		}
 	}
 	return nil, false
+}
+
+// checkCRC reads an entry through, which makes archive/zip verify its
+// CRC-32 against the stored one.
+func checkCRC(f *zip.File) error {
+	rc, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	_, err = io.Copy(io.Discard, rc)
+	return err
 }
 
 func readZipFile(f *zip.File) ([]byte, error) {
