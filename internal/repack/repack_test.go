@@ -667,3 +667,26 @@ func TestRepackOfABuildIsIdentical(t *testing.T) {
 		t.Error("repacking a fresh build changed its bytes")
 	}
 }
+
+// TestRepackInPlace: writing over the input must not destroy it while it
+// is still being read (the archive is renamed into place once complete).
+func TestRepackInPlace(t *testing.T) {
+	in := buildArchive(t, plainManifest, map[string]string{
+		"GAME.EXE": strings.Repeat("binary content ", 10000),
+		"DATA.BIN": strings.Repeat("more data ", 10000),
+	})
+	before, _ := os.ReadFile(in)
+	if _, err := repack.Run(repack.Options{InputPath: in, OutputPath: in}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if err := verify.Verify(in); err != nil {
+		t.Fatalf("Verify after an in-place repack: %v", err)
+	}
+	after, _ := os.ReadFile(in)
+	if !bytes.Equal(before, after) {
+		t.Error("an in-place repack of a fresh build changed it")
+	}
+	if left, _ := filepath.Glob(filepath.Join(filepath.Dir(in), ".doszer-*")); len(left) > 0 {
+		t.Errorf("temporary files left behind: %v", left)
+	}
+}

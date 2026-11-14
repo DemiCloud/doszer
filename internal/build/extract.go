@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DemiCloud/doszer/internal/cue"
+	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/iso9660"
 	"github.com/DemiCloud/doszer/internal/manifest"
 )
@@ -70,6 +71,7 @@ func openDataTrack(m resolvedMedia, tempFiles *[]*os.File) (*iso9660.Image, erro
 		return nil, err
 	}
 	*tempFiles = append(*tempFiles, tmp)
+	interrupt.Remove(tmp.Name()) // left registered: removing a removed file is harmless
 
 	rc, err := m.openTrack(track)
 	if err != nil {

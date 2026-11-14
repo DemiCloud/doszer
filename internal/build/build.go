@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/zipw"
 )
@@ -158,21 +159,27 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, mediaWarnings 
 		return nil, err
 	}
 
-	// Converted tracks are written next to the output archive, which needs
-	// room for them anyway, rather than to a possibly RAM-backed /tmp; the
-	// directory lives until writeArchive has copied them in.
+	// Converted tracks, zipw's spools and the archive itself are written
+	// next to the output, which needs room for them anyway, rather than to a
+	// possibly RAM-backed /tmp; the directory lives until the archive is
+	// renamed into place.
 	var tmp string
+	unregister := func() {}
 	defer func() {
 		if tmp != "" {
 			if rmErr := os.RemoveAll(tmp); err == nil {
 				err = rmErr
 			}
+			unregister()
 		}
 	}()
 	tmpDir := func() (string, error) {
 		var mkErr error
 		if tmp == "" {
-			tmp, mkErr = os.MkdirTemp(filepath.Dir(outputPath), ".doszer-media-")
+			tmp, mkErr = os.MkdirTemp(filepath.Dir(outputPath), ".doszer-build-")
+			if mkErr == nil {
+				unregister = interrupt.Remove(tmp)
+			}
 		}
 		return tmp, mkErr
 	}
@@ -219,20 +226,26 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, mediaWarnings 
 		return res, nil
 	}
 
-	out, err := os.Create(outputPath)
+	// Written beside the output and renamed into place only once complete:
+	// a failed build never leaves a partial archive or destroys an
+	// existing one - including the input, when repack writes over it.
+	dir, err := tmpDir()
 	if err != nil {
 		return res, err
 	}
-	spoolDir, err := tmpDir()
+	partial := filepath.Join(dir, "output.dosz")
+	out, err := os.Create(partial)
 	if err != nil {
-		out.Close()
 		return res, err
 	}
-	if err := writeArchive(fs, m, out, spoolDir); err != nil {
+	if err := writeArchive(fs, m, out, dir); err != nil {
 		out.Close()
 		return res, err
 	}
 	if err := out.Close(); err != nil {
+		return res, err
+	}
+	if err := os.Rename(partial, outputPath); err != nil {
 		return res, err
 	}
 

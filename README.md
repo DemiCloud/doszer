@@ -78,7 +78,7 @@ details:
   so the same `ffmpeg` and `libvorbis` versions produce identical files.
   WAV files are written directly.
 - Tracks are encoded in parallel, one per CPU, and written to a temporary
-  `.doszer-media-*` directory next to the output archive, removed when the
+  `.doszer-build-*` directory next to the output archive, removed when the
   build ends.
 - Disc images inside an archive being repacked are streamed, not loaded
   into memory.

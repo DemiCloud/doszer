@@ -39,6 +39,7 @@ internal/vhd/        VHD reader (fixed, dynamic), for install
 internal/fat/        FAT12/16/32 reader with long names, as an io/fs.FS, for install
 internal/vdisk/      DOSBox Pure's synthesized D: disk + .sav diffs (D: and -CDRIVE), for install
 internal/install/    doszer install: session content, launching DOSBox Pure, diffing, extraction
+internal/interrupt/  removes registered temporary paths on SIGINT/SIGTERM
 Makefile             build/test/vet/install/release (see `make help`)
 spec/MANIFEST.md     The specification (normative)
 README.md            doszer usage, configuration, install workflow

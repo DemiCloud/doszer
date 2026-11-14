@@ -16,6 +16,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/install"
+	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/repack"
 	"github.com/DemiCloud/doszer/internal/verify"
@@ -46,6 +47,7 @@ func init() {
 }
 
 func main() {
+	interrupt.Handle()
 	if err := run(os.Args[1:]); err != nil {
 		if !errors.Is(err, errUsage) {
 			logError(err)

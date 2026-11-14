@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/DemiCloud/doszer/internal/build"
+	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/vdisk"
 	"github.com/DemiCloud/doszer/internal/zipw"
@@ -17,6 +18,8 @@ import (
 
 // Session is one install run's temporary content.
 type Session struct {
+	unregister func()
+
 	Name    string // content name: also the prefix of every save file the run creates
 	Content string // the temporary .dosz
 	Dir     string // directory holding it, removed by Close
@@ -56,10 +59,11 @@ func Prepare(source string, m *manifest.Manifest) (*Session, error) {
 	var id [4]byte
 	rand.Read(id[:])
 	s := &Session{
-		Name:  "doszer-install-" + hex.EncodeToString(id[:]),
-		Dir:   dir,
-		Model: m.Model(),
-		OS:    m.Boot.OS,
+		unregister: interrupt.Remove(dir),
+		Name:       "doszer-install-" + hex.EncodeToString(id[:]),
+		Dir:        dir,
+		Model:      m.Model(),
+		OS:         m.Boot.OS,
 	}
 	s.Content = filepath.Join(dir, s.Name+".dosz")
 	if err := s.writeContent(abs, m); err != nil {
@@ -144,7 +148,9 @@ func addData(zw *zipw.Writer, name string, data []byte) error {
 
 // Close removes the session's temporary content.
 func (s *Session) Close() error {
-	return os.RemoveAll(s.Dir)
+	err := os.RemoveAll(s.Dir)
+	s.unregister()
+	return err
 }
 
 // SaveFiles are the save files a session can produce.
