@@ -1,8 +1,11 @@
 package manifest
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 const validFull = `
@@ -126,6 +129,11 @@ func TestParseInvalid(t *testing.T) {
 		{"extract unknown media", "format = 1\n[[extract]]\nmedia = \"nope\"\nfrom = \"/\"\nto = \"x\"", `unknown media id "nope"`},
 		{"file without text", "format = 1\n[[file]]\npath = \"A.BAT\"", "text: must be set"},
 		{"invalid toml", "format = = 1", "DOSZ.TOML"},
+		{"unknown pad control", "format = 1\n[[input.pad]]\nz = \"space\"", `unknown key "input.pad[0].z"`},
+		{"unknown pad action", "format = 1\n[[input.pad]]\nb = \"spcae Fire\"", `input.pad[0].b: unknown action "spcae"`},
+		{"too many pad actions", "format = 1\n[[input.pad]]\n[[input.pad]]\na = \"q+w+e+r+t\"", "input.pad[1].a: at most 4 actions"},
+		{"wheel in wheel item", "format = 1\n[[input.pad]]\nwheel = [\"f1\", \"wheel\"]", "input.pad[0].wheel[1]: must not contain"},
+		{"too many pads", "format = 1" + strings.Repeat("\n[[input.pad]]", 9), "input.pad: at most 8 entries"},
 	}
 
 	for _, tt := range tests {
@@ -151,5 +159,43 @@ func TestParseReportsAllErrors(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q is missing %q", err, want)
 		}
+	}
+}
+
+func TestParseInputPadRoundTrip(t *testing.T) {
+	src := `format = 1
+[[input.pad]]
+b = "space Fire"
+lstick_left = "joy_left"
+lstick_right = "joy_right"
+l3 = "menu"
+wheel = ["f1 Help"]
+
+[[input.pad]]
+`
+	m, err := Parse([]byte(src), "g")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Input.Pad) != 2 {
+		t.Fatalf("%d pads, want 2", len(m.Input.Pad))
+	}
+	p := m.Input.Pad[0].Padmap()
+	if p.Controls["b"] != "space Fire" || p.Controls["lstick_right"] != "joy_right" || len(p.Wheel) != 1 {
+		t.Errorf("pad 1 = %+v", p)
+	}
+
+	// The effective manifest (§8.3) is re-serialized; an empty pad must
+	// survive it, or the second port's block would vanish from PADMAP.DBP.
+	data, err := toml.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := Parse(data, "g")
+	if err != nil {
+		t.Fatalf("re-parse: %v\n%s", err, data)
+	}
+	if !reflect.DeepEqual(again.Input, m.Input) {
+		t.Errorf("round trip changed [[input.pad]]:\n%s", data)
 	}
 }

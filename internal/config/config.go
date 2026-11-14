@@ -95,7 +95,7 @@ func mergeFile(cfg *Config, path string) error {
 
 // mergeManifestOverride decodes sourceDir's DOSZ.TOML [x-doszer] table onto
 // cfg. Decoding is lenient: x-doszer is a spec-reserved extension namespace
-// (§5.9) the manifest package itself never validates, so every other
+// (§5.10) the manifest package itself never validates, so every other
 // manifest key is simply ignored here rather than checked.
 func mergeManifestOverride(cfg *Config, sourceDir string) error {
 	data, err := os.ReadFile(filepath.Join(sourceDir, manifest.FileName))

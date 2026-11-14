@@ -98,6 +98,73 @@ details:
 - `verify` reports a CUE sheet that §6.4 would still change, and warns
   about a `[[source.media]]` entry the archive's disc images don't match.
 
+## Gamepad mappings
+
+An archive can ship its own controller mapping, so a game is playable on a
+gamepad-only device (e.g. a Steam Deck or Steam Machine) with no setup.
+Without one, DOSBox Pure uses its built-in mapping for games it
+recognizes, else generic keyboard keys. Give one `[[input.pad]]` per
+controller port (spec §5.9):
+
+```toml
+[[input.pad]]
+b            = "space Fire"          # action, then an optional label
+a            = "leftctrl+enter Use"  # up to 4 actions pressed together
+start        = "esc Menu"
+lstick_up    = "up"
+lstick_down  = "down"
+lstick_left  = "left"
+lstick_right = "right"
+rstick_left  = "mouse_move_left"     # mouse moves with the stick
+rstick_right = "mouse_move_right"
+rstick_up    = "mouse_move_up"
+rstick_down  = "mouse_move_down"
+r2           = "mouse_left_click"
+r            = "wheel"               # hold for the action wheel
+wheel        = ["f1 Help", "f5 Save", "f9 Load"]
+```
+
+Controls use libretro's RetroPad names, which are positions, not the
+letters printed on the buttons:
+
+| RetroPad | Steam Deck / Xbox | PlayStation |
+|---|---|---|
+| `b` (bottom) | A | Cross |
+| `a` (right) | B | Circle |
+| `y` (left) | X | Square |
+| `x` (top) | Y | Triangle |
+| `l`, `r` / `l2`, `r2` | LB, RB / LT, RT | L1, R1 / L2, R2 |
+| `l3`, `r3` | stick clicks | L3, R3 |
+| `select`, `start` | View, Menu | Share, Options |
+
+The Deck's back buttons (L4/R4/L5/R5) aren't RetroPad controls: bind them
+to one of the above in Steam Input.
+
+`build` writes the mapping as `PADMAP.DBP`, the file DOSBox Pure's own
+Controller Mapper saves, and port 1's mapping again as `input_pad_` lines
+in `DOS.YML` (spec §6.8). DOSBox Pure uses `PADMAP.DBP`; `DOS.YML` adds the
+labels, shown in the Controller Mapper and the action wheel, and is what
+port 1 falls back to if a player resets their mapping. A player's own
+changes are saved to their save file, over the archive's. Lines of a
+`DOS.YML` already in the source other than `input_pad_`/`input_wheel_` are
+kept.
+
+L3 opens DOSBox Pure's menu and on-screen keyboard unless the mapping binds
+it (`Input > Use L3 Button to Show Menu`). Bind `menu` to another control
+to keep that if L3 is needed for something else. `hold_port2` makes a
+control a shift key: while it's held, the pad uses `[[input.pad]]` #2's
+mapping, doubling the controls one pad has.
+
+To try a mapping out, open the Controller Mapper from DOSBox Pure's menu
+in the game, then copy what works into the manifest. A `PADMAP.DBP` made
+with the Controller Mapper can also be shipped as it is: copy it from the
+save file (`<save dir>/<content>.pure.zip`) into the source's root. It is
+binary, labels are lost, and `[[input.pad]]` replaces it.
+
+In RetroArch, each port's device type (Quick Menu, Controls) must be the
+default, "Use Gamepad Mapper" (it may show as `[Pad Mapper] ...`); a preset
+there ignores the archive's mapping for that port.
+
 ## Example
 
 ```bash
@@ -139,7 +206,7 @@ ogg_quality = 6
 "dosbox_pure/Win98" = "dosbox_pure/Win98 Install"
 ```
 
-A manifest overrides them the same way, under `[x-doszer]` (spec §5.9's
+A manifest overrides them the same way, under `[x-doszer]` (spec §5.10's
 extension-key namespace, so the manifest schema doesn't reject it):
 
 ```toml

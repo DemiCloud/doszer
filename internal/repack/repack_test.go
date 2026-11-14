@@ -668,6 +668,25 @@ func TestRepackOfABuildIsIdentical(t *testing.T) {
 	}
 }
 
+// TestRepackOfAnInputPadBuildIsIdentical: DOS.YML is merged, not replaced
+// (§6.8.3), so regenerating it from the archive's own copy must reproduce
+// it - including a source DOS.YML's own lines.
+func TestRepackOfAnInputPadBuildIsIdentical(t *testing.T) {
+	in := buildArchive(t, plainManifest+"\n[[input.pad]]\nb = \"space Fire\"\nl3 = \"menu\"\n", map[string]string{
+		"GAME.EXE": "binary",
+		"DOS.YML":  "cpu_cycles: 20000\ninput_pad_a: enter\n",
+	})
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := repack.Run(repack.Options{InputPath: in, OutputPath: out}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	a, _ := os.ReadFile(in)
+	b, _ := os.ReadFile(out)
+	if !bytes.Equal(a, b) {
+		t.Error("repacking a fresh build changed its bytes")
+	}
+}
+
 // TestRepackInPlace: writing over the input must not destroy it while it
 // is still being read (the archive is renamed into place once complete).
 func TestRepackInPlace(t *testing.T) {

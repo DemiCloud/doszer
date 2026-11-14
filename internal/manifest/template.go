@@ -73,6 +73,20 @@ func Template(o TemplateOptions) string {
 
 # CD audio encoding: "ogg" (default) or "wav".
 # audio = "ogg"
+
+# Gamepad mapping, one [[input.pad]] per controller port (spec §5.9).
+# RetroPad layout: b/a/y/x are the bottom/right/left/top face buttons.
+# Value: up to 4 actions joined by +, then an optional label.
+# [[input.pad]]
+# b            = "space Fire"
+# a            = "leftctrl+enter Use"
+# start        = "esc Menu"
+# lstick_left  = "left"
+# lstick_right = "right"
+# rstick_left  = "mouse_move_left"
+# rstick_right = "mouse_move_right"
+# r            = "wheel"
+# wheel        = ["f1 Help", "f10 Save"]
 `)
 
 	b.WriteString(`

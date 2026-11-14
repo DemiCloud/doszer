@@ -549,3 +549,41 @@ func TestVerifyRejectsDirectoryEntry(t *testing.T) {
 		t.Fatalf("Verify() = %v, want a directory entry error", err)
 	}
 }
+
+const padManifest = plainManifest + `
+[[input.pad]]
+b = "space Fire"
+l3 = "menu"
+wheel = ["f1 Help"]
+`
+
+func TestVerifyAcceptsInputPad(t *testing.T) {
+	if err := verify.Verify(buildArchive(t, padManifest)); err != nil {
+		t.Fatalf("Verify() = %v", err)
+	}
+}
+
+func TestVerifyRejectsStaleInputPadFiles(t *testing.T) {
+	for _, name := range []string{"PADMAP.DBP", "DOS.YML"} {
+		t.Run(name, func(t *testing.T) {
+			path := buildArchive(t, padManifest)
+			rewriteZip(t, path, func(w *zip.Writer, f *zip.File) error {
+				if f.Name != name {
+					return copyEntry(w, f)
+				}
+				fh := f.FileHeader
+				fh.Modified = time.Time{}
+				fw, err := w.CreateHeader(&fh)
+				if err != nil {
+					return err
+				}
+				_, err = fw.Write([]byte("input_pad_b: enter\r\n"))
+				return err
+			})
+			err := verify.Verify(path)
+			if err == nil || !contains(err.Error(), name+": content does not match the manifest's [[input.pad]]") {
+				t.Fatalf("Verify() = %v, want a stale-%s error", err, name)
+			}
+		})
+	}
+}

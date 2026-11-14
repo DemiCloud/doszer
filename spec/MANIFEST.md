@@ -159,7 +159,47 @@ Files whose content is given in the manifest.
 | `path` | string | Destination path within the build. |
 | `text` | string | File content. Line endings are normalized per §6.6. |
 
-### 5.9 Extensions
+### 5.9 `[[input.pad]]`
+
+Gamepad mappings, zero to eight entries. The first entry maps controller
+port 1, the second port 2, and so on. An entry with no keys leaves its port
+unmapped.
+
+Each key names a gamepad control and is OPTIONAL. Controls use the libretro
+RetroPad layout, in which `b`, `a`, `y` and `x` are the bottom, right, left
+and top face buttons:
+
+| Key | Control |
+|---|---|
+| `b`, `a`, `y`, `x` | Face buttons |
+| `up`, `down`, `left`, `right` | D-pad |
+| `select`, `start` | Select and Start |
+| `l`, `r`, `l2`, `r2` | Shoulder buttons and triggers |
+| `l3`, `r3` | Stick buttons |
+| `lstick_left`, `lstick_right`, `lstick_up`, `lstick_down` | Left analog stick directions |
+| `rstick_left`, `rstick_right`, `rstick_up`, `rstick_down` | Right analog stick directions |
+| `wheel` | Array of strings: the action wheel's items, at most 100 |
+
+Every value other than `wheel`, and every `wheel` item, is a binding string:
+one to four action names joined by `+`, optionally followed by a space and a
+label, e.g. `"space Fire"` or `"leftctrl+x Use Item"`. Pressing the control
+performs every action at once. A label MUST NOT contain a control character
+or the sequence ` #`, and leading and trailing spaces are not part of it.
+
+Action names are matched case-insensitively:
+
+| Action | Names |
+|---|---|
+| Keyboard key | `1`-`0`, `a`-`z`, `f1`-`f12`, `esc`, `tab`, `backspace`, `enter`, `space`, `leftalt`, `rightalt`, `leftctrl`, `rightctrl`, `leftshift`, `rightshift`, `capslock`, `scrolllock`, `numlock`, `grave`, `minus`, `equals`, `backslash`, `leftbracket`, `rightbracket`, `semicolon`, `quote`, `period`, `comma`, `slash`, `extra_lt_gt`, `printscreen`, `pause`, `insert`, `home`, `pageup`, `delete`, `end`, `pagedown`, `left`, `up`, `down`, `right`, `kp1`-`kp9`, `kp0`, `kpdivide`, `kpmultiply`, `kpminus`, `kpplus`, `kpenter`, `kpperiod` |
+| Mouse | `mouse_move_up`, `mouse_move_down`, `mouse_move_left`, `mouse_move_right`, `mouse_left_click`, `mouse_right_click`, `mouse_middle_click`, `mouse_speed_up`, `mouse_speed_down` |
+| Joystick | `joy_up`, `joy_down`, `joy_left`, `joy_right`, `joy_button1`-`joy_button4`, `joy_hat_up`, `joy_hat_down`, `joy_hat_left`, `joy_hat_right`, `joy_2_up`, `joy_2_down`, `joy_2_left`, `joy_2_right` |
+| Frontend | `menu` (DOSBox Pure's menu and on-screen keyboard), `wheel` (opens the action wheel), `hold_port1`-`hold_port4` (the controller acts as that port's mapping while held) |
+
+A stick direction bound to a mouse or joystick movement moves it in
+proportion to the stick, e.g. `lstick_left = "joy_left"` with
+`lstick_right = "joy_right"`.
+
+### 5.10 Extensions
 
 Keys beginning with `x-` are reserved for implementation-specific extensions.
 Implementations MUST ignore `x-` keys they do not recognize. Any other
@@ -254,9 +294,17 @@ The following files are generated at the archive root:
 |---|---|---|
 | `AUTOBOOT.DBP` | Any of `exec`, `shell`, `os`, `disc`, `skip` set | §6.8.1 |
 | `<parent>.parent` | `parent` set | Empty |
+| `PADMAP.DBP` | `[[input.pad]]` present | §6.8.2 |
+| `DOS.YML` | The first `[[input.pad]]` entry has a binding §6.8.3 can express | §6.8.3 |
 | `DOSZ.TOML` | Always | The manifest (§8.3) |
 
-A generated file replaces any file of the same name in the build.
+A generated file replaces any file of the same name in the build, except
+`DOS.YML` (§6.8.3).
+
+> DOSBox Pure applies `PADMAP.DBP` as the controller mapping, ahead of any
+> other. The mapping in `DOS.YML` supplies the labels shown for bindings
+> with the same actions, and becomes port 1's mapping if the player resets
+> theirs. A player's own changes are saved over both.
 
 #### 6.8.1 `AUTOBOOT.DBP`
 
@@ -269,6 +317,52 @@ Lines separated by CRLF, with no trailing line ending:
 | 3 | `disc` value, or empty |
 
 Trailing empty lines MUST be omitted.
+
+#### 6.8.2 `PADMAP.DBP`
+
+A byte `0`, then one block per `[[input.pad]]` entry, in order. A block is
+a byte giving its number of bindings, then the bindings: each bound control
+in control ID order, then each `wheel` item in order.
+
+| Control | ID |
+|---|---|
+| `b`, `y`, `select`, `start`, `up`, `down`, `left`, `right`, `a`, `x`, `l`, `r`, `l2`, `r2`, `l3`, `r3` | 0-15, in that order |
+| `lstick_left` and `lstick_right` | 16 |
+| `lstick_up` and `lstick_down` | 17 |
+| `rstick_left` and `rstick_right` | 18 |
+| `rstick_up` and `rstick_down` | 19 |
+| A `wheel` item | 20 |
+
+A binding is a byte `ID + 64 × (n − 1)`, where `n` is its number of
+actions, followed by its actions. For IDs 0-15 and 20, each action is one
+byte, its code. For IDs 16-19, which combine two opposite directions, `n`
+is the larger of the two directions' action counts, and each action is two
+bytes: the code of the left or up direction's action at that position,
+then the right or down direction's, or `0` where a direction has fewer.
+
+| Action | Code |
+|---|---|
+| Keyboard keys, in the order listed in §5.9 | 1-102 |
+| Mouse, then joystick actions, in the order listed in §5.9 | 200-224 |
+| `menu` | 225 |
+| `wheel` | 226 |
+| `hold_port1`-`hold_port4` | 227-230 |
+
+#### 6.8.3 `DOS.YML`
+
+One line per binding of the first `[[input.pad]]` entry whose actions are
+all keyboard, mouse, joystick or `wheel` actions, in the order of §6.8.2's
+control IDs (`lstick_left` before `lstick_right`, `lstick_up` before
+`lstick_down`), then one line per such `wheel` item. A line is
+`input_pad_<control>: ` or, for the `n`th wheel item line counting from 1,
+`input_wheel_<n>: `, followed by the binding string with its action names
+in lowercase, joined by `+`, and its label, if any, after one space. Lines
+end with CRLF.
+
+If the build already contains a `DOS.YML` at its root, its lines (separated
+by CRLF, LF or CR) whose key begins with `input_pad_` or `input_wheel_` are
+removed. Its other lines are kept in order, each ending with CRLF, followed
+by the generated lines.
 
 ## 7. Media identification
 
@@ -371,6 +465,9 @@ An implementation MUST reject a manifest that violates any of the following:
 | `[[extract]]` `media` refers to an existing `id`. |
 | `sha1` values are 40 lowercase hexadecimal characters. |
 | `audio` is `"ogg"` or `"wav"`. |
+| `[[input.pad]]` has at most eight entries, and `wheel` at most 100 items. |
+| Every `[[input.pad]]` binding string has one to four action names defined in §5.9, and a label as §5.9 allows. |
+| A `wheel` item does not contain the action `wheel`. |
 
 An implementation MUST reject an archive build that would contain, under the
 shell model, `WINDOWS/WIN.INI`, `WINDOWS/SYSTEM.INI`, `WINDOWS/PROGMAN.INI` or

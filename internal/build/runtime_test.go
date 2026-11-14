@@ -117,3 +117,76 @@ func TestAddRuntimeFiles(t *testing.T) {
 		t.Error("DOSZ.TOML was not replaced by the generated runtime file")
 	}
 }
+
+func TestAddRuntimeFilesInputPad(t *testing.T) {
+	src := `format = 1
+[[input.pad]]
+b = "space Fire"
+l3 = "menu"
+`
+	m, err := manifest.Parse([]byte(src), "Example")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name     string
+		existing string // the build's DOS.YML, "" for none
+		wantYML  string
+	}{
+		{"generated", "", "input_pad_b: space Fire\r\n"},
+		{
+			"merged into the build's own DOS.YML",
+			"cpu_cycles: 20000\ninput_pad_a: enter Old\n",
+			"cpu_cycles: 20000\r\ninput_pad_b: space Fire\r\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := newFileSet()
+			if tt.existing != "" {
+				fs.set("dos.yml", dataEntry([]byte(tt.existing), time.Date(1994, 1, 1, 0, 0, 0, 0, time.UTC)))
+			}
+			if err := addRuntimeFiles(fs, m, "Example"); err != nil {
+				t.Fatal(err)
+			}
+
+			pad, ok := fs.get("PADMAP.DBP")
+			if !ok {
+				t.Fatal("missing PADMAP.DBP")
+			}
+			// b (ID 0) = space (53), l3 (ID 14) = menu (225).
+			if data, _ := pad.bytes(); string(data) != string([]byte{0, 2, 0, 53, 14, 225}) {
+				t.Errorf("PADMAP.DBP = %v", data)
+			}
+
+			yml, ok := fs.get("DOS.YML")
+			if !ok {
+				t.Fatal("missing DOS.YML")
+			}
+			if data, _ := yml.bytes(); string(data) != tt.wantYML {
+				t.Errorf("DOS.YML = %q, want %q", data, tt.wantYML)
+			}
+			if !yml.modified.Equal(Epoch) || !pad.modified.Equal(Epoch) {
+				t.Error("generated files must use the fixed epoch (§8.2)")
+			}
+		})
+	}
+}
+
+func TestAddRuntimeFilesNoDOSYMLWithoutExpressibleBinding(t *testing.T) {
+	m, err := manifest.Parse([]byte("format = 1\n[[input.pad]]\nl3 = \"menu\"\n"), "Example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs := newFileSet()
+	if err := addRuntimeFiles(fs, m, "Example"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fs.get("DOS.YML"); ok {
+		t.Error("DOS.YML generated for a mapping it can't express")
+	}
+	if _, ok := fs.get("PADMAP.DBP"); !ok {
+		t.Error("missing PADMAP.DBP")
+	}
+}

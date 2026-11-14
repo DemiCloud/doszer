@@ -33,6 +33,7 @@ internal/zipw/       deterministic ZIP writer (spec §8)
 internal/config/     configuration layering (README "Configuration")
 internal/cue/        CUE parsing, track byte ranges, normalized track hash (§7.2)
 internal/iso9660/    ISO 9660 reader, for [[extract]] (§5.7)
+internal/padmap/     [[input.pad]] (§5.9): PADMAP.DBP and DOS.YML encoding (§6.8.2, §6.8.3)
 internal/verify/     doszer verify: an archive against its manifest and spec §8/§11
 internal/repack/     doszer repack: rebuild an archive from its own embedded manifest
 internal/vhd/        VHD reader (fixed, dynamic), for install
@@ -137,6 +138,10 @@ pointer to it).
 | VHD support | Fixed and dynamic only (a parent name is rejected); a dynamic block sector whose bitmap bit is clear reads as zeros even if the file holds bytes there | `src/ints/bios_disk.cpp`, `sparseVhd::Init`, `sparseVhd::SeeBlock` |
 | CUE `FILE` type | `BINARY` reads raw sectors; any other type opens an `AudioFile`, which detects RIFF/WAVE (16-bit PCM only) or OggS from the file's own header (`C_SDL_SOUND` is undefined in `include/config.h`) | `src/dos/cdrom_image.cpp`, `LoadCueSheet`, `AudioFile::AudioFile` |
 | CUE `PREGAP` | Adds to the track's start without reading data; an INDEX 00 span in a track's own FILE is skipped and *not* counted toward position | `src/dos/cdrom_image.cpp`, `AddTrack` |
+| `PADMAP.DBP` | Read from C:'s root at startup (`init_dosbox_parse_drives`), before an OS image boots, so it works under every boot model; hidden from D:. Byte `0`, then per port a binding count and bindings `id \| (n-1)<<6` + action codes (2 per action for stick axes 16-19; wheel items id 20). Applies to ports in "Gamepad Mapper" mode, ahead of every other mapping. The mapper writes it back to C: (the save) on change, and deletes it when every port is back at its default | `dosbox_pure_pad.h`, `DBP_PadMapping::Load`/`Save`/`Apply`/`SetInputDescriptors`, `BindDecoder` |
+| Action codes | 1-102 DOSBox `KBD_KEYS` (`DBP_YMLKeyCommands` names); 200-230 `DBP_SpecialMappings` (mouse, joystick, 225 menu, 226 wheel, 227-230 port N while held, which copies port N's binds onto the pad while held) | `dosbox_pure_libretro.cpp`; `dosbox_pure_osd.h`, `DBP_WheelShiftOSD` |
+| `DOS.YML` | Read from the content root (not from the save under strict mode); `input_pad_<control>: keys+... Label` and `input_wheel_<n>:` become the "Content Provided Mapping": port 1's default without `PADMAP.DBP`, replacing the built-in game database, and the source of labels, matched by a binding's exact actions on any port. Applied as a preset, so L3 stays the menu. Not hidden from D:. In releases since 1.0-preview2; undocumented upstream (`keyb2joypad.yml` uses the same keys) | `dosbox_pure_run.h`, `DOSYMLLoader`; `dosbox_pure_pad.h`, `ParseInputYML`, `FindAutoMapButtonLabel`; `src/dos/drive_patch.cpp`, `AppendYML` |
+| Controller ports | 8 (`DBP_MAX_PORTS`); standalone puts all in mapper mode, RetroArch only those whose device type is "Use Gamepad Mapper" (the default) | `dosbox_pure_libretro.cpp`, `DBP_PadMapping::SetPortMode` |
 | Disc image list | Every ISO/CUE/CHD/... in the content is listed, except an image sharing a CUE's name minus extension (so `<base>.iso` beside `<base>.cue` is hidden) | `dosbox_pure_libretro.cpp`, "Filter image files that have the same name as a cue file" |
 
 ## Status
@@ -162,7 +167,8 @@ manifest implies (e.g. AUTOBOOT.DBP's bytes must match
 archive and its embedded manifest - including one not built by doszer.
 `build.ValidateArchiveContent`, `build.ShouldStore`, `build.IsTextFile`,
 `build.NormalizeCRLF`, `build.IsExcluded`, `build.NeedsAutoboot` and
-`build.BuildAutoboot` are exported from `internal/build` specifically so
+`build.BuildAutoboot`, `build.BuildPadmap` and `build.BuildDOSYML` are
+exported from `internal/build` specifically so
 `verify` (and `repack`) can reuse them rather than duplicate the rules.
 
 `[[extract]]` and media identification (§7) are implemented:
@@ -265,14 +271,14 @@ on the ISO.
    under RetroDECK. Without Explorer as the shell, opening Control Panel
    shows a harmless "Cannot find the file" error with a garbled name;
    open the applets directly (`control desk.cpl`).
-3. Gamepad mappings. Games need controller bindings to be playable on a
-   gamepad-only device (e.g. a Steam Machine). DOSBox Pure reads
-   `PADMAP.DBP` from the content root (hidden from D:, see the facts
-   table), so an archive could ship a per-game mapping, as it ships
-   `WINDOWS.BAT`. Not yet researched: its format, where DOSBox Pure
-   writes it when a mapping is changed in its menu (content or save),
-   and whether it belongs in the specification (a §6.8 runtime file or
-   a `[[file]]`) or only the README. Verify against the source first.
+3. Gamepad mappings (`[[input.pad]]`, spec §5.9, §6.8.2-3): implemented
+   and tested against byte layouts derived from the source, not yet live.
+   Check in DOSBox Pure (standalone and RetroArch, ideally on a Steam
+   Deck): that a generated `PADMAP.DBP` loads without "Corrupt gamepad
+   mapping data", bindings and stick axes behave, `DOS.YML` labels show in
+   the Controller Mapper and the action wheel, `menu`/`hold_portN` work,
+   and resetting the mapper falls back to the `DOS.YML` mapping. Then add
+   a mapping to the Betrayal in Antara example.
 
 `internal/config` is implemented (README "Configuration"); `build` and
 `repack` consume `ogg_quality`, `install` the rest. With the OS image

@@ -183,6 +183,17 @@ func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.
 		}
 	}
 
+	if want := build.BuildPadmap(m); want != nil {
+		errs = append(errs, checkGenerated(byName, "PADMAP.DBP", func([]byte) []byte { return want })...)
+	}
+
+	// DOS.YML keeps its own lines other than input mappings (§6.8.3), so
+	// what it should be depends on what it is: regenerating a conforming
+	// one reproduces it.
+	if build.BuildDOSYML(m, nil) != nil {
+		errs = append(errs, checkGenerated(byName, "DOS.YML", func(got []byte) []byte { return build.BuildDOSYML(m, got) })...)
+	}
+
 	if m.Boot.Parent != "" {
 		name := m.Boot.Parent + ".parent"
 		f, ok := findFold(byName, name)
@@ -196,6 +207,27 @@ func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.
 		}
 	}
 
+	return errs
+}
+
+// checkGenerated checks a §6.8 file the [[input.pad]] mapping implies:
+// present, at the fixed epoch, and with the content want returns for it.
+func checkGenerated(byName map[string]*zip.File, name string, want func(got []byte) []byte) []error {
+	f, ok := findFold(byName, name)
+	if !ok {
+		return []error{fmt.Errorf("missing %s (§6.8)", name)}
+	}
+	var errs []error
+	if !isEpoch(f.Modified) {
+		errs = append(errs, fmt.Errorf("%s: a generated file must use the fixed epoch (§8.2)", f.Name))
+	}
+	content, err := readZipFile(f)
+	if err != nil {
+		return append(errs, fmt.Errorf("%s: %w", f.Name, err))
+	}
+	if w := want(content); !bytes.Equal(content, w) {
+		errs = append(errs, fmt.Errorf("%s: content does not match the manifest's [[input.pad]] (§6.8), got %q want %q", f.Name, content, w))
+	}
 	return errs
 }
 

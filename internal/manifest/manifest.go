@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
+
+	"github.com/DemiCloud/doszer/internal/padmap"
 )
 
 // FileName is the manifest's name within a source directory and an archive.
@@ -43,6 +45,7 @@ type Manifest struct {
 	Source  Source     `toml:"source,omitempty"`
 	Extract []Extract  `toml:"extract,omitempty"`
 	File    []FileSpec `toml:"file,omitempty"`
+	Input   Input      `toml:"input,omitempty"`
 }
 
 // Boot selects the boot model and startup behaviour (spec §5.3).
@@ -105,6 +108,68 @@ type Extract struct {
 type FileSpec struct {
 	Path string  `toml:"path"`
 	Text *string `toml:"text"`
+}
+
+// Input holds gamepad mappings (spec §5.9).
+type Input struct {
+	Pad []Pad `toml:"pad,omitempty"`
+}
+
+// Pad maps one controller port (spec §5.9). Each control's value is a
+// binding string; fields follow padmap.Controls' order.
+type Pad struct {
+	B           string   `toml:"b,omitempty"`
+	Y           string   `toml:"y,omitempty"`
+	Select      string   `toml:"select,omitempty"`
+	Start       string   `toml:"start,omitempty"`
+	Up          string   `toml:"up,omitempty"`
+	Down        string   `toml:"down,omitempty"`
+	Left        string   `toml:"left,omitempty"`
+	Right       string   `toml:"right,omitempty"`
+	A           string   `toml:"a,omitempty"`
+	X           string   `toml:"x,omitempty"`
+	L           string   `toml:"l,omitempty"`
+	R           string   `toml:"r,omitempty"`
+	L2          string   `toml:"l2,omitempty"`
+	R2          string   `toml:"r2,omitempty"`
+	L3          string   `toml:"l3,omitempty"`
+	R3          string   `toml:"r3,omitempty"`
+	LStickLeft  string   `toml:"lstick_left,omitempty"`
+	LStickRight string   `toml:"lstick_right,omitempty"`
+	LStickUp    string   `toml:"lstick_up,omitempty"`
+	LStickDown  string   `toml:"lstick_down,omitempty"`
+	RStickLeft  string   `toml:"rstick_left,omitempty"`
+	RStickRight string   `toml:"rstick_right,omitempty"`
+	RStickUp    string   `toml:"rstick_up,omitempty"`
+	RStickDown  string   `toml:"rstick_down,omitempty"`
+	Wheel       []string `toml:"wheel,omitempty"`
+}
+
+// Padmap returns the pad in padmap's form. A control set to "" is
+// treated as unset, as omitempty leaves it out when re-serialized.
+func (p *Pad) Padmap() padmap.Pad {
+	values := []string{
+		p.B, p.Y, p.Select, p.Start, p.Up, p.Down, p.Left, p.Right,
+		p.A, p.X, p.L, p.R, p.L2, p.R2, p.L3, p.R3,
+		p.LStickLeft, p.LStickRight, p.LStickUp, p.LStickDown,
+		p.RStickLeft, p.RStickRight, p.RStickUp, p.RStickDown,
+	}
+	controls := make(map[string]string)
+	for i, v := range values {
+		if v != "" {
+			controls[padmap.Controls[i]] = v
+		}
+	}
+	return padmap.Pad{Controls: controls, Wheel: p.Wheel}
+}
+
+// Pads returns every [[input.pad]] entry in padmap's form.
+func (m *Manifest) Pads() []padmap.Pad {
+	pads := make([]padmap.Pad, len(m.Input.Pad))
+	for i := range m.Input.Pad {
+		pads[i] = m.Input.Pad[i].Padmap()
+	}
+	return pads
 }
 
 // Model is an archive's boot model (spec §4).
@@ -325,6 +390,16 @@ func (m *Manifest) validate() []error {
 		}
 		if f.Text == nil {
 			add("file[%d].text: must be set", i)
+		}
+	}
+
+	// [[input.pad]]
+	if n := len(m.Input.Pad); n > padmap.MaxPads {
+		add("input.pad: at most %d entries, got %d", padmap.MaxPads, n)
+	}
+	for i, p := range m.Pads() {
+		for _, err := range p.Validate() {
+			add("input.pad[%d].%v", i, err)
 		}
 	}
 

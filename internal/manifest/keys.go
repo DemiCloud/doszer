@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/DemiCloud/doszer/internal/padmap"
 )
 
 // extensionPrefix marks implementation-specific keys, which are ignored
-// (spec §5.9).
+// (spec §5.10).
 const extensionPrefix = "x-"
 
 // node describes the keys allowed at one level of the manifest.
@@ -48,6 +50,11 @@ var schema = &node{
 		},
 		"extract": {leaves: leaves("media", "from", "to")},
 		"file":    {leaves: leaves("path", "text")},
+		"input": {
+			tables: map[string]*node{
+				"pad": {leaves: leaves(append(append([]string{}, padmap.Controls...), "wheel")...)},
+			},
+		},
 	},
 }
 
