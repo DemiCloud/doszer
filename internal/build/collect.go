@@ -11,10 +11,9 @@ import (
 )
 
 // collect performs §6.1: the source directory's files, excluding
-// DOSZ.TOML, then every [[extract]] entry, then every [[file]] entry.
-//
-// Media conversion (§6.4 - disc images already sitting in the build,
-// independent of [[extract]]) is not implemented yet.
+// DOSZ.TOML, then every [[extract]] entry, then every [[file]] entry. It
+// verifies [[source.media]] against the collected disc images (§7.3) and
+// returns that step's warnings.
 func collect(sourceDir string, m *manifest.Manifest) (*fileSet, []string, error) {
 	result := newFileSet()
 

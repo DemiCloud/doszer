@@ -55,7 +55,11 @@ func main() {
 }
 
 func run(args []string) error {
-	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
+		usage(os.Stdout)
+		return nil
+	}
+	if len(args) == 0 {
 		usage(os.Stderr)
 		return errUsage
 	}
@@ -116,7 +120,7 @@ Options:
 
 	if err := fs.Parse(reorder(fs, args)); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return errUsage
+			return nil // usage was printed on request
 		}
 		return err
 	}
@@ -211,7 +215,7 @@ Options:
 
 	if err := fs.Parse(reorder(fs, args)); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return errUsage
+			return nil // usage was printed on request
 		}
 		return err
 	}
@@ -320,7 +324,7 @@ Usage: doszer verify <file.dosz>
 
 	if err := fs.Parse(reorder(fs, args)); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return errUsage
+			return nil // usage was printed on request
 		}
 		return err
 	}
@@ -375,7 +379,7 @@ Options:
 
 	if err := fs.Parse(reorder(fs, args)); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return errUsage
+			return nil // usage was printed on request
 		}
 		return err
 	}
@@ -491,7 +495,7 @@ Options:
 
 	if err := fs.Parse(reorder(fs, args)); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return errUsage
+			return nil // usage was printed on request
 		}
 		return err
 	}
