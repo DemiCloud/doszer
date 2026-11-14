@@ -3,9 +3,11 @@ package cue
 import (
 	"bytes"
 	"crypto/sha1"
+	"encoding/binary"
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -240,5 +242,55 @@ func TestCopyRejectsUnsupportedMode(t *testing.T) {
 	}
 	if err := tracks[0].Copy(&bytes.Buffer{}); err == nil {
 		t.Fatal("Copy should reject an unsupported data track mode")
+	}
+}
+
+func TestResolveWaveHashesPCMOnly(t *testing.T) {
+	dir := t.TempDir()
+	pcm := bytes.Repeat([]byte{1, 2, 3, 4}, 2352/4*3) // 3 frames
+	// The same audio as a raw BIN track and as a WAV with a RIFF header
+	// (plus an extra chunk before "data"): both must hash alike.
+	os.WriteFile(filepath.Join(dir, "a.bin"), pcm, 0o644)
+	var wav bytes.Buffer
+	le := binary.LittleEndian
+	wav.WriteString("RIFF")
+	binary.Write(&wav, le, uint32(4+8+16+8+4+8+len(pcm)))
+	wav.WriteString("WAVEfmt ")
+	binary.Write(&wav, le, uint32(16))
+	binary.Write(&wav, le, []uint16{1, 2})
+	binary.Write(&wav, le, []uint32{44100, 176400})
+	binary.Write(&wav, le, []uint16{4, 16})
+	wav.WriteString("LIST")
+	binary.Write(&wav, le, uint32(4))
+	wav.WriteString("INFO")
+	wav.WriteString("data")
+	binary.Write(&wav, le, uint32(len(pcm)))
+	wav.Write(pcm)
+	os.WriteFile(filepath.Join(dir, "a.wav"), wav.Bytes(), 0o644)
+
+	hash := func(cueText string) string {
+		sheet, err := Parse([]byte(cueText))
+		if err != nil {
+			t.Fatal(err)
+		}
+		tracks, err := Resolve(sheet, dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, err := tracks[0].Hash()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h
+	}
+	bin := hash("FILE \"a.bin\" BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:01\n")
+	wavHash := hash("FILE \"a.wav\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:01\n")
+	if bin != wavHash {
+		t.Fatalf("WAV track hash %s differs from BIN %s", wavHash, bin)
+	}
+
+	os.WriteFile(filepath.Join(dir, "mono.wav"), []byte("RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00"+strings.Repeat("\x00", 12)), 0o644)
+	if _, _, err := WAVData(filepath.Join(dir, "mono.wav")); err == nil {
+		t.Fatal("mono WAV accepted")
 	}
 }

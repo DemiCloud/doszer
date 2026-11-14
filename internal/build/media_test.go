@@ -180,3 +180,26 @@ func TestIdentifyMedia(t *testing.T) {
 		t.Fatalf("parsed media %+v", m.Source.Media)
 	}
 }
+
+func TestLocateMediaAcceptsBareISO(t *testing.T) {
+	// The same single-track disc as a BIN/CUE dump (raw Mode 1 sectors)
+	// and as a bare ISO: media declared from one verifies against the other.
+	dir := t.TempDir()
+	user := sectorContent("ISO 9660 user data")
+	raw := make([]byte, 2352)
+	copy(raw[16:], user)
+	writeRaw := func(name string, b []byte) { os.WriteFile(filepath.Join(dir, name), b, 0o644) }
+	writeRaw("game.bin", raw)
+	writeRaw("game.cue", []byte("FILE \"game.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n"))
+
+	media, _, err := IdentifyMedia(dir)
+	if err != nil || len(media) != 1 {
+		t.Fatalf("IdentifyMedia = %+v, %v", media, err)
+	}
+
+	isoDir := t.TempDir()
+	os.WriteFile(filepath.Join(isoDir, "Game.iso"), user, 0o644)
+	if _, err := locateMedia(isoDir, media); err != nil {
+		t.Fatalf("bare ISO not recognized as the same media: %v", err)
+	}
+}

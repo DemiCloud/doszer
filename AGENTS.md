@@ -139,8 +139,9 @@ archive and its embedded manifest - including one not built by doszer.
 `verify` (and `repack`) can reuse them rather than duplicate the rules.
 
 `[[extract]]` and media identification (§7) are implemented: `build` finds
-the CUE sheet in the source tree matching each declared `[[source.media]]`
-entry by hashing its tracks (`internal/build/media.go`), rejecting the build
+the disc image (a CUE sheet, or a bare `.iso` as one data track; a `WAVE`
+file's tracks hash only its PCM `data` chunk) in the source tree matching
+each declared `[[source.media]]` entry by hashing its tracks (`internal/build/media.go`), rejecting the build
 if none matches or a hash differs, then resolves `[[extract]]`'s `from`
 path through `internal/iso9660` against the matched media's data track
 (materialized to a temp file via `internal/cue`).

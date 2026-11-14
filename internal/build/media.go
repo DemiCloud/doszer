@@ -100,6 +100,14 @@ func verifyTracks(declared []manifest.Track, tracks []cue.ResolvedTrack) (int, e
 }
 
 func resolveCueFile(path string) ([]cue.ResolvedTrack, error) {
+	if strings.EqualFold(filepath.Ext(path), ".iso") {
+		// A bare ISO image is one data track of 2048-byte sectors: the
+		// same media as a BIN/CUE dump of that disc (§7.1).
+		sheet := &cue.Sheet{Files: []cue.File{{Name: filepath.Base(path), Type: "BINARY", Tracks: []cue.Track{{
+			Number: 1, Mode: "MODE1/2048", Indexes: []cue.Index{{Number: 1}},
+		}}}}}
+		return cue.Resolve(sheet, filepath.Dir(path))
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -111,14 +119,15 @@ func resolveCueFile(path string) ([]cue.ResolvedTrack, error) {
 	return cue.Resolve(sheet, filepath.Dir(path))
 }
 
-// findCueSheets lists every *.cue file under sourceDir.
+// findCueSheets lists every disc image under sourceDir: each *.cue file,
+// and each *.iso file (a single data track with no CUE sheet).
 func findCueSheets(sourceDir string) ([]string, error) {
 	var found []string
 	err := filepath.WalkDir(sourceDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if !d.IsDir() && strings.EqualFold(filepath.Ext(p), ".cue") {
+		if ext := filepath.Ext(p); !d.IsDir() && (strings.EqualFold(ext, ".cue") || strings.EqualFold(ext, ".iso")) {
 			found = append(found, p)
 		}
 		return nil

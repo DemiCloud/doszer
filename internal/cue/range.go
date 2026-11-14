@@ -2,6 +2,7 @@ package cue
 
 import (
 	"crypto/sha1"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -23,14 +24,78 @@ type ResolvedTrack struct {
 // Resolve resolves every track's byte range, in sheet order. File names are
 // resolved relative to baseDir.
 func Resolve(sheet *Sheet, baseDir string) ([]ResolvedTrack, error) {
-	return ResolveWith(sheet, func(name string) (string, int64, error) {
+	wavData := map[string]int64{} // WAVE file -> offset of its PCM data
+	tracks, err := ResolveWith(sheet, func(name string) (string, int64, error) {
 		path := filepath.Join(baseDir, filepath.FromSlash(name))
+		if isWave(sheet, name) {
+			off, size, err := WAVData(path)
+			if err != nil {
+				return "", 0, err
+			}
+			wavData[path] = off
+			return path, size, nil
+		}
 		info, err := os.Stat(path)
 		if err != nil {
 			return "", 0, err
 		}
 		return path, info.Size(), nil
 	})
+	// A WAVE file's INDEX times count from its first sample, not its first
+	// byte: shift its tracks past the RIFF header.
+	for i := range tracks {
+		if off, ok := wavData[tracks[i].FilePath]; ok {
+			tracks[i].Start += off
+			tracks[i].End += off
+		}
+	}
+	return tracks, err
+}
+
+func isWave(sheet *Sheet, name string) bool {
+	for _, f := range sheet.Files {
+		if f.Name == name {
+			return strings.EqualFold(f.Type, "WAVE")
+		}
+	}
+	return false
+}
+
+// WAVData locates a WAV file's PCM samples: the byte offset and length of
+// its "data" chunk. It requires 16-bit stereo PCM, the CD-DA layout §7.2
+// hashes.
+func WAVData(path string) (offset, size int64, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer f.Close()
+	head := make([]byte, 12)
+	if _, err := io.ReadFull(f, head); err != nil || string(head[0:4]) != "RIFF" || string(head[8:12]) != "WAVE" {
+		return 0, 0, fmt.Errorf("%s: not a RIFF WAVE file", path)
+	}
+	pos := int64(12)
+	chunk := make([]byte, 8)
+	for {
+		if _, err := f.ReadAt(chunk, pos); err != nil {
+			return 0, 0, fmt.Errorf("%s: no data chunk", path)
+		}
+		id, n := string(chunk[0:4]), int64(binary.LittleEndian.Uint32(chunk[4:]))
+		switch id {
+		case "fmt ":
+			fmtc := make([]byte, 16)
+			if _, err := f.ReadAt(fmtc, pos+8); err != nil {
+				return 0, 0, fmt.Errorf("%s: short fmt chunk", path)
+			}
+			le := binary.LittleEndian
+			if le.Uint16(fmtc[0:]) != 1 || le.Uint16(fmtc[2:]) != 2 || le.Uint16(fmtc[14:]) != 16 {
+				return 0, 0, fmt.Errorf("%s: not 16-bit stereo PCM", path)
+			}
+		case "data":
+			return pos + 8, n, nil
+		}
+		pos += 8 + (n+1)&^1
+	}
 }
 
 // FileResolver maps a FILE name, as written in a sheet, to a key
