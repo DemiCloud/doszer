@@ -1,0 +1,93 @@
+# Example: a Windows 95 game installed under an OS image.
+#
+# The source directory beside this manifest holds:
+#   SIERRA/ANTARA/...        the game as Setup installed it, unmodified
+#                            (extracted with `doszer install --drive c`)
+#   *.iso                    the three game discs
+#
+# Everything that differs from the raw install is declared here: trim
+# drops Setup's leftovers, flatten moves the game to D:\ANTARA, and the
+# rewrites fix its install path and settings in RESOURCE.WIN.
+# Paths in rewrite rules and [[file]] are as they are after flatten.
+
+format = 1
+name   = 'Betrayal in Antara'
+notes  = """
+Windows 95 game (Sierra, 1997), run under the Win98 OS image.
+
+Source: SIERRA/ANTARA is Setup's default install from Disc 1 under
+Windows 98 (Setup fails installing anywhere else), extracted from C: with
+`doszer install --drive c`. flatten turns it into D:\\ANTARA, where
+WINDOWS.BAT starts the game. Setup's registry entries and C:\\WINDOWS
+changes aren't needed.
+
+RESOURCE.WIN: Setup writes DirectDraw off and a fixed-size window; the
+rewrites below turn both on.
+"""
+
+[boot]
+os = 'dosbox_pure/Win98'
+
+[layout]
+trim = [
+  "SIERRA/*",         # Sierra Setup's own files: setup/uninstall, registration,
+                      # Smacker DLLs for its billboards, test MIDIs
+  "**/RESOURCE.IN~",  # Setup's backup of RESOURCE.WIN
+  "**/SIERRA.INF",    # Setup and uninstall data; the game never reads it
+  "**/LANGUAGE.INF",  # Setup and Program Manager strings
+  "**/ANTARA.ICO",    # Program Manager icon
+  "**/README.TXT",
+]
+flatten = true
+
+# Setup records the install folder as an extra search path for 3D data.
+[[layout.rewrite]]
+from  = 'C:\SIERRA\Antara'
+to    = 'D:\ANTARA'
+files = ["ANTARA/RESOURCE.WIN"]
+
+# Draw through DirectDraw rather than GDI.
+[[layout.rewrite]]
+from  = 'useDirectDraw=FALSE'
+to    = 'useDirectDraw=TRUE'
+files = ["ANTARA/RESOURCE.WIN"]
+
+# Let the game window be resized.
+[[layout.rewrite]]
+from  = 'AllowResize=FALSE'
+to    = 'AllowResize=TRUE'
+files = ["ANTARA/RESOURCE.WIN"]
+
+# Run at startup by this Win98 image's own shell hook (DOSBox Pure only
+# runs WINDOWS.BAT itself for a shell, not an OS image). Shuts Windows down,
+# and so exits DOSBox Pure, when the game ends.
+[[file]]
+path = 'WINDOWS.BAT'
+text = '''
+@ECHO OFF
+D:
+CD \ANTARA
+START /W ANTARAR.EXE
+C:\WINDOWS\RUNDLL32.EXE SHELL32.DLL,SHExitWindowsEx 1
+'''
+
+[[source.media]]
+id     = 'disc1'
+label  = 'Betrayal in Antara (Disc 1)'
+tracks = [
+  { type = "data", sha1 = "190f8f7ea9be5a5e3e4f8d79b875f8d7bc22a087" },
+]
+
+[[source.media]]
+id     = 'disc2'
+label  = 'Betrayal in Antara (Disc 2)'
+tracks = [
+  { type = "data", sha1 = "29d8a3435dc4be2de45d4e421a7d949f09e57b4d" },
+]
+
+[[source.media]]
+id     = 'disc3'
+label  = 'Betrayal in Antara (Disc 3)'
+tracks = [
+  { type = "data", sha1 = "a56832507ecbe62b3d6b6825abd05f8210ee5c44" },
+]

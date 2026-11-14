@@ -109,6 +109,11 @@ doszer build --dry-run "Example Game"
 doszer build "Example Game"
 ```
 
+[examples/](examples/) holds complete manifests for real games, e.g.
+[Betrayal in Antara](examples/betrayal-in-antara/DOSZ.TOML): a Windows 95
+game under an OS image, with trimming, flattening, rewrites, a startup
+`WINDOWS.BAT` and its discs identified by track hash.
+
 ## Configuration
 
 Every setting can be given as a flag. Precedence, highest first:
