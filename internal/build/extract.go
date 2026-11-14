@@ -73,7 +73,16 @@ func openDataTrack(m resolvedMedia, tempFiles *[]*os.File) (*iso9660.Image, erro
 	}
 	*tempFiles = append(*tempFiles, tmp)
 
-	if err := track.Copy(tmp); err != nil {
+	rc, err := m.openTrack(track)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	r, err := track.Normalize(rc)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := io.Copy(tmp, r); err != nil {
 		return nil, fmt.Errorf("extracting data track: %w", err)
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {

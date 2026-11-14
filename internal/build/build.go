@@ -42,7 +42,7 @@ type Result struct {
 	RewriteWarnings []string     // layout.rewrite rules that matched nothing.
 
 	Converted     []Conversion // Disc images §6.4 converted or renamed.
-	MediaWarnings []string     // CUE sheets §6.4 could not convert, and why.
+	MediaWarnings []string     // media §7.3 could not find or fully verify; CUE sheets §6.4 could not convert.
 
 	Suggestions      []string // Rewrite rules suggested to cover paths flatten changed.
 	BinaryReferences []string // Binary files referencing a path flatten changed.
@@ -74,12 +74,12 @@ func Run(opts Options) (*Result, error) {
 		return nil, err
 	}
 
-	fs, err := collect(opts.SourceDir, m)
+	fs, mediaWarnings, err := collect(opts.SourceDir, m)
 	if err != nil {
 		return nil, err
 	}
 
-	return runPipeline(fs, m, opts)
+	return runPipeline(fs, m, opts, mediaWarnings)
 }
 
 // Entry is one already-collected file for Repack: its content and the
@@ -112,11 +112,18 @@ func Repack(entries map[string]Entry, m *manifest.Manifest, opts Options) (*Resu
 			fs.set(p, dataEntry(e.Data, e.Modified))
 		}
 	}
-	return runPipeline(fs, m, opts)
+	// The archive's disc images are verified as a source's would be (§7.3);
+	// [[extract]] already happened, so a missing media is only a warning.
+	_, mediaWarnings, err := locateMedia(fs, m.Source.Media, nil)
+	if err != nil {
+		return nil, err
+	}
+	return runPipeline(fs, m, opts, mediaWarnings)
 }
 
 // runPipeline runs §6.2 onward against fs, shared by Run and Repack.
-func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options) (_ *Result, err error) {
+// mediaWarnings are §7.3's, from verifying fs's media.
+func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, mediaWarnings []string) (_ *Result, err error) {
 	effectiveName := m.Name
 	if opts.Name != "" {
 		effectiveName = opts.Name
@@ -165,10 +172,12 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options) (_ *Result, er
 	if opts.OggQuality < -1 || opts.OggQuality > 10 {
 		return nil, fmt.Errorf("ogg_quality %d is out of range (-1 to 10)", opts.OggQuality)
 	}
-	res.Converted, res.MediaWarnings, err = convertMedia(fs, m.AudioEncoding(), opts.OggQuality, opts.DryRun, tmpDir)
+	var convertWarnings []string
+	res.Converted, convertWarnings, err = convertMedia(fs, m.AudioEncoding(), opts.OggQuality, opts.DryRun, tmpDir)
 	if err != nil {
 		return nil, err
 	}
+	res.MediaWarnings = append(mediaWarnings, convertWarnings...)
 
 	hits, rewriteWarnings, err := applyRewrite(fs, m.Layout.Rewrite)
 	if err != nil {

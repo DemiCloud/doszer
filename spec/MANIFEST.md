@@ -288,9 +288,20 @@ Pregap data (INDEX 00) is excluded.
 
 ### 7.3 Verification
 
-When a manifest contains `[[source.media]]`, an implementation MUST verify
-every track hash of every media it uses and MUST NOT produce an archive if any
-hash differs.
+When a manifest contains `[[source.media]]`, an implementation MUST look for
+each media among the disc images collected for the build (§6.1): CUE sheets,
+and ISO 9660 images as a single data track.
+
+A disc image matches a media when it has the same number of tracks, each of
+the same type, and every verifiable track's normalized hash equals the
+declared `sha1`. A track is verifiable when its file stores the track's
+content exactly: raw sectors (`BINARY`) or PCM samples (`WAVE`). A track in a
+lossy audio file (e.g. Ogg Vorbis) cannot reproduce its hash; it MUST NOT be
+compared, and an implementation SHOULD warn that it was not verified.
+
+A media that no disc image matches is not found. An implementation MUST NOT
+produce an archive if `[[extract]]` references a media that is not found, and
+SHOULD warn about any other media that is not found.
 
 ## 8. Archive
 
@@ -361,7 +372,8 @@ shell model, `WINDOWS/WIN.INI`, `WINDOWS/SYSTEM.INI`, `WINDOWS/PROGMAN.INI` or
 `WINDOWS/*.GRP`, or, under the shell or OS image model, `DOSBOX.BAT`.
 
 A `trim` pattern or `rewrite` rule that matches nothing SHOULD produce a
-warning.
+warning, as SHOULD a media that is not found or a track that is not verified
+(§7.3).
 
 ## 12. Frontend requirements
 

@@ -138,13 +138,18 @@ archive and its embedded manifest - including one not built by doszer.
 `build.BuildAutoboot` are exported from `internal/build` specifically so
 `verify` (and `repack`) can reuse them rather than duplicate the rules.
 
-`[[extract]]` and media identification (§7) are implemented: `build` finds
-the disc image (a CUE sheet, or a bare `.iso` as one data track; a `WAVE`
-file's tracks hash only its PCM `data` chunk) in the source tree matching
-each declared `[[source.media]]` entry by hashing its tracks (`internal/build/media.go`), rejecting the build
-if none matches or a hash differs, then resolves `[[extract]]`'s `from`
-path through `internal/iso9660` against the matched media's data track
-(materialized to a temp file via `internal/cue`).
+`[[extract]]` and media identification (§7) are implemented:
+`locateMedia` (`internal/build/media.go`) matches each declared
+`[[source.media]]` entry to a disc image among the collected files (a CUE
+sheet, or a bare `.iso` as one data track; a `WAVE` file's tracks hash only
+its PCM `data` chunk) by track layout plus every verifiable hash. It works
+over the `fileSet`, so `build` runs it on the source and `repack` on the
+archive's own entries. Tracks in lossy files (Ogg) can't reproduce their
+hash and are skipped with a warning (`cue.ResolvedTrack.Verifiable`). A
+media nothing matches fails the build only if `[[extract]]` references it,
+otherwise it's a warning naming any same-layout, different-hash images.
+`[[extract]]`'s `from` path is then resolved through `internal/iso9660`
+against the matched media's data track (materialized to a temp file).
 
 `repack` (`internal/repack`) rebuilds an archive from nothing but a
 manifest - no source directory, since none is available. By default that
@@ -152,8 +157,9 @@ manifest is the one already embedded in the archive; `-manifest` supplies
 a different one instead (an edited copy, or one retrofitted onto an
 archive with no embedded manifest at all - the input no longer needs a
 `DOSZ.TOML` of its own). The archive's own entries stand in for §6.1's
-collect step (extract and media identification don't apply - whatever
-they'd have produced is already in the archive), then §6.2 onward runs
+collect step (extract doesn't apply - whatever it produced is already in
+the archive - but the archive's disc images are verified against
+`[[source.media]]`), then §6.2 onward runs
 exactly as it does for `build`: `build.Run` and `build.Repack` now share a
 `runPipeline` helper, so trim, flatten, rewrite and §6.6 text normalization
 genuinely apply, not just the runtime-file regeneration. This matters for

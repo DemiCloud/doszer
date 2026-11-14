@@ -15,7 +15,7 @@ import (
 //
 // Media conversion (§6.4 - disc images already sitting in the build,
 // independent of [[extract]]) is not implemented yet.
-func collect(sourceDir string, m *manifest.Manifest) (*fileSet, error) {
+func collect(sourceDir string, m *manifest.Manifest) (*fileSet, []string, error) {
 	result := newFileSet()
 
 	err := filepath.WalkDir(sourceDir, func(p string, d fs.DirEntry, err error) error {
@@ -47,24 +47,22 @@ func collect(sourceDir string, m *manifest.Manifest) (*fileSet, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("collect: %w", err)
+		return nil, nil, fmt.Errorf("collect: %w", err)
 	}
 
-	if len(m.Source.Media) > 0 {
-		media, err := locateMedia(sourceDir, m.Source.Media)
-		if err != nil {
-			return nil, err
-		}
-		if err := applyExtracts(result, media, m.Extract); err != nil {
-			return nil, err
-		}
+	media, warnings, err := locateMedia(result, m.Source.Media, m.Extract)
+	if err != nil {
+		return nil, warnings, err
+	}
+	if err := applyExtracts(result, media, m.Extract); err != nil {
+		return nil, warnings, err
 	}
 
 	for _, f := range m.File {
 		result.set(f.Path, dataEntry([]byte(*f.Text), Epoch))
 	}
 
-	return result, nil
+	return result, warnings, nil
 }
 
 // trim removes files matching any pattern (§6.2), warning per §11 on a

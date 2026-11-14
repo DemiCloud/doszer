@@ -1,9 +1,11 @@
 package cue
 
 import (
+	"bufio"
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +18,7 @@ import (
 type ResolvedTrack struct {
 	Track     Track
 	FilePath  string // backing file: an absolute path from Resolve, or ResolveWith's key
+	FileType  string // the FILE command's type: BINARY, WAVE, OGG, ...
 	FrameSize int
 	Start     int64 // byte offset of INDEX 01 (pregap excluded)
 	End       int64 // byte offset where the track ends, exclusive
@@ -24,25 +27,38 @@ type ResolvedTrack struct {
 // Resolve resolves every track's byte range, in sheet order. File names are
 // resolved relative to baseDir.
 func Resolve(sheet *Sheet, baseDir string) ([]ResolvedTrack, error) {
-	wavData := map[string]int64{} // WAVE file -> offset of its PCM data
-	tracks, err := ResolveWith(sheet, func(name string) (string, int64, error) {
+	return ResolveOpen(sheet, func(name string) (string, int64, error) {
 		path := filepath.Join(baseDir, filepath.FromSlash(name))
-		if isWave(sheet, name) {
-			off, size, err := WAVData(path)
-			if err != nil {
-				return "", 0, err
-			}
-			wavData[path] = off
-			return path, size, nil
-		}
 		info, err := os.Stat(path)
 		if err != nil {
 			return "", 0, err
 		}
 		return path, info.Size(), nil
+	}, func(key string) (io.ReadCloser, error) { return os.Open(key) })
+}
+
+// ResolveOpen is ResolveWith, plus locating a WAVE file's tracks within its
+// PCM data: a WAVE file's INDEX times count from its first sample, not its
+// first byte. open streams a file by the key resolve returned for it.
+func ResolveOpen(sheet *Sheet, resolve FileResolver, open func(key string) (io.ReadCloser, error)) ([]ResolvedTrack, error) {
+	wavData := map[string]int64{} // WAVE file -> offset of its PCM data
+	tracks, err := ResolveWith(sheet, func(name string) (string, int64, error) {
+		key, size, err := resolve(name)
+		if err != nil || !isWave(sheet, name) {
+			return key, size, err
+		}
+		rc, err := open(key)
+		if err != nil {
+			return "", 0, err
+		}
+		defer rc.Close()
+		off, size, err := WAVDataFrom(rc)
+		if err != nil {
+			return "", 0, err
+		}
+		wavData[key] = off
+		return key, size, nil
 	})
-	// A WAVE file's INDEX times count from its first sample, not its first
-	// byte: shift its tracks past the RIFF header.
 	for i := range tracks {
 		if off, ok := wavData[tracks[i].FilePath]; ok {
 			tracks[i].Start += off
@@ -70,31 +86,46 @@ func WAVData(path string) (offset, size int64, err error) {
 		return 0, 0, err
 	}
 	defer f.Close()
+	off, size, err := WAVDataFrom(bufio.NewReader(f))
+	if err != nil {
+		return 0, 0, fmt.Errorf("%s: %w", path, err)
+	}
+	return off, size, nil
+}
+
+// WAVDataFrom is WAVData reading the file from the start of r.
+func WAVDataFrom(r io.Reader) (offset, size int64, err error) {
 	head := make([]byte, 12)
-	if _, err := io.ReadFull(f, head); err != nil || string(head[0:4]) != "RIFF" || string(head[8:12]) != "WAVE" {
-		return 0, 0, fmt.Errorf("%s: not a RIFF WAVE file", path)
+	if _, err := io.ReadFull(r, head); err != nil || string(head[0:4]) != "RIFF" || string(head[8:12]) != "WAVE" {
+		return 0, 0, errors.New("not a RIFF WAVE file")
 	}
 	pos := int64(12)
 	chunk := make([]byte, 8)
 	for {
-		if _, err := f.ReadAt(chunk, pos); err != nil {
-			return 0, 0, fmt.Errorf("%s: no data chunk", path)
+		if _, err := io.ReadFull(r, chunk); err != nil {
+			return 0, 0, errors.New("no data chunk")
 		}
+		pos += 8
 		id, n := string(chunk[0:4]), int64(binary.LittleEndian.Uint32(chunk[4:]))
-		switch id {
-		case "fmt ":
+		if id == "data" {
+			return pos, n, nil
+		}
+		skip := (n + 1) &^ 1
+		if id == "fmt " {
 			fmtc := make([]byte, 16)
-			if _, err := f.ReadAt(fmtc, pos+8); err != nil {
-				return 0, 0, fmt.Errorf("%s: short fmt chunk", path)
+			if _, err := io.ReadFull(r, fmtc); err != nil {
+				return 0, 0, errors.New("short fmt chunk")
 			}
 			le := binary.LittleEndian
 			if le.Uint16(fmtc[0:]) != 1 || le.Uint16(fmtc[2:]) != 2 || le.Uint16(fmtc[14:]) != 16 {
-				return 0, 0, fmt.Errorf("%s: not 16-bit stereo PCM", path)
+				return 0, 0, errors.New("not 16-bit stereo PCM")
 			}
-		case "data":
-			return pos + 8, n, nil
+			skip -= 16
 		}
-		pos += 8 + (n+1)&^1
+		if _, err := io.CopyN(io.Discard, r, skip); err != nil {
+			return 0, 0, errors.New("no data chunk")
+		}
+		pos += (n + 1) &^ 1
 	}
 }
 
@@ -143,7 +174,7 @@ func ResolveWith(sheet *Sheet, resolve FileResolver) ([]ResolvedTrack, error) {
 			}
 
 			out = append(out, ResolvedTrack{
-				Track: track, FilePath: path, FrameSize: fs, Start: start, End: end,
+				Track: track, FilePath: path, FileType: file.Type, FrameSize: fs, Start: start, End: end,
 			})
 		}
 	}
@@ -191,6 +222,28 @@ func (rt ResolvedTrack) Normalize(r io.Reader) (io.Reader, error) {
 		return nil, err
 	}
 	return newStripReader(r, rt.FrameSize, offset, length), nil
+}
+
+// Verifiable reports whether rt's file stores the track's content exactly
+// (§7.3): raw sectors (BINARY) or PCM samples (WAVE). A track in a lossy
+// audio file (OGG, MP3, ...) cannot reproduce its normalized hash, and its
+// byte range means nothing.
+func (rt ResolvedTrack) Verifiable() bool {
+	return strings.EqualFold(rt.FileType, "BINARY") || strings.EqualFold(rt.FileType, "WAVE")
+}
+
+// HashFrom returns rt's normalized track hash (§7.2), reading its raw bytes
+// from Start to End from r.
+func (rt ResolvedTrack) HashFrom(r io.Reader) (string, error) {
+	n, err := rt.Normalize(r)
+	if err != nil {
+		return "", err
+	}
+	h := sha1.New()
+	if _, err := io.Copy(h, n); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // Hash returns rt's normalized track hash (§7.2).

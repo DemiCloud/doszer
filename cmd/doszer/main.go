@@ -194,7 +194,7 @@ func runBuild(args []string) error {
 	fs := flag.NewFlagSet("build", flag.ContinueOnError)
 	name := fs.String("name", "", "override the manifest's effective name")
 	dryRun := fs.Bool("dry-run", false, "print the build plan without writing an archive")
-	strict := fs.Bool("strict", false, "fail if any layout.trim or layout.rewrite rule matches nothing")
+	strict := fs.Bool("strict", false, "fail on any warning")
 	oggQuality := fs.Int("ogg-quality", 0, "Ogg Vorbis quality, -1 to 10")
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), `doszer build - build an archive from a source directory
@@ -205,7 +205,7 @@ Options:
   -dry-run         print the build plan without writing an archive
   -name STR        override the manifest's effective name
   -ogg-quality N   Ogg Vorbis quality, -1 to 10
-  -strict          fail if a trim/rewrite rule matches nothing
+  -strict          fail on any warning
 `)
 	}
 
@@ -469,7 +469,7 @@ func inDir(p, dir string) bool {
 func runRepack(args []string) error {
 	fs := flag.NewFlagSet("repack", flag.ContinueOnError)
 	dryRun := fs.Bool("dry-run", false, "print the rebuild plan without writing an archive")
-	strict := fs.Bool("strict", false, "fail if any layout.trim or layout.rewrite rule matches nothing")
+	strict := fs.Bool("strict", false, "fail on any warning")
 	manifestPath := fs.String("manifest", "", "use this manifest instead of the archive's embedded one")
 	oggQuality := fs.Int("ogg-quality", 0, "Ogg Vorbis quality, -1 to 10")
 	fs.Usage = func() {
@@ -481,7 +481,7 @@ Options:
   -dry-run         print the rebuild plan without writing an archive
   -manifest STR    use this manifest instead of the archive's embedded one
   -ogg-quality N   Ogg Vorbis quality, -1 to 10
-  -strict          fail if a trim/rewrite rule matches nothing
+  -strict          fail on any warning
 `)
 	}
 

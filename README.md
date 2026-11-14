@@ -49,7 +49,14 @@ doszer verify  <file.dosz>
 
 `init` also hashes every disc image (CUE sheet) in the source into
 `[[source.media]]` entries (spec §7.2), labelled with the CUE sheet's name;
-`--no-media` skips this.
+A CUE sheet with tracks in lossy audio files (Ogg) can't be hashed and is
+skipped. `--no-media` skips this.
+
+`build` and `repack` check each `[[source.media]]` entry against the disc
+images in the build (spec §7.3). Tracks stored as Ogg can't be checked and
+are skipped with a warning; use `audio = "wav"` to keep a disc fully
+verifiable. A disc that isn't found fails the build only when `[[extract]]`
+reads from it, and is otherwise a warning (a failure under `--strict`).
 
 The default output is `<name>.dosz` in the current directory. `--name`
 overrides the manifest's `name`, which defaults to the source directory name.
