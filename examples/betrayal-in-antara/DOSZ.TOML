@@ -85,6 +85,51 @@ CD \ANTARA
 START /W ANTARAR.EXE
 '''
 
+# Gamepad mapping, from the game's own hotkey list (ANTARA.HLP, "Hot
+# Keys"). The game is played with the mouse: the right stick moves it,
+# A and R2 click, L2 right-clicks (item and building descriptions). The
+# left stick walks (arrow keys: forward/back, turn), the d-pad also
+# slides sideways (Insert/Page Up). Hotkeys are context-dependent: S opens
+# the camping screen (rest/sleep) when exploring but sets Swing in combat.
+# Combat is otherwise driven by its on-screen buttons. A Steam Deck's back
+# buttons aren't RetroPad controls; bind them in Steam Input, e.g. to LB
+# and RB.
+[[input.pad]]
+lstick_up    = "up Forward"
+lstick_down  = "down Backward"
+lstick_left  = "left Turn Left"
+lstick_right = "right Turn Right"
+up           = "up Forward"
+down         = "down Backward"
+left         = "insert Slide Left"
+right        = "pageup Slide Right"
+rstick_left  = "mouse_move_left"
+rstick_right = "mouse_move_right"
+rstick_up    = "mouse_move_up"
+rstick_down  = "mouse_move_down"
+b            = "mouse_left_click Click"
+r2           = "mouse_left_click Click"
+l2           = "mouse_right_click Describe"
+a            = "esc Back"
+y            = "p Control Panel"
+x            = "m Map"
+l            = "s Camp / Swing"
+r            = "wheel"
+r3           = "c Cast Spell"
+select       = "q Quicksave"
+start        = "o Options"
+l3           = "menu"
+wheel        = [
+  "leftctrl+w William's Inventory",
+  "leftctrl+a Aren's Inventory",
+  "leftctrl+k Kaelyn's Inventory",
+  "leftctrl+r Raal's Inventory",
+  "l Spell Creation",
+  "f Flashbacks",
+  "leftctrl+s Save Game",
+  "leftctrl+l Load Game",
+]
+
 [[source.media]]
 id     = 'disc1'
 label  = 'Betrayal in Antara (Disc 1)'

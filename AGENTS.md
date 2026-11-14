@@ -277,8 +277,9 @@ on the ISO.
    Deck): that a generated `PADMAP.DBP` loads without "Corrupt gamepad
    mapping data", bindings and stick axes behave, `DOS.YML` labels show in
    the Controller Mapper and the action wheel, `menu`/`hold_portN` work,
-   and resetting the mapper falls back to the `DOS.YML` mapping. Then add
-   a mapping to the Betrayal in Antara example.
+   and resetting the mapper falls back to the `DOS.YML` mapping. The
+   Betrayal in Antara example has a mapping (from `ANTARA.HLP`'s hotkey
+   list) to test with, under the OS image model.
 
 `internal/config` is implemented (README "Configuration"); `build` and
 `repack` consume `ogg_quality`, `install` the rest. With the OS image
