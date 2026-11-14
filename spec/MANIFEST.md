@@ -229,8 +229,11 @@ the original CUE sheet referenced are removed from the build.
 ### 6.5 Rewrite
 
 Each `[[layout.rewrite]]` rule, in manifest order, replaces every
-case-insensitive occurrence of `from` with `to` in matching text files (§6.6).
-Rewrites MUST NOT be applied to binary files.
+case-insensitive occurrence of `from` with `to` in each file matching its
+`files` patterns that contains no NUL byte. A matching file need not have a
+text file name (§6.6): a rule's patterns name its files explicitly, e.g. a
+game's INI-format `RESOURCE.CFG`. Rewrites MUST NOT be applied to a file
+containing a NUL byte.
 
 ### 6.6 Text normalization
 

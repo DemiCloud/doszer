@@ -1,6 +1,7 @@
 package build
 
 import (
+	"bytes"
 	"fmt"
 	"regexp"
 
@@ -13,8 +14,9 @@ type RewriteHit struct {
 	Path string
 }
 
-// applyRewrite applies each rule in order to the text files it matches
-// (§6.5), warning per §11 on a rule that replaced nothing.
+// applyRewrite applies each rule in order to the files it matches that
+// contain no NUL byte (§6.5), warning per §11 on a rule that replaced
+// nothing.
 func applyRewrite(fs *fileSet, rules []manifest.Rewrite) ([]RewriteHit, []string, error) {
 	var hits []RewriteHit
 	var warnings []string
@@ -31,7 +33,7 @@ func applyRewrite(fs *fileSet, rules []manifest.Rewrite) ([]RewriteHit, []string
 			if err != nil {
 				return nil, nil, err
 			}
-			if !IsTextFile(p, content) {
+			if !rewritable(content) {
 				continue
 			}
 
@@ -50,6 +52,13 @@ func applyRewrite(fs *fileSet, rules []manifest.Rewrite) ([]RewriteHit, []string
 	}
 
 	return hits, warnings, nil
+}
+
+// rewritable reports whether §6.5 may rewrite a file: it contains no NUL
+// byte. Unlike §6.6's text files, its name doesn't matter - a rule's
+// files patterns choose it.
+func rewritable(content []byte) bool {
+	return !bytes.Contains(content, []byte{0})
 }
 
 // replaceFold case-insensitively replaces from with to, returning the

@@ -69,8 +69,10 @@ overrides the manifest's `name`, which defaults to the source directory name.
 
 `build --dry-run` prints the planned trim, flatten, media conversion and
 rewrite operations without writing anything. For every path changed by flattening, it searches
-text files for references, suggests `[[layout.rewrite]]` rules, and reports
-references in binary files that cannot be rewritten.
+files up to 8 MB for references, suggests `[[layout.rewrite]]` rules, and
+reports references in binary files (containing a NUL byte) that cannot be
+rewritten. A rewrite rule applies to any file without a NUL byte that its
+`files` patterns name, e.g. an INI-style `RESOURCE.CFG` (spec §6.5).
 
 ## Media conversion
 

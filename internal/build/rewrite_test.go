@@ -64,3 +64,29 @@ func TestApplyRewrite(t *testing.T) {
 		t.Fatalf("warnings = %v, want one warning for the NOPE rule", warnings)
 	}
 }
+
+// TestApplyRewriteByPattern: a rule rewrites any NUL-free file its
+// patterns name, whatever its extension (§6.5), never one with a NUL byte.
+func TestApplyRewriteByPattern(t *testing.T) {
+	tests := []struct {
+		name, path, content, want string
+	}{
+		{"INI-style file, other extension", "GAME/RESOURCE.WIN", "etc=C:\\SIERRA\\GAME\\3DRES\r\n", "etc=D:\\GAME\\3DRES\r\n"},
+		{"binary file the rule names", "GAME/GAME.EXE", "MZ\x00C:\\SIERRA\\GAME", "MZ\x00C:\\SIERRA\\GAME"},
+		{"file the rule doesn't name", "GAME/OTHER.CFG", "C:\\SIERRA\\GAME", "C:\\SIERRA\\GAME"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := newFileSet()
+			fs.set(tt.path, dataEntry([]byte(tt.content), Epoch))
+			rules := []manifest.Rewrite{{From: `C:\SIERRA\GAME`, To: `D:\GAME`, Files: []string{"GAME/RESOURCE.WIN", "GAME/GAME.EXE"}}}
+			if _, _, err := applyRewrite(fs, rules); err != nil {
+				t.Fatal(err)
+			}
+			e, _ := fs.get(tt.path)
+			if got, _ := e.bytes(); string(got) != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
