@@ -5,13 +5,14 @@ package main
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/spf13/pflag"
 
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/config"
@@ -65,7 +66,7 @@ func run(args []string) error {
 		usage(os.Stderr)
 		return errUsage
 	}
-	if args[0] == "-V" || args[0] == "--version" || args[0] == "version" {
+	if args[0] == "-V" || args[0] == "--version" {
 		fmt.Println("doszer", version)
 		return nil
 	}
@@ -82,12 +83,45 @@ func run(args []string) error {
 
 func usage(w io.Writer) {
 	fmt.Fprint(w, "doszer - build .dosz archives for DOSBox Pure from DOSZ.TOML manifests\n\n")
-	fmt.Fprint(w, "Usage: doszer <command> [arguments]\n\nCommands:\n")
+	fmt.Fprint(w, "Usage: doszer COMMAND [options] [ARG...]\n\nCommands:\n")
 	for _, c := range commands {
 		fmt.Fprintf(w, "  %-8s %s\n", c.name, c.summary)
 	}
-	fmt.Fprint(w, "\nRun 'doszer <command> -h' for command options.\n")
-	fmt.Fprint(w, "doszer --version/-V/version shows the version.\n")
+	fmt.Fprint(w, "\nOptions:\n"+flagHelp+flagVersion)
+}
+
+// Option lines shared between commands' help.
+const (
+	flagHelp       = "  -h, --help              show this help\n"
+	flagVersion    = "  -V, --version           show version\n"
+	flagOggQuality = "      --ogg-quality N     Ogg Vorbis quality, -1 to 10 (default: ogg_quality, else 6)\n"
+	flagStrict     = "      --strict            fail on any warning\n"
+)
+
+// newFlags returns a command's flag set: GNU-style (pflag), options
+// accepted before or after arguments, "--" ending them. pflag's own
+// messages are discarded; parse prints the command's help instead.
+func newFlags(name string) *pflag.FlagSet {
+	fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	return fs
+}
+
+// parse parses args into fs, printing help on -h/--help (ok false, no
+// error) or when the argument count is outside [min, max].
+func parse(fs *pflag.FlagSet, args []string, help string, min, max int) (ok bool, err error) {
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, pflag.ErrHelp) {
+			fmt.Print(help)
+			return false, nil
+		}
+		return false, err
+	}
+	if fs.NArg() < min || fs.NArg() > max {
+		fmt.Fprint(os.Stderr, help)
+		return false, errUsage
+	}
+	return true, nil
 }
 
 // logError writes a timestamped error to stderr.
@@ -97,38 +131,28 @@ func logError(err error) {
 
 // runInit implements `doszer init <source>`.
 func runInit(args []string) error {
-	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	fs := newFlags("init")
 	var o manifest.TemplateOptions
-	force := fs.Bool("force", false, "overwrite an existing manifest")
-	fs.StringVar(&o.Name, "name", "", "canonical name (default: source directory name)")
-	fs.StringVar(&o.Exec, "exec", "", "plain model: DOS program to run at startup")
-	fs.StringVar(&o.Shell, "shell", "", "shell model: system shell path, without extension")
-	fs.StringVar(&o.OS, "os", "", "OS image model: OS image path, without extension")
-	noMedia := fs.Bool("no-media", false, "don't identify disc images in the source")
-	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), `doszer init - write a commented DOSZ.TOML into a source directory
+	fs.StringVar(&o.Exec, "exec", "", "")
+	force := fs.BoolP("force", "f", false, "")
+	fs.StringVar(&o.Name, "name", "", "")
+	noMedia := fs.Bool("no-media", false, "")
+	fs.StringVar(&o.OS, "os", "", "")
+	fs.StringVar(&o.Shell, "shell", "", "")
+	const help = `doszer init - write a commented DOSZ.TOML into a source directory
 
-Usage: doszer init [options] <source>
+Usage: doszer init [options] SOURCE
 
 Options:
-  -exec STR   plain model: DOS program to run at startup
-  -force      overwrite an existing manifest
-  -name STR   canonical name (default: source directory name)
-  -no-media   don't identify disc images in the source
-  -os STR     OS image model: OS image path, without extension
-  -shell STR  shell model: system shell path, without extension
-`)
-	}
-
-	if err := fs.Parse(reorder(fs, args)); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil // usage was printed on request
-		}
+      --exec PATH         plain model: DOS program to run at startup
+  -f, --force             overwrite an existing manifest
+      --name NAME         canonical name (default: source directory name)
+      --no-media          don't identify disc images in the source
+      --os PATH           OS image model: OS image path, without extension
+      --shell PATH        shell model: system shell path, without extension
+` + flagHelp
+	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
-	}
-	if fs.NArg() != 1 {
-		fs.Usage()
-		return errUsage
 	}
 
 	source := fs.Arg(0)
@@ -178,7 +202,7 @@ Options:
 	f, err := os.OpenFile(path, flags, 0o644)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("%s already exists (use -force to overwrite)", path)
+			return fmt.Errorf("%s already exists (use --force to overwrite)", path)
 		}
 		return err
 	}
@@ -197,33 +221,21 @@ Options:
 
 // runBuild implements `doszer build <source> [<output.dosz>]`.
 func runBuild(args []string) error {
-	fs := flag.NewFlagSet("build", flag.ContinueOnError)
-	name := fs.String("name", "", "override the manifest's effective name")
-	dryRun := fs.Bool("dry-run", false, "print the build plan without writing an archive")
-	strict := fs.Bool("strict", false, "fail on any warning")
-	oggQuality := fs.Int("ogg-quality", 0, "Ogg Vorbis quality, -1 to 10")
-	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), `doszer build - build an archive from a source directory
+	fs := newFlags("build")
+	dryRun := fs.BoolP("dry-run", "n", false, "")
+	name := fs.String("name", "", "")
+	oggQuality := fs.Int("ogg-quality", 0, "")
+	strict := fs.Bool("strict", false, "")
+	const help = `doszer build - build an archive from a source directory
 
-Usage: doszer build [options] <source> [<output.dosz>]
+Usage: doszer build [options] SOURCE [OUTPUT.dosz]
 
 Options:
-  -dry-run         print the build plan without writing an archive
-  -name STR        override the manifest's effective name
-  -ogg-quality N   Ogg Vorbis quality, -1 to 10
-  -strict          fail on any warning
-`)
-	}
-
-	if err := fs.Parse(reorder(fs, args)); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil // usage was printed on request
-		}
+  -n, --dry-run           print the build plan without writing an archive
+      --name NAME         override the manifest's effective name
+` + flagOggQuality + flagStrict + flagHelp
+	if ok, err := parse(fs, args, help, 1, 2); !ok {
 		return err
-	}
-	if fs.NArg() < 1 || fs.NArg() > 2 {
-		fs.Usage()
-		return errUsage
 	}
 
 	cfg, err := config.Load(fs.Arg(0))
@@ -316,23 +328,15 @@ func printBuildPlan(res *build.Result, dryRun bool) {
 
 // runVerify implements `doszer verify <file.dosz>`.
 func runVerify(args []string) error {
-	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
-	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), `doszer verify - check an archive against its manifest and the specification
+	fs := newFlags("verify")
+	const help = `doszer verify - check an archive against its manifest and the specification
 
-Usage: doszer verify <file.dosz>
-`)
-	}
+Usage: doszer verify [options] FILE.dosz
 
-	if err := fs.Parse(reorder(fs, args)); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil // usage was printed on request
-		}
+Options:
+` + flagHelp
+	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
-	}
-	if fs.NArg() != 1 {
-		fs.Usage()
-		return errUsage
 	}
 
 	warnings, err := verify.Check(fs.Arg(0))
@@ -349,45 +353,35 @@ Usage: doszer verify <file.dosz>
 
 // runInstall implements `doszer install <source>`.
 func runInstall(args []string) error {
-	fs := flag.NewFlagSet("install", flag.ContinueOnError)
-	dir := fs.String("dir", "", "folder to extract, relative to the drive root")
-	from := fs.String("from", "", "extract from this .sav, .pure.zip, .vhd or .img instead")
-	content := fs.String("content", "", "archive a -from save was made over")
-	template := fs.String("template", "", "pristine image to compare a -from image against")
-	force := fs.Bool("force", false, "overwrite differing files in the source")
-	dryRun := fs.Bool("dry-run", false, "report without writing")
-	keep := fs.Bool("keep", false, "keep the session's save files")
-	exe := fs.String("dosbox-pure", "", "DOSBox Pure executable")
-	systemDir := fs.String("system-dir", "", "DOSBox Pure system directory")
-	saveDir := fs.String("save-dir", "", "DOSBox Pure save directory")
-	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), `doszer install - run an installer and extract the result into a source
+	fs := newFlags("install")
+	content := fs.String("content", "", "")
+	dir := fs.String("dir", "", "")
+	exe := fs.String("dosbox-pure", "", "")
+	dryRun := fs.BoolP("dry-run", "n", false, "")
+	force := fs.BoolP("force", "f", false, "")
+	from := fs.String("from", "", "")
+	keep := fs.Bool("keep", false, "")
+	saveDir := fs.String("save-dir", "", "")
+	systemDir := fs.String("system-dir", "", "")
+	template := fs.String("template", "", "")
+	const help = `doszer install - run an installer and extract the result into a source
 
-Usage: doszer install [options] <source>
+Usage: doszer install [options] SOURCE
 
 Options:
-  -content FILE      archive a -from save was made over
-  -dir PATH          folder to extract, relative to the drive root
-  -dosbox-pure FILE  DOSBox Pure executable
-  -dry-run           report without writing
-  -force             overwrite differing files in the source
-  -from FILE         extract from this .sav, .pure.zip, .vhd or .img instead
-  -keep              keep the session's save files
-  -save-dir DIR      DOSBox Pure save directory
-  -system-dir DIR    DOSBox Pure system directory
-  -template FILE     pristine image to compare a -from image against
-`)
-	}
-
-	if err := fs.Parse(reorder(fs, args)); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil // usage was printed on request
-		}
+      --content FILE      archive a --from save was made over
+      --dir PATH          folder to extract, relative to the drive root
+      --dosbox-pure FILE  DOSBox Pure executable (default: dosbox_pure)
+  -n, --dry-run           report without writing
+  -f, --force             overwrite differing files in the source
+      --from FILE         extract from this .sav, .pure.zip, .vhd or .img instead
+      --keep              keep the session's save files
+      --save-dir DIR      DOSBox Pure save directory (default: save_dir, else DOSBoxPure.cfg)
+      --system-dir DIR    DOSBox Pure system directory (default: system_dir, else DOSBoxPure.cfg)
+      --template FILE     pristine image to compare a --from image against
+` + flagHelp
+	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
-	}
-	if fs.NArg() != 1 {
-		fs.Usage()
-		return errUsage
 	}
 
 	cfg, err := config.Load(fs.Arg(0))
@@ -477,33 +471,21 @@ func inDir(p, dir string) bool {
 
 // runRepack implements `doszer repack <input.dosz> [<output.dosz>]`.
 func runRepack(args []string) error {
-	fs := flag.NewFlagSet("repack", flag.ContinueOnError)
-	dryRun := fs.Bool("dry-run", false, "print the rebuild plan without writing an archive")
-	strict := fs.Bool("strict", false, "fail on any warning")
-	manifestPath := fs.String("manifest", "", "use this manifest instead of the archive's embedded one")
-	oggQuality := fs.Int("ogg-quality", 0, "Ogg Vorbis quality, -1 to 10")
-	fs.Usage = func() {
-		fmt.Fprint(fs.Output(), `doszer repack - rebuild an archive from its embedded manifest
+	fs := newFlags("repack")
+	dryRun := fs.BoolP("dry-run", "n", false, "")
+	manifestPath := fs.String("manifest", "", "")
+	oggQuality := fs.Int("ogg-quality", 0, "")
+	strict := fs.Bool("strict", false, "")
+	const help = `doszer repack - rebuild an archive from its embedded manifest
 
-Usage: doszer repack [options] <input.dosz> [<output.dosz>]
+Usage: doszer repack [options] INPUT.dosz [OUTPUT.dosz]
 
 Options:
-  -dry-run         print the rebuild plan without writing an archive
-  -manifest STR    use this manifest instead of the archive's embedded one
-  -ogg-quality N   Ogg Vorbis quality, -1 to 10
-  -strict          fail on any warning
-`)
-	}
-
-	if err := fs.Parse(reorder(fs, args)); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return nil // usage was printed on request
-		}
+  -n, --dry-run           print the rebuild plan without writing an archive
+      --manifest FILE     use this manifest instead of the archive's embedded one
+` + flagOggQuality + flagStrict + flagHelp
+	if ok, err := parse(fs, args, help, 1, 2); !ok {
 		return err
-	}
-	if fs.NArg() < 1 || fs.NArg() > 2 {
-		fs.Usage()
-		return errUsage
 	}
 
 	cfg, err := config.Load("")
@@ -539,61 +521,9 @@ Options:
 
 // flagOr returns the flag's value if it was given on the command line,
 // else the configured value: flags are configuration's highest layer.
-func flagOr(fs *flag.FlagSet, name string, flagValue, configured int) int {
-	set := false
-	fs.Visit(func(f *flag.Flag) { set = set || f.Name == name })
-	if set {
+func flagOr(fs *pflag.FlagSet, name string, flagValue, configured int) int {
+	if fs.Changed(name) {
 		return flagValue
 	}
 	return configured
-}
-
-// reorder moves flags ahead of positional args so options may follow the
-// source path; it consults fs to tell bool flags from value-taking ones.
-func reorder(fs *flag.FlagSet, args []string) []string {
-	var flags, positional []string
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "--" {
-			positional = append(positional, args[i+1:]...)
-			break
-		}
-		if len(a) > 1 && a[0] == '-' {
-			flags = append(flags, a)
-			if !hasValue(a) && i+1 < len(args) && !isBoolFlag(fs, a) {
-				flags = append(flags, args[i+1])
-				i++
-			}
-			continue
-		}
-		positional = append(positional, a)
-	}
-	return append(flags, positional...)
-}
-
-func hasValue(flagArg string) bool {
-	for _, r := range flagArg {
-		if r == '=' {
-			return true
-		}
-	}
-	return false
-}
-
-// isBoolFlag reports whether flagArg is a bool flag on fs, or -h/-help.
-func isBoolFlag(fs *flag.FlagSet, flagArg string) bool {
-	name := flagArg
-	for len(name) > 0 && name[0] == '-' {
-		name = name[1:]
-	}
-	if name == "h" || name == "help" {
-		return true
-	}
-
-	f := fs.Lookup(name)
-	if f == nil {
-		return false
-	}
-	b, ok := f.Value.(interface{ IsBoolFlag() bool })
-	return ok && b.IsBoolFlag()
 }

@@ -52,7 +52,9 @@ README.md            doszer usage, configuration, install workflow
   `make test`); `make build` for a local binary, `make help` for every
   target.
 - Standard library first. Add a dependency only when reimplementing it would
-  be substantial; current dependencies: `github.com/pelletier/go-toml/v2`.
+  be substantial; current dependencies: `github.com/pelletier/go-toml/v2`,
+  `github.com/spf13/pflag` (GNU-style options, the same library the
+  sibling `romctl` uses through cobra - five commands don't need cobra).
 - External programs: only `ffmpeg`, for Ogg Vorbis encoding (no maintained
   pure-Go encoder). Invoke it with `-fflags +bitexact` (fixed Ogg stream
   serial numbers) and `-flags +bitexact` (no encoder version string):
@@ -89,9 +91,13 @@ README.md            doszer usage, configuration, install workflow
 - Errors: wrap with context, return to `main`, which prints
   `[YYYY-MM-DD HH:MM:SS] ERROR: <message>` to stderr and exits 1. Validation
   collects every error and reports them together (`errors.Join`).
-- Commands and flags follow the patterns in `cmd/doszer/main.go`: one
-  `flag.FlagSet` per command, flags accepted before or after positional
-  arguments.
+- Commands and options follow the patterns in `cmd/doszer/main.go`: one
+  `pflag.FlagSet` per command (`newFlags`, `parse`), GNU-style - long
+  `--option[=VALUE]`, short forms only for `-n`/`--dry-run`,
+  `-f`/`--force`, `-h`/`--help` (and top-level `-V`/`--version`), options
+  before or after arguments, `--` ending them. Help is hand-written,
+  man-page brief, uppercase placeholders (`SOURCE`, `FILE`), shared option
+  lines in `flag*` constants.
 - Every configuration setting is also available as a flag. Precedence:
   flags, `<source>/DOSZ.TOML`, `./doszer.toml`,
   `$XDG_CONFIG_HOME/doszer/config.toml`, defaults.
@@ -137,7 +143,7 @@ pointer to it).
 |---|---|
 | `init` | Implemented |
 | `build` | Implemented |
-| `install` | Implemented; `-from` checked on a real D: save, a live session only with a stand-in for DOSBox Pure |
+| `install` | Implemented; `--from` checked on a real D: save, a live session only with a stand-in for DOSBox Pure |
 | `repack` | Implemented |
 | `verify` | Implemented |
 
@@ -175,7 +181,7 @@ Descent II peaked at 268 MB, down from 773 MB).
 
 `repack` (`internal/repack`) rebuilds an archive from nothing but a
 manifest - no source directory, since none is available. By default that
-manifest is the one already embedded in the archive; `-manifest` supplies
+manifest is the one already embedded in the archive; `--manifest` supplies
 a different one instead (an edited copy, or one retrofitted onto an
 archive with no embedded manifest at all - the input no longer needs a
 `DOSZ.TOML` of its own). The archive's own entries stand in for §6.1's
@@ -238,7 +244,7 @@ on the ISO.
 ## Next steps
 
 1. Run `install` against real DOSBox Pure: a live session for each boot
-   model. `-from` reads a real D: save correctly (`Betrayal in Antara`:
+   model. `--from` reads a real D: save correctly (`Betrayal in Antara`:
    all 18 files the game wrote under `D:\ANTARA\RWDATA`), and both
    session flows pass end to end with a script standing in for DOSBox
    Pure, but no session has launched the real executable yet - in
@@ -249,7 +255,7 @@ on the ISO.
 `internal/config` is implemented (README "Configuration"); `build` and
 `repack` consume `ogg_quality`, `install` the rest. With the OS image
 session using "Save Difference Per Content", `templates` only matter for
-`install -from` a whole `.vhd`/`.img`.
+`install --from` a whole `.vhd`/`.img`.
 
 ## Resolved questions
 

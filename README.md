@@ -32,12 +32,18 @@ make help    # every target
 ## Commands
 
 ```
-doszer init    <source> [--os <path> | --shell <path> | --exec <path>] [--name <name>] [--no-media] [--force]
-doszer build   <source> [<output.dosz>] [--name <name>] [--dry-run] [--strict] [--ogg-quality <n>]
-doszer install <source> [--dir <path>] [--from <file> [--content <file>]] [--force] [--dry-run] [--keep]
-doszer repack  <input.dosz> [<output.dosz>] [--manifest <file>] [--dry-run] [--strict] [--ogg-quality <n>]
-doszer verify  <file.dosz>
+doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH] [--name NAME] [--no-media] [-f]
+doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [-n] [--strict] [--ogg-quality N]
+doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FILE]] [-f] [-n] [--keep]
+               [--dosbox-pure FILE] [--system-dir DIR] [--save-dir DIR]
+doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
+doszer verify  FILE.dosz
 ```
+
+Options are GNU-style: `-n`/`--dry-run`, `-f`/`--force` and `-h`/`--help`
+have short forms (combinable, e.g. `-nf`); a long option's value may follow
+it or be attached with `=` (`--name=NAME`); options may come before or after
+arguments, and `--` ends them.
 
 | Command | Purpose |
 |---|---|

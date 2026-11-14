@@ -30,7 +30,7 @@ type Options struct {
 
 	From      string            // extract from this save or disk image instead of running DOSBox Pure
 	Content   string            // the content a D: .sav (or .pure.zip) was made over
-	Template  string            // pristine disk image a -from .vhd/.img is compared against
+	Template  string            // pristine disk image a --from .vhd/.img is compared against
 	Templates map[string]string // configured templates by OS image path, the fallback for Template
 }
 
@@ -284,7 +284,7 @@ func runFrom(opts Options, m *manifest.Manifest) (*Report, error) {
 
 	case strings.HasSuffix(lower, ".sav"):
 		if opts.Content == "" {
-			return nil, errors.New("a D: .sav needs -content, the archive it was made over")
+			return nil, errors.New("a D: .sav needs --content, the archive it was made over")
 		}
 		d, zr, err := vdisk.Open(opts.Content, vdisk.DefaultFreeSpaceMB)
 		if err != nil {
@@ -303,7 +303,7 @@ func runFrom(opts Options, m *manifest.Manifest) (*Report, error) {
 		}
 		return rep, extractImage(rep, from, opts)
 	}
-	return nil, fmt.Errorf("%s: -from takes a .sav, .pure.zip, .vhd or .img", from)
+	return nil, fmt.Errorf("%s: --from takes a .sav, .pure.zip, .vhd or .img", from)
 }
 
 func extractOverlay(rep *Report, image, sav string, opts Options) error {
@@ -337,7 +337,7 @@ func extractOverlay(rep *Report, image, sav string, opts Options) error {
 }
 
 // extractImage extracts from a whole disk image: compared against
-// opts.Template if given, else every file under -dir counts as added.
+// opts.Template if given, else every file under --dir counts as added.
 func extractImage(rep *Report, image string, opts Options) error {
 	disk, _, closeDisk, err := openDisk(image)
 	if err != nil {
@@ -365,7 +365,7 @@ func extractImage(rep *Report, image string, opts Options) error {
 		return extract(rep, afs, opts)
 	}
 	if opts.Dir == "" {
-		return errors.New("without a template to compare against, choose the folder to extract with -dir")
+		return errors.New("without a template to compare against, choose the folder to extract with --dir")
 	}
 	all, err := listFiles(afs)
 	if err != nil {

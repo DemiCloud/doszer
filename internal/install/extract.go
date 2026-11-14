@@ -45,7 +45,7 @@ func Extract(src fs.FS, changes []Change, dir, dest string, force, dryRun bool) 
 		jobs = append(jobs, c)
 	}
 	if len(conflicts) > 0 && !force {
-		return nil, fmt.Errorf("would overwrite %d file(s) in %s that differ (use -force): %s", len(conflicts), dest, strings.Join(conflicts, ", "))
+		return nil, fmt.Errorf("would overwrite %d file(s) in %s that differ (use --force): %s", len(conflicts), dest, strings.Join(conflicts, ", "))
 	}
 	for _, c := range jobs {
 		res.Written = append(res.Written, c.Path)

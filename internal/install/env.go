@@ -31,7 +31,7 @@ type Env struct {
 // else the system/ and saves/ directories beside it.
 func Discover(exe, systemDir, saveDir string) (Env, error) {
 	if exe == "" {
-		return Env{}, errors.New("no DOSBox Pure executable configured (set dosbox_pure or pass -dosbox-pure)")
+		return Env{}, errors.New("no DOSBox Pure executable configured (set dosbox_pure or pass --dosbox-pure)")
 	}
 	exe, err := filepath.Abs(exe)
 	if err != nil {

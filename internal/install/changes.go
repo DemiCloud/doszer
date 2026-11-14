@@ -199,7 +199,7 @@ func pickDir(changes []Change) (string, error) {
 		names = append(names, t)
 	}
 	sort.Strings(names)
-	return "", fmt.Errorf("changes span %s: choose the folder to extract with -dir", strings.Join(names, ", "))
+	return "", fmt.Errorf("changes span %s: choose the folder to extract with --dir", strings.Join(names, ", "))
 }
 
 // under reports whether p is dir or inside it, case-insensitively.
