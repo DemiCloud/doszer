@@ -258,7 +258,7 @@ Raised by a real retrofit attempt (repacking a legacy archive):
   epoch only on the three generated files, not on an ordinary entry, since
   it has no independent way to know what an arbitrary file's timestamp
   should be.
-- **Deflate trails a multi-pass encoder (e.g. 7-Zip) by a few percent**,
+- **Deflate trails a multi-pass encoder (e.g. 7-Zip) by about 6%**,
   even at `flate.BestCompression`. Investigated going further and decided
   against it, for now:
   - A pure-Go zopfli port (`foobaz/go-zopfli`) exists but has no stated
@@ -276,11 +276,23 @@ Raised by a real retrofit attempt (repacking a legacy archive):
     contradict this file's own "only ffmpeg" convention above; that's a
     bigger, deliberate convention change, not a silent addition.
 
-  None of these is a responsible "just do it" pick. If the gap matters
-  enough to revisit, the conversation should start with whether
-  `klauspost/compress`'s determinism caveat is actually triggered by this
-  codebase's specific write pattern (`io.Copy`'s fixed-size buffering
-  through `zipw.Add`) rather than assuming the worst case.
+  Measured on 2026-11-13 (`klauspost/compress` v1.20.4, level 9 vs
+  `compress/flate` level 9, every deflated entry of three real repacked
+  archives; 7-Zip `-tzip -mx=9 -mm=Deflate` for scale):
+
+  | Data | stdlib | klauspost | 7-Zip |
+  |---|---|---|---|
+  | Descent II, 672 MB (mostly the ISO) | 472.5 MB, 46s | 468.9 MB (-0.75%), 28s | 442.8 MB (-6.3%), 142s |
+  | Betrayal at Krondor, 127 MB | 90.0 MB, 3.6s | 89.7 MB (-0.35%), 2.3s | |
+  | Betrayal in Antara files, 68 MB | 17.06 MB, 4.2s | 17.06 MB (0%), 2.7s | |
+
+  `klauspost`'s output never changed with write sizes (whole buffer,
+  32 KiB, 4 KiB and random 1 B-100 KiB writes, on all 1302 entries), so
+  the determinism caveat didn't show here. But it closes about a tenth
+  of the gap to 7-Zip: not worth a dependency for size. Its ~40% speed
+  gain is the only real argument for it. Closing the gap needs a
+  multi-pass encoder, which none of the options above provide
+  responsibly.
 
 ## Reference
 
