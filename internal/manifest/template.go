@@ -11,6 +11,7 @@ type TemplateOptions struct {
 	Exec  string
 	Shell string
 	OS    string
+	Media []Media // [[source.media]] entries to write, from build.IdentifyMedia
 }
 
 // Template returns a commented starting manifest for `init`.
@@ -73,6 +74,36 @@ func Template(o TemplateOptions) string {
 # CD audio encoding: "ogg" (default) or "wav".
 # audio = "ogg"
 `)
+
+	b.WriteString(`
+# Disc images, identified by their tracks' content (spec §7), so a build
+# can check it was given the right disc and name its CUE sheet after the
+# game. Track hashes are SHA-1 over each track's user data or audio.
+`)
+	if len(o.Media) == 0 {
+		b.WriteString(`# [[source.media]]
+# id     = "disc1"
+# label  = "Example Game (Disc 1)"
+# tracks = [
+#   { type = "data",  sha1 = "<40 hex digits>" },
+#   { type = "audio", sha1 = "<40 hex digits>" },
+# ]
+`)
+	}
+	for i, m := range o.Media {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "[[source.media]]\nid     = %s\nlabel  = %s\ntracks = [\n", quote(m.ID), quote(m.Label))
+		for _, t := range m.Tracks {
+			pad := ""
+			if t.Type == TrackData {
+				pad = " "
+			}
+			fmt.Fprintf(&b, "  { type = %q,%s sha1 = %q },\n", t.Type, pad, t.SHA1)
+		}
+		b.WriteString("]\n")
+	}
 
 	return b.String()
 }

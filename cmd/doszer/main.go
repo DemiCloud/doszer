@@ -98,6 +98,7 @@ func runInit(args []string) error {
 	fs.StringVar(&o.Exec, "exec", "", "plain model: DOS program to run at startup")
 	fs.StringVar(&o.Shell, "shell", "", "shell model: system shell path, without extension")
 	fs.StringVar(&o.OS, "os", "", "OS image model: OS image path, without extension")
+	noMedia := fs.Bool("no-media", false, "don't identify disc images in the source")
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), `doszer init - write a commented DOSZ.TOML into a source directory
 
@@ -107,6 +108,7 @@ Options:
   -exec STR   plain model: DOS program to run at startup
   -force      overwrite an existing manifest
   -name STR   canonical name (default: source directory name)
+  -no-media   don't identify disc images in the source
   -os STR     OS image model: OS image path, without extension
   -shell STR  shell model: system shell path, without extension
 `)
@@ -138,6 +140,20 @@ Options:
 			return err
 		}
 		o.Name = filepath.Base(abs)
+	}
+
+	if !*noMedia {
+		media, skipped, err := build.IdentifyMedia(source)
+		if err != nil {
+			return err
+		}
+		for _, s := range skipped {
+			fmt.Fprintf(os.Stderr, "[WARN] disc image not identified: %s\n", s)
+		}
+		if len(media) > 0 {
+			fmt.Printf("Identified %d disc image(s)\n", len(media))
+		}
+		o.Media = media
 	}
 
 	content := manifest.Template(o)

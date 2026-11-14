@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/DemiCloud/doszer/internal/cue"
@@ -126,4 +127,49 @@ func findCueSheets(sourceDir string) ([]string, error) {
 		return nil, fmt.Errorf("find cue sheets: %w", err)
 	}
 	return found, nil
+}
+
+// IdentifyMedia hashes every disc image (CUE sheet) under sourceDir into
+// a [[source.media]] entry (§5.6, §7.2), for `init` to write: ids disc1,
+// disc2, ... in path order, labelled with the CUE sheet's name. A CUE
+// sheet that can't be read or resolved is skipped and reported in
+// skipped; one with the same tracks as an earlier one is left out.
+func IdentifyMedia(sourceDir string) (media []manifest.Media, skipped []string, err error) {
+	cues, err := findCueSheets(sourceDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	sort.Strings(cues)
+	seen := map[string]bool{}
+	for _, p := range cues {
+		rel, _ := filepath.Rel(sourceDir, p)
+		tracks, err := resolveCueFile(p)
+		if err != nil {
+			skipped = append(skipped, fmt.Sprintf("%s: %v", filepath.ToSlash(rel), err))
+			continue
+		}
+		m := manifest.Media{
+			ID:    fmt.Sprintf("disc%d", len(media)+1),
+			Label: strings.TrimSuffix(filepath.Base(p), filepath.Ext(p)),
+		}
+		var key strings.Builder
+		for i, t := range tracks {
+			sum, err := t.Hash()
+			if err != nil {
+				return nil, skipped, fmt.Errorf("%s: track %d: %w", filepath.ToSlash(rel), i+1, err)
+			}
+			typ := manifest.TrackData
+			if t.Track.IsAudio() {
+				typ = manifest.TrackAudio
+			}
+			m.Tracks = append(m.Tracks, manifest.Track{Type: typ, SHA1: sum})
+			key.WriteString(typ + sum)
+		}
+		if seen[key.String()] {
+			continue
+		}
+		seen[key.String()] = true
+		media = append(media, m)
+	}
+	return media, skipped, nil
 }

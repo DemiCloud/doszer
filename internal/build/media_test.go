@@ -145,3 +145,38 @@ func mkdir(t *testing.T, base, name string) string {
 	}
 	return dir
 }
+
+func TestIdentifyMedia(t *testing.T) {
+	dir := t.TempDir()
+	a := sectorContent("disc one")
+	b := sectorContent("disc two")
+	writeMediaFixture(t, mkdir(t, dir, "CD1"), "Game (Disc 1).cue", "d1.bin", a)
+	writeMediaFixture(t, mkdir(t, dir, "CD2"), "Game (Disc 2).cue", "d2.bin", b)
+	writeMediaFixture(t, mkdir(t, dir, "COPY"), "Same as disc 1.cue", "copy.bin", a)
+	os.WriteFile(filepath.Join(dir, "broken.cue"), []byte("FILE \"missing.bin\" BINARY\nTRACK 01 MODE1/2048\nINDEX 01 00:00:00\n"), 0o644)
+
+	media, skipped, err := IdentifyMedia(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skipped) != 1 {
+		t.Errorf("skipped %v, want the broken sheet", skipped)
+	}
+	if len(media) != 2 {
+		t.Fatalf("media %+v, want 2 (the copy left out)", media)
+	}
+	if media[0].ID != "disc1" || media[0].Label != "Game (Disc 1)" || media[0].Tracks[0].SHA1 != sha1Hex(a) ||
+		media[1].ID != "disc2" || media[1].Tracks[0].SHA1 != sha1Hex(b) {
+		t.Fatalf("media %+v", media)
+	}
+
+	// What init writes must parse back to the same entries.
+	text := manifest.Template(manifest.TemplateOptions{Name: "Game", Media: media})
+	m, err := manifest.Parse([]byte(text), "Game")
+	if err != nil {
+		t.Fatalf("template with media: %v", err)
+	}
+	if len(m.Source.Media) != 2 || m.Source.Media[1].Tracks[0] != media[1].Tracks[0] {
+		t.Fatalf("parsed media %+v", m.Source.Media)
+	}
+}

@@ -32,7 +32,7 @@ make help    # every target
 ## Commands
 
 ```
-doszer init    <source> [--os <path> | --shell <path> | --exec <path>] [--name <name>] [--force]
+doszer init    <source> [--os <path> | --shell <path> | --exec <path>] [--name <name>] [--no-media] [--force]
 doszer build   <source> [<output.dosz>] [--name <name>] [--dry-run] [--strict] [--ogg-quality <n>]
 doszer install <source> [--dir <path>] [--from <file> [--content <file>]] [--force] [--dry-run] [--keep]
 doszer repack  <input.dosz> [<output.dosz>] [--manifest <file>] [--dry-run] [--strict] [--ogg-quality <n>]
@@ -46,6 +46,10 @@ doszer verify  <file.dosz>
 | `install` | Run an installer under DOSBox Pure and extract the chosen folder into the source. |
 | `repack` | Rebuild an archive from its embedded manifest. |
 | `verify` | Check an archive against its embedded manifest and the specification. |
+
+`init` also hashes every disc image (CUE sheet) in the source into
+`[[source.media]]` entries (spec §7.2), labelled with the CUE sheet's name;
+`--no-media` skips this.
 
 The default output is `<name>.dosz` in the current directory. `--name`
 overrides the manifest's `name`, which defaults to the source directory name.
