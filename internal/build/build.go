@@ -73,7 +73,14 @@ func Run(opts Options) (*Result, error) {
 		return nil, err
 	}
 
-	fs, mediaWarnings, err := collect(opts.SourceDir, m)
+	var tempFiles []*os.File
+	defer func() {
+		for _, f := range tempFiles {
+			f.Close()
+			os.Remove(f.Name())
+		}
+	}()
+	fs, mediaWarnings, err := collect(opts.SourceDir, m, &tempFiles)
 	if err != nil {
 		return nil, err
 	}

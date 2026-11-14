@@ -3,6 +3,7 @@ package build
 import (
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -14,7 +15,10 @@ import (
 // DOSZ.TOML, then every [[extract]] entry, then every [[file]] entry. It
 // verifies [[source.media]] against the collected disc images (§7.3) and
 // returns that step's warnings.
-func collect(sourceDir string, m *manifest.Manifest) (*fileSet, []string, error) {
+//
+// Files extracted from media stay in temporary images appended to
+// *tempFiles, which the caller removes once the archive is written.
+func collect(sourceDir string, m *manifest.Manifest, tempFiles *[]*os.File) (*fileSet, []string, error) {
 	result := newFileSet()
 
 	err := filepath.WalkDir(sourceDir, func(p string, d fs.DirEntry, err error) error {
@@ -53,7 +57,7 @@ func collect(sourceDir string, m *manifest.Manifest) (*fileSet, []string, error)
 	if err != nil {
 		return nil, warnings, err
 	}
-	if err := applyExtracts(result, media, m.Extract); err != nil {
+	if err := applyExtracts(result, media, m.Extract, tempFiles); err != nil {
 		return nil, warnings, err
 	}
 

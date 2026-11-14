@@ -2,7 +2,6 @@ package build
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 )
@@ -28,10 +27,10 @@ func suggestRewrites(fs *fileSet, dropped []string) (suggestions []string, binar
 
 		for _, p := range fs.paths() {
 			e, _ := fs.get(p)
-			if size, ok := diskSize(e); ok && size > maxScanSize {
+			if size, err := e.size(); err != nil || size > maxScanSize {
 				continue
 			}
-			content, err := e.bytes()
+			content, err := e.peek()
 			if err != nil {
 				continue
 			}
@@ -54,17 +53,6 @@ func suggestRewrites(fs *fileSet, dropped []string) (suggestions []string, binar
 	}
 
 	return suggestions, binaryRefs
-}
-
-func diskSize(e *fileEntry) (int64, bool) {
-	if e.diskPath == "" {
-		return 0, false
-	}
-	info, err := os.Stat(e.diskPath)
-	if err != nil {
-		return 0, false
-	}
-	return info.Size(), true
 }
 
 func containsFold(content, needle []byte) bool {

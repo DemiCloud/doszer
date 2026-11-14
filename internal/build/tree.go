@@ -32,7 +32,10 @@ type RawSource struct {
 // or by a RawSource, with the modification time §8.2 requires its archive
 // entry to carry.
 type fileEntry struct {
-	diskPath string     // absolute path to the backing file; "" if data/source is set
+	diskPath string // absolute path to the backing file; "" if data/source is set
+	ranged   bool   // the content is diskLen bytes of diskPath from diskOff
+	diskOff  int64
+	diskLen  int64
 	data     []byte     // in-memory content; authoritative when non-nil
 	source   *RawSource // original compressed form; set only until data is filled
 	modified time.Time
@@ -40,6 +43,12 @@ type fileEntry struct {
 
 func diskEntry(path string, modified time.Time) *fileEntry {
 	return &fileEntry{diskPath: path, modified: modified}
+}
+
+// rangeEntry is n bytes of the file at path from off: a file extracted
+// from a disc image, left in place rather than read into memory.
+func rangeEntry(path string, off, n int64, modified time.Time) *fileEntry {
+	return &fileEntry{diskPath: path, ranged: true, diskOff: off, diskLen: n, modified: modified}
 }
 
 func dataEntry(data []byte, modified time.Time) *fileEntry {
@@ -64,7 +73,26 @@ func (e *fileEntry) bytes() ([]byte, error) {
 		e.data = data
 		return data, nil
 	}
+	if e.ranged {
+		rc, err := e.openRange(0, e.diskLen)
+		if err != nil {
+			return nil, err
+		}
+		defer rc.Close()
+		return io.ReadAll(rc)
+	}
 	return os.ReadFile(e.diskPath)
+}
+
+// peek returns the entry's content like bytes, but without caching a
+// RawSource-backed entry's decompressed content: for reading an entry
+// only to inspect it, which shouldn't keep it in memory or stop
+// writeArchive from passing it through raw.
+func (e *fileEntry) peek() ([]byte, error) {
+	if e.data == nil && e.source != nil {
+		return e.source.Decompressed()
+	}
+	return e.bytes()
 }
 
 // open streams the entry's content, avoiding a copy for disk-backed entries.
@@ -91,6 +119,13 @@ func (e *fileEntry) reader() (io.Reader, error) {
 	if e.data == nil && e.source != nil && e.source.Open != nil {
 		return e.source.Open()
 	}
+	if e.data == nil && e.ranged {
+		f, err := os.Open(e.diskPath)
+		if err != nil {
+			return nil, err
+		}
+		return &sectionFile{io.NewSectionReader(f, e.diskOff, e.diskLen), f}, nil
+	}
 	f, data, err := e.open()
 	if err != nil {
 		return nil, err
@@ -108,6 +143,9 @@ func (e *fileEntry) size() (int64, error) {
 	}
 	if e.source != nil {
 		return int64(e.source.UncompressedSize), nil
+	}
+	if e.ranged {
+		return e.diskLen, nil
 	}
 	info, err := os.Stat(e.diskPath)
 	if err != nil {
@@ -137,6 +175,9 @@ func (e *fileEntry) openRange(off, n int64) (io.ReadCloser, error) {
 		if err != nil {
 			return nil, err
 		}
+		if e.ranged {
+			off, n = e.diskOff+min(off, e.diskLen), min(n, max(e.diskLen-off, 0))
+		}
 		return readCloser{io.NewSectionReader(f, off, n), f}, nil
 	}
 	data, err := e.bytes()
@@ -150,6 +191,17 @@ type readCloser struct {
 	io.Reader
 	io.Closer
 }
+
+// sectionFile is part of an open file: seekable, so zipw can store it
+// without spooling, and closable.
+type sectionFile struct {
+	sr *io.SectionReader
+	f  *os.File
+}
+
+func (s *sectionFile) Read(p []byte) (int, error)                { return s.sr.Read(p) }
+func (s *sectionFile) Seek(off int64, whence int) (int64, error) { return s.sr.Seek(off, whence) }
+func (s *sectionFile) Close() error                              { return s.f.Close() }
 
 // rawPassthrough returns the entry's RawSource if nothing has read or
 // replaced its content since it was collected, so writeArchive can copy its

@@ -357,11 +357,23 @@ tracks = [{ type = "data", sha1 = "%x" }]
 media = "disc1"
 from  = "RESOURCE"
 to    = "GAME/RESOURCE"
+
+[pack]
+store = ["dat"]
 `, sum))
 
-	res, err := build.Run(build.Options{SourceDir: dir, OutputPath: filepath.Join(t.TempDir(), "out.dosz")})
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	res, err := build.Run(build.Options{SourceDir: dir, OutputPath: out})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+	// Extracted files are written from ranges of the temporary disc image
+	// (stored, so read with a seek); their content must be exact.
+	entries := readZip(t, out)
+	for name, want := range map[string]string{"GAME/RESOURCE/A.DAT": "file a", "GAME/RESOURCE/B.DAT": "file b"} {
+		if got := readZipFile(t, entries[name]); got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
 	}
 
 	want := []string{"GAME/RESOURCE/A.DAT", "GAME/RESOURCE/B.DAT"}

@@ -161,7 +161,10 @@ hash and are skipped with a warning (`cue.ResolvedTrack.Verifiable`). A
 media nothing matches fails the build only if `[[extract]]` references it,
 otherwise it's a warning naming any same-layout, different-hash images.
 `[[extract]]`'s `from` path is then resolved through `internal/iso9660`
-against the matched media's data track (materialized to a temp file).
+against the matched media's data track (materialized to a temp file,
+kept until the archive is written: an extracted file is a byte range of
+it, `rangeEntry`, never read into memory - a whole-disc extract of
+Descent II peaked at 268 MB, down from 773 MB).
 
 `repack` (`internal/repack`) rebuilds an archive from nothing but a
 manifest - no source directory, since none is available. By default that

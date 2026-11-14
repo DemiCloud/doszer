@@ -134,6 +134,15 @@ func (img *Image) OpenFile(e Entry) (io.Reader, error) {
 	return io.NewSectionReader(img.r, int64(e.LBA)*sectorSize, int64(e.Size)), nil
 }
 
+// Extent returns where a file's content lies in the image: its byte offset
+// and size. A file is one contiguous extent (OpenFile reads the same).
+func (img *Image) Extent(e Entry) (offset, size int64, err error) {
+	if e.IsDir {
+		return 0, 0, fmt.Errorf("%s: is a directory", e.Name)
+	}
+	return int64(e.LBA) * sectorSize, int64(e.Size), nil
+}
+
 // dirFlag is the File Flags bit marking a directory record (ECMA-119 §9.1.6).
 const dirFlag = 0x02
 
