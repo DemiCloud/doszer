@@ -143,7 +143,7 @@ pointer to it).
 |---|---|
 | `init` | Implemented |
 | `build` | Implemented |
-| `install` | Implemented; `--from` checked on a real D: save, a live session only with a stand-in for DOSBox Pure |
+| `install` | Implemented; `--from` checked on a real D: save; a live plain session passed, a live OS image session is partly checked (Next steps) |
 | `repack` | Implemented |
 | `verify` | Implemented |
 
@@ -243,14 +243,16 @@ on the ISO.
 
 ## Next steps
 
-1. Run `install` against real DOSBox Pure: a live session for each boot
-   model. `--from` reads a real D: save correctly (`Betrayal in Antara`:
-   all 18 files the game wrote under `D:\ANTARA\RWDATA`), and both
-   session flows pass end to end with a script standing in for DOSBox
-   Pure, but no session has launched the real executable yet - in
-   particular, that `FRONTEND.DBP`'s "Save Difference" override takes
-   effect before the OS boots, and that the `.pure.zip` is flushed by the
-   time the process exits.
+1. Finish the live `install` test against real DOSBox Pure (2026-11-13
+   run): the plain session passed end to end (Descent II: DOSBox Pure
+   wrote the `.pure.zip` before exiting, 32 files extracted). The OS
+   image session booted Win98, kept `Win98.vhd` byte-identical and wrote
+   `-CDRIVE.sav`, but the game's installer crashed (Betrayal in Antara
+   only installs to its default folder), so still unconfirmed: a live
+   `--drive c` / `--os` extraction, a live D: extraction, and that
+   `FRONTEND.DBP`'s override itself takes effect - that machine's
+   `DOSBoxPure.cfg` already sets `bootos_ramdisk` to `diff`, so the
+   run can't tell the two apart.
 
 `internal/config` is implemented (README "Configuration"); `build` and
 `repack` consume `ogg_quality`, `install` the rest. With the OS image

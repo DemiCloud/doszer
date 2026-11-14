@@ -24,6 +24,7 @@ type Options struct {
 	Exe, SystemDir, SaveDir string // DOSBox Pure; see Discover
 
 	Dir    string // folder to extract, relative to the drive root; chosen automatically if empty
+	Drive  string // OS image model: "C" to extract from C: changes instead of D:
 	Force  bool   // overwrite differing files in the source
 	DryRun bool   // report without writing
 	Keep   bool   // keep a session's save files after extracting
@@ -32,6 +33,36 @@ type Options struct {
 	Content   string            // the content a D: .sav (or .pure.zip) was made over
 	Template  string            // pristine disk image a --from .vhd/.img is compared against
 	Templates map[string]string // configured templates by OS image path, the fallback for Template
+
+	OS        string            // OS image an OS image session boots instead of boot.os (e.g. a plain install image)
+	InstallOS map[string]string // configured install images by boot.os, the fallback for OS
+}
+
+// sessionOS is the OS image an OS image session boots, and a -CDRIVE.sav
+// is read over: opts.OS, else the configured install image for boot.os,
+// else boot.os itself.
+func sessionOS(opts Options, m *manifest.Manifest) string {
+	if opts.OS != "" {
+		return opts.OS
+	}
+	if img := opts.InstallOS[m.Boot.OS]; img != "" {
+		return img
+	}
+	return m.Boot.OS
+}
+
+// osDriveDir picks the folder to extract from an OS image's C: changes:
+// Windows changes its own files during any session, so WINDOWS/ and files
+// in the root don't count.
+func osDriveDir(changes []Change) (string, error) {
+	var own []Change
+	for _, c := range changes {
+		top, _, nested := strings.Cut(c.Path, "/")
+		if nested && !strings.EqualFold(top, "WINDOWS") {
+			own = append(own, c)
+		}
+	}
+	return pickDir(own)
 }
 
 // Report is what an install found and did.
@@ -51,6 +82,22 @@ func Run(opts Options) (*Report, error) {
 	m, err := manifest.Load(opts.Source)
 	if err != nil {
 		return nil, err
+	}
+	switch strings.ToUpper(strings.TrimSuffix(opts.Drive, ":")) {
+	case "", "D":
+		opts.Drive = ""
+	case "C":
+		if m.Model() != manifest.ModelOS {
+			return nil, errors.New("--drive applies only to an OS image session (boot.os)")
+		}
+		opts.Drive = "C"
+	default:
+		return nil, fmt.Errorf("--drive %s: must be c or d", opts.Drive)
+	}
+	if m.Model() == manifest.ModelOS {
+		session := *m
+		session.Boot.OS = sessionOS(opts, m)
+		m = &session
 	}
 	if opts.From != "" {
 		return runFrom(opts, m)
@@ -110,9 +157,18 @@ func collectOS(rep *Report, s *Session, env Env, opts Options) ([]string, error)
 		if err != nil {
 			return saves, err
 		}
+		if opts.Drive == "C" {
+			rep.Drive = "C:"
+			if _, err := os.Stat(sf.DDrive); err == nil {
+				saves = append(saves, sf.DDrive)
+			}
+			return saves, extractOverlay(rep, img, sf.CDrive, opts)
+		}
 		if rep.Other, err = diffOverlay(img, sf.CDrive); err != nil {
 			return saves, fmt.Errorf("C: changes: %w", err)
 		}
+	} else if opts.Drive == "C" {
+		return saves, errors.New("the session left no C: changes")
 	}
 
 	if _, err := os.Stat(sf.DDrive); err != nil {
@@ -264,7 +320,7 @@ func runFrom(opts Options, m *manifest.Manifest) (*Report, error) {
 
 	case cdriveSave.MatchString(from):
 		if m.Boot.OS == "" {
-			return nil, errors.New("a -CDRIVE.sav needs the manifest's boot.os, the OS image it was made over")
+			return nil, errors.New("a -CDRIVE.sav needs the manifest's boot.os (or --os), the OS image it was made over")
 		}
 		systemDir := opts.SystemDir
 		if systemDir == "" {
@@ -332,6 +388,11 @@ func extractOverlay(rep *Report, image, sav string, opts Options) error {
 	}
 	if rep.Changes, err = Diff(bfs, afs); err != nil {
 		return err
+	}
+	if opts.Dir == "" {
+		if opts.Dir, err = osDriveDir(rep.Changes); err != nil {
+			return err
+		}
 	}
 	return extract(rep, afs, opts)
 }

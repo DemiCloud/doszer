@@ -362,3 +362,61 @@ func craftSave(t *testing.T, disk *vdisk.Disk, shortName, oldData, newData strin
 	}
 	return out
 }
+
+// TestRunOSSessionDriveC: an OS image session that boots an install image
+// (--os) instead of boot.os, and extracts from C: (--drive c), picking the
+// game's folder over the changes Windows makes to itself.
+func TestRunOSSessionDriveC(t *testing.T) {
+	exe, saveDir := fakeDOSBoxPure(t)
+	systemDir := filepath.Join(filepath.Dir(saveDir), "system")
+
+	// A stand-in OS image: a FAT disk with Windows and the game's default
+	// install folder on it.
+	zb := zipBytes(t, map[string]string{"WINDOWS/WIN.INI": "[windows]\r\n", "SIERRA/GAME.CFG": "path=1\r\n"})
+	zr, err := zip.NewReader(bytes.NewReader(zb), int64(len(zb)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	disk, err := vdisk.Build(zr, "image.zip", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img := make([]byte, disk.Size())
+	if _, err := disk.ReadAt(img, 0); err != nil {
+		t.Fatal(err)
+	}
+	os.MkdirAll(filepath.Join(systemDir, "dosbox_pure"), 0o755)
+	os.WriteFile(filepath.Join(systemDir, "dosbox_pure", "Install.img"), img, 0o644)
+
+	// The installer rewrote SIERRA/GAME.CFG; Windows touched WIN.INI.
+	sav := craftSave(t, disk, "GAME    CFG", "path=1\r\n", "path=2\r\n")
+	win := craftSave(t, disk, "WIN     INI", "[windows]\r\n", "[WINDOWS]\r\n")
+	savePath := filepath.Join(t.TempDir(), "c.sav")
+	os.WriteFile(savePath, append(sav, win[5:]...), 0o644)
+	t.Setenv("FAKE_SAVE", savePath)
+	t.Setenv("FAKE_SUFFIX", "-CDRIVE.sav")
+
+	src := writeSource(t, "format = 1\nname = \"Example Game\"\n\n[boot]\nos = \"dosbox_pure/Win98\"\n", map[string]string{"SETUP.EXE": "MZ"})
+	opts := Options{Source: src, Exe: exe, SystemDir: systemDir, SaveDir: saveDir, Drive: "c", OS: "dosbox_pure/Install"}
+	rep, err := Run(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Drive != "C:" || rep.Dir != "SIERRA" || len(rep.Extracted.Written) != 1 {
+		t.Fatalf("report %+v", rep)
+	}
+	if b, _ := os.ReadFile(filepath.Join(src, "SIERRA/GAME.CFG")); string(b) != "path=2\r\n" {
+		t.Fatalf("GAME.CFG = %q", b)
+	}
+
+	// The same through the configured install image, and --drive rejected
+	// outside the OS image model.
+	opts.OS, opts.InstallOS, opts.Force = "", map[string]string{"dosbox_pure/Win98": "dosbox_pure/Install"}, true
+	if _, err := Run(opts); err != nil {
+		t.Fatalf("install_os: %v", err)
+	}
+	plain := writeSource(t, "format = 1\nname = \"Example Game\"\n", map[string]string{"SETUP.EXE": "MZ"})
+	if _, err := Run(Options{Source: plain, Exe: exe, Drive: "c"}); err == nil {
+		t.Fatal("--drive c accepted for a plain session")
+	}
+}

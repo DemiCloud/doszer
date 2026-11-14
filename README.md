@@ -35,7 +35,7 @@ make help    # every target
 doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH] [--name NAME] [--no-media] [-f]
 doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [-n] [--strict] [--ogg-quality N]
 doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FILE]] [-f] [-n] [--keep]
-               [--dosbox-pure FILE] [--system-dir DIR] [--save-dir DIR]
+               [--os PATH] [--drive c|d] [--dosbox-pure FILE] [--system-dir DIR] [--save-dir DIR]
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
 doszer verify  FILE.dosz
 ```
@@ -127,6 +127,9 @@ ogg_quality = 6
 
 [templates]                          # pristine OS images used by install
 "dosbox_pure/Win98" = "/path/to/Win98.template"
+
+[install_os]                         # image install sessions boot, by boot.os
+"dosbox_pure/Win98" = "dosbox_pure/Win98 Install"
 ```
 
 A manifest overrides them the same way, under `[x-doszer]` (spec §5.9's
@@ -137,7 +140,7 @@ extension-key namespace, so the manifest schema doesn't reject it):
 ogg_quality = 10
 ```
 
-`templates` merges by key across layers; every other setting is replaced
+`templates` and `install_os` merge by key across layers; every other setting is replaced
 whole by the most specific layer that sets it. `repack` has no source
 directory, so it skips the `[x-doszer]` layer.
 
@@ -160,6 +163,15 @@ Content" for itself only, so the OS image is never modified and C: changes
 land in `<name>-CDRIVE.sav`; they're listed, not extracted, since every
 archive shares C:. Nothing in your DOSBox Pure configuration changes.
 
+An OS image session boots `--os`, else the image `install_os` maps
+`boot.os` to, else `boot.os` itself: an archive's own image may start the
+game through a custom shell, while installing wants a plain Windows
+desktop. `--drive c` extracts from C: instead of D:, for an installer that
+only works in its default folder on C:; the folder is `--dir`, or the one
+top-level folder outside `WINDOWS` every change is under. The game's paths
+then name C:, which the manifest's `[[layout.rewrite]]` rules can fix
+(`build --dry-run` suggests rules for paths that move).
+
 The folder to extract is `--dir`, or the one top-level folder every
 change is under. Other changes are listed. A file already in the source
 with different content stops the extraction unless `--force` is given.
@@ -172,7 +184,7 @@ save or disk image:
 | `--from` | Also needs |
 |---|---|
 | `<content>-<HASH>.sav` (D:) | `--content`, the archive it was made over; the hash must match |
-| `<content>-CDRIVE.sav` (C:) | the manifest's `boot.os` |
+| `<content>-CDRIVE.sav` (C:) | the image it was made over: `--os`, `install_os` or `boot.os` |
 | `.pure.zip` | (`--content` to tell modified files from added ones) |
 | `.vhd`, `.img` | `--template` or a configured template to compare against, else `--dir` |
 

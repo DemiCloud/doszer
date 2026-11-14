@@ -26,6 +26,7 @@ type Config struct {
 	DosboxPure string            `toml:"dosbox_pure"`
 	OggQuality int               `toml:"ogg_quality"`
 	Templates  map[string]string `toml:"templates"`
+	InstallOS  map[string]string `toml:"install_os"` // OS image install sessions boot, by boot.os
 }
 
 // Default returns doszer's built-in defaults.

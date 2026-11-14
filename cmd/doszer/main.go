@@ -357,10 +357,12 @@ func runInstall(args []string) error {
 	content := fs.String("content", "", "")
 	dir := fs.String("dir", "", "")
 	exe := fs.String("dosbox-pure", "", "")
+	drive := fs.String("drive", "", "")
 	dryRun := fs.BoolP("dry-run", "n", false, "")
 	force := fs.BoolP("force", "f", false, "")
 	from := fs.String("from", "", "")
 	keep := fs.Bool("keep", false, "")
+	osImage := fs.String("os", "", "")
 	saveDir := fs.String("save-dir", "", "")
 	systemDir := fs.String("system-dir", "", "")
 	template := fs.String("template", "", "")
@@ -372,10 +374,12 @@ Options:
       --content FILE      archive a --from save was made over
       --dir PATH          folder to extract, relative to the drive root
       --dosbox-pure FILE  DOSBox Pure executable (default: dosbox_pure)
+      --drive LETTER      OS image session: drive to extract from, c or d (default: d)
   -n, --dry-run           report without writing
   -f, --force             overwrite differing files in the source
       --from FILE         extract from this .sav, .pure.zip, .vhd or .img instead
       --keep              keep the session's save files
+      --os PATH           OS image to boot instead of boot.os (default: install_os, else boot.os)
       --save-dir DIR      DOSBox Pure save directory (default: save_dir, else DOSBoxPure.cfg)
       --system-dir DIR    DOSBox Pure system directory (default: system_dir, else DOSBoxPure.cfg)
       --template FILE     pristine image to compare a --from image against
@@ -394,6 +398,9 @@ Options:
 		SystemDir: stringOr(*systemDir, cfg.SystemDir),
 		SaveDir:   stringOr(*saveDir, cfg.SaveDir),
 		Dir:       *dir,
+		Drive:     *drive,
+		OS:        *osImage,
+		InstallOS: cfg.InstallOS,
 		Force:     *force,
 		DryRun:    *dryRun,
 		Keep:      *keep,
