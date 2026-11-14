@@ -4,7 +4,6 @@ package zipw
 import (
 	"archive/zip"
 	"bytes"
-	"compress/flate"
 	"hash/crc32"
 	"io"
 	"os"
@@ -42,7 +41,7 @@ func New(w io.Writer) *Writer {
 }
 
 // Add writes one entry with the given modification time (§8.2), using
-// Store if store is set, else Deflate at flate.BestCompression
+// Store if store is set, else Deflate at flate.BestCompression, in parallel
 // (archive/zip's own Deflate compressor uses level 5). The CRC-32 and sizes
 // must precede the data, so a stored entry from an io.ReadSeeker is read
 // twice, and anything else is first written to a spool.
@@ -73,14 +72,7 @@ func (w *Writer) Add(name string, r io.Reader, store bool, modified time.Time) e
 		n, err = io.Copy(io.MultiWriter(sp, h), r)
 	} else {
 		method = zip.Deflate
-		fw, ferr := flate.NewWriter(sp, flate.BestCompression)
-		if ferr != nil {
-			return ferr
-		}
-		n, err = io.Copy(fw, io.TeeReader(r, h))
-		if cerr := fw.Close(); err == nil {
-			err = cerr
-		}
+		n, err = deflate(sp, r, h)
 	}
 	if err != nil {
 		return err

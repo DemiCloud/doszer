@@ -56,7 +56,12 @@ README.md            doszer usage, configuration, install workflow
   pure-Go encoder). Invoke it with `-fflags +bitexact` (fixed Ogg stream
   serial numbers) and `-flags +bitexact` (no encoder version string):
   with both, two builds produce byte-identical Ogg files.
-- `internal/zipw` deflates at `flate.BestCompression` (level 9) itself:
+- `internal/zipw` deflates at `flate.BestCompression` (level 9) itself,
+  in parallel: input is split into 1 MiB blocks, each primed with the
+  previous 32 KiB as its dictionary and sync-flushed, concatenated in order
+  (pigz's scheme; `deflate.go`). Output depends only on the input, not on
+  the CPU count. Measured on a local Descent II build: 28.8s to 7.1s on 32
+  CPUs, for 5.6 KB more output on 320 MB.
   `archive/zip`'s built-in compressor uses level 5 (`register.go`'s
   `newFlateWriter`), not even `flate.DefaultCompression` (6). It writes
   every entry through `CreateRaw` with CRC-32 and sizes in the local
