@@ -144,7 +144,7 @@ pointer to it).
 |---|---|
 | `init` | Implemented |
 | `build` | Implemented |
-| `install` | Implemented; `--from` checked on a real D: save; a live plain session passed, a live OS image session is partly checked (Next steps) |
+| `install` | Implemented; live plain and OS image (`--drive c`) sessions passed; `--from` checked on a real D: save (Next steps) |
 | `repack` | Implemented |
 | `verify` | Implemented |
 
@@ -244,19 +244,17 @@ on the ISO.
 
 ## Next steps
 
-1. Finish the live `install` test against real DOSBox Pure (2026-11-13
-   run): the plain session passed end to end (Descent II: DOSBox Pure
-   wrote the `.pure.zip` before exiting, 32 files extracted). The OS
-   image session booted Win98, kept `Win98.vhd` byte-identical and wrote
-   `-CDRIVE.sav`, but the game's installer crashed (Betrayal in Antara
-   only installs to its default folder). A `--drive c` rerun extracted
-   1247 files, but some were corrupt: a DOSBox Pure bug loses writes in
-   `diff` mode on a dynamic VHD (DOSBox Pure facts table), confirmed by
-   applying the save independently - doszer read the disk exactly as
-   stored. Still to do: rerun on a fixed VHD (or raw .img) and compare
-   with a known-good install; a live D: extraction; and confirm
-   `FRONTEND.DBP`'s override takes effect (that machine's
-   `DOSBoxPure.cfg` already sets `bootos_ramdisk` to `diff`).
+1. Finish the live `install` test against real DOSBox Pure. Passed
+   (2026-11-13): a plain session (Descent II, 32 files from the
+   `.pure.zip`), and an OS image session with `--drive c` on a fixed
+   Win98 VHD (Betrayal in Antara: 1233 of 1234 files identical to a
+   known-good install, `RESOURCE.WIN` differing only in setup choices;
+   the image left byte-identical). Earlier runs on a dynamic VHD hit
+   DOSBox Pure's lost-write bug (DOSBox Pure facts table), which
+   `install` now refuses. Still unchecked live: a D: extraction, `--os`
+   with a second image, and that `FRONTEND.DBP`'s override takes effect
+   on its own (that machine's `DOSBoxPure.cfg` already sets
+   `bootos_ramdisk` to `diff`).
 
 `internal/config` is implemented (README "Configuration"); `build` and
 `repack` consume `ogg_quality`, `install` the rest. With the OS image
