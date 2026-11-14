@@ -7,20 +7,19 @@ configuration.
 `doszer` is the reference implementation of the
 [DOSZ Manifest Specification](spec/MANIFEST.md).
 
-Conformance level: Builder, plus `[[extract]]` and §7 media identification
-(Recipe, except §6.4's whole-disc-image conversion).
+Conformance level: Recipe.
 
 ## Status
 
-Early development. `init` and `build` are implemented, including
-`[[extract]]` and media identification (§7); `build` cannot yet convert a
-whole disc image already sitting in the build (§6.4 - ISO/Ogg/WAV output,
-rewritten CUE). `verify` and `repack` are implemented. `install` is not yet.
+Early development. `init`, `build`, `verify` and `repack` are implemented,
+including `[[extract]]`, media identification (§7) and disc image
+conversion (§6.4). `install` is not yet.
 
 ## Requirements
 
 - Go 1.24 or later, to build
-- `ffmpeg`, for Ogg Vorbis audio tracks
+- `ffmpeg` with `libvorbis`, for Ogg Vorbis audio tracks (not needed with
+  `audio = "wav"`)
 
 ## Building
 
@@ -34,9 +33,9 @@ make help    # every target
 
 ```
 doszer init    <source> [--os <path> | --shell <path> | --exec <path>] [--name <name>] [--force]
-doszer build   <source> [<output.dosz>] [--name <name>] [--dry-run] [--strict]
+doszer build   <source> [<output.dosz>] [--name <name>] [--dry-run] [--strict] [--ogg-quality <n>]
 doszer install <source> [--from <file>]
-doszer repack  <input.dosz> [<output.dosz>]
+doszer repack  <input.dosz> [<output.dosz>] [--manifest <file>] [--dry-run] [--strict] [--ogg-quality <n>]
 doszer verify  <file.dosz>
 ```
 
@@ -51,10 +50,33 @@ doszer verify  <file.dosz>
 The default output is `<name>.dosz` in the current directory. `--name`
 overrides the manifest's `name`, which defaults to the source directory name.
 
-`build --dry-run` prints the planned trim, flatten and rewrite operations
-without writing anything. For every path changed by flattening, it searches
+`build --dry-run` prints the planned trim, flatten, media conversion and
+rewrite operations without writing anything. For every path changed by flattening, it searches
 text files for references, suggests `[[layout.rewrite]]` rules, and reports
 references in binary files that cannot be rewritten.
+
+## Media conversion
+
+`build` and `repack` convert every disc image in the build (spec §6.4):
+data tracks become ISO images, audio tracks stored as raw CD-DA become Ogg
+Vorbis or WAV, and the CUE sheet is rewritten to match. Implementation
+details:
+
+- Ogg Vorbis is encoded by `ffmpeg`'s `libvorbis` at `ogg_quality`
+  (default 6; see Configuration), with `-fflags +bitexact -flags +bitexact`
+  so the same `ffmpeg` and `libvorbis` versions produce identical files.
+  WAV files are written directly.
+- Tracks are encoded in parallel, one per CPU, and written to a temporary
+  `.doszer-media-*` directory next to the output archive, removed when the
+  build ends.
+- Disc images inside an archive being repacked are streamed, not loaded
+  into memory.
+- A CUE sheet whose referenced files aren't all in the build, or that uses
+  `MOTOROLA` (big-endian) files, is left unconverted with a warning
+  (a failure under `--strict`).
+- Audio already encoded (any CUE `FILE` type other than `BINARY`) is kept
+  as it is, even if `[pack].audio` asks for the other encoding.
+- `verify` reports a CUE sheet that §6.4 would still change.
 
 ## Example
 
@@ -98,7 +120,8 @@ ogg_quality = 10
 ```
 
 `templates` merges by key across layers; every other setting is replaced
-whole by the most specific layer that sets it.
+whole by the most specific layer that sets it. `repack` has no source
+directory, so it skips the `[x-doszer]` layer.
 
 ## Install
 

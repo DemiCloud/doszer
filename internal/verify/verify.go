@@ -102,8 +102,8 @@ func checkDeterministic(files []*zip.File) []error {
 }
 
 // checkWithManifest enforces the rules that depend on the embedded
-// manifest: §8.1's store requirements, §6.6's text normalization, §6.7's
-// exclusions, §11's archive-content rules, and the runtime files §6.8
+// manifest: §8.1's store requirements, §6.4's disc image conversion, §6.6's
+// text normalization, §6.7's exclusions, §11's archive-content rules, and the runtime files §6.8
 // requires - not just their presence, but their content.
 func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.Manifest) []error {
 	var errs []error
@@ -128,6 +128,14 @@ func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.
 				errs = append(errs, fmt.Errorf("%s: not CRLF-normalized (§6.6)", name))
 			}
 		}
+	}
+
+	files := make([]*zip.File, 0, len(names))
+	for _, name := range names {
+		files = append(files, byName[name])
+	}
+	for _, p := range build.UnconvertedMedia(files, m.AudioEncoding()) {
+		errs = append(errs, fmt.Errorf("%s: disc image not converted or named as §6.4 requires", p))
 	}
 
 	if err := build.ValidateArchiveContent(names, m.Model()); err != nil {

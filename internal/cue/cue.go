@@ -30,6 +30,7 @@ type File struct {
 type Track struct {
 	Number  int
 	Mode    string // AUDIO, MODE1/2352, MODE2/2352, MODE1/2048, ...
+	Pregap  int    // PREGAP command's length in frames (silence not stored in the FILE)
 	Indexes []Index
 }
 
@@ -69,6 +70,33 @@ func (t Track) Index01() (Index, error) {
 		}
 	}
 	return Index{}, fmt.Errorf("track %d: missing INDEX 01", t.Number)
+}
+
+// Index00 returns the track's INDEX 00 (its pregap start), if present.
+func (t Track) Index00() (Index, bool) {
+	for _, idx := range t.Indexes {
+		if idx.Number == 0 {
+			return idx, true
+		}
+	}
+	return Index{}, false
+}
+
+// TotalPregap returns the track's whole pregap in frames: its PREGAP
+// command plus the INDEX 00 to INDEX 01 span stored in its FILE.
+func (t Track) TotalPregap() (int, error) {
+	idx1, err := t.Index01()
+	if err != nil {
+		return 0, err
+	}
+	n := t.Pregap
+	if idx0, ok := t.Index00(); ok {
+		if idx0.Frames > idx1.Frames {
+			return 0, fmt.Errorf("track %d: INDEX 00 after INDEX 01", t.Number)
+		}
+		n += idx1.Frames - idx0.Frames
+	}
+	return n, nil
 }
 
 // Parse parses CUE sheet data.
@@ -127,9 +155,23 @@ func Parse(data []byte) (*Sheet, error) {
 			t := &f.Tracks[len(f.Tracks)-1]
 			t.Indexes = append(t.Indexes, Index{Number: n, Frames: frames})
 
+		case "PREGAP":
+			if len(fields) != 2 {
+				return nil, fmt.Errorf("line %d: PREGAP needs a timecode", line)
+			}
+			f := lastFile(sheet)
+			if f == nil || len(f.Tracks) == 0 {
+				return nil, fmt.Errorf("line %d: PREGAP before any TRACK", line)
+			}
+			frames, err := parseTimecode(fields[1])
+			if err != nil {
+				return nil, fmt.Errorf("line %d: %w", line, err)
+			}
+			f.Tracks[len(f.Tracks)-1].Pregap = frames
+
 		default:
-			// REM, PREGAP, FLAGS, CATALOG, and anything else: not needed to
-			// resolve track byte ranges, so ignored.
+			// REM, FLAGS, CATALOG, and anything else: not needed to resolve
+			// track byte ranges or to write a converted sheet, so ignored.
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -159,6 +201,31 @@ func parseTimecode(s string) (int, error) {
 		return 0, fmt.Errorf("bad timecode %q", s)
 	}
 	return (m*60+sec)*FramesPerSecond + f, nil
+}
+
+// FormatTimecode formats an absolute frame count as a CUE MM:SS:FF timecode.
+func FormatTimecode(frames int) string {
+	return fmt.Sprintf("%02d:%02d:%02d", frames/(60*FramesPerSecond), frames/FramesPerSecond%60, frames%FramesPerSecond)
+}
+
+// Format writes s as CUE sheet text with CRLF line endings: each FILE, its
+// TRACKs, and each track's PREGAP (if non-zero) and INDEX lines. Commands
+// Parse ignores are not written.
+func (s *Sheet) Format() []byte {
+	var b strings.Builder
+	for _, f := range s.Files {
+		fmt.Fprintf(&b, "FILE \"%s\" %s\r\n", f.Name, f.Type)
+		for _, t := range f.Tracks {
+			fmt.Fprintf(&b, "  TRACK %02d %s\r\n", t.Number, t.Mode)
+			if t.Pregap > 0 {
+				fmt.Fprintf(&b, "    PREGAP %s\r\n", FormatTimecode(t.Pregap))
+			}
+			for _, idx := range t.Indexes {
+				fmt.Fprintf(&b, "    INDEX %02d %s\r\n", idx.Number, FormatTimecode(idx.Frames))
+			}
+		}
+	}
+	return []byte(b.String())
 }
 
 // tokenize splits a CUE line into fields, treating a "quoted string" as one

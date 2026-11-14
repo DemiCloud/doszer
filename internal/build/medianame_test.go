@@ -102,3 +102,16 @@ func TestRenameMediaCueNoMediaDeclaredIsNoop(t *testing.T) {
 		t.Fatalf("boot.Disc changed with no declared media: %q", boot.Disc)
 	}
 }
+
+func TestRenameMediaCueKeepsDirectory(t *testing.T) {
+	fs := newFileSet()
+	fs.set("CD/Dump Name.cue", dataEntry([]byte("FILE \"T.BIN\" BINARY\n  TRACK 01 MODE1/2048\n    INDEX 01 00:00:00\n"), Epoch))
+	media := []manifest.Media{{ID: "cd", Tracks: []manifest.Track{{Type: manifest.TrackData, SHA1: strings.Repeat("a", 40)}}}}
+
+	if err := renameMediaCue(fs, media, &manifest.Boot{}, "Example Game"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := fs.get("CD/Example Game.cue"); !ok {
+		t.Fatalf("want CD/Example Game.cue, got %v", fs.paths())
+	}
+}

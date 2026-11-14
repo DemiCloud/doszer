@@ -1,6 +1,7 @@
 package build
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"path"
@@ -22,8 +23,9 @@ type RawSource struct {
 	CRC32            uint32
 	CompressedSize   uint64
 	UncompressedSize uint64
-	Decompressed     func() ([]byte, error)    // the entry's full, decompressed content
-	Raw              func() (io.Reader, error) // the entry's still-compressed bytes, for pass-through
+	Decompressed     func() ([]byte, error)        // the entry's full, decompressed content
+	Open             func() (io.ReadCloser, error) // streams the decompressed content; optional
+	Raw              func() (io.Reader, error)     // the entry's still-compressed bytes, for pass-through
 }
 
 // fileEntry is one file in the build, backed by disk, by in-memory content,
@@ -79,6 +81,56 @@ func (e *fileEntry) open() (*os.File, []byte, error) {
 	}
 	f, err := os.Open(e.diskPath)
 	return f, nil, err
+}
+
+// size returns the entry's uncompressed size without reading its content.
+func (e *fileEntry) size() (int64, error) {
+	if e.data != nil {
+		return int64(len(e.data)), nil
+	}
+	if e.source != nil {
+		return int64(e.source.UncompressedSize), nil
+	}
+	info, err := os.Stat(e.diskPath)
+	if err != nil {
+		return 0, err
+	}
+	return info.Size(), nil
+}
+
+// openRange streams n bytes of the entry's content starting at off,
+// without loading the whole entry into memory: §6.4 reads disc images
+// that can be hundreds of megabytes. A RawSource-backed entry without
+// Open, or one already read into memory, is served from its bytes.
+func (e *fileEntry) openRange(off, n int64) (io.ReadCloser, error) {
+	if e.data == nil && e.source != nil && e.source.Open != nil {
+		rc, err := e.source.Open()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := io.CopyN(io.Discard, rc, off); err != nil {
+			rc.Close()
+			return nil, err
+		}
+		return readCloser{io.LimitReader(rc, n), rc}, nil
+	}
+	if e.data == nil && e.source == nil {
+		f, err := os.Open(e.diskPath)
+		if err != nil {
+			return nil, err
+		}
+		return readCloser{io.NewSectionReader(f, off, n), f}, nil
+	}
+	data, err := e.bytes()
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(data[min(off, int64(len(data))):min(off+n, int64(len(data)))])), nil
+}
+
+type readCloser struct {
+	io.Reader
+	io.Closer
 }
 
 // rawPassthrough returns the entry's RawSource if nothing has read or

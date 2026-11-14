@@ -14,7 +14,7 @@ import (
 // backing file.
 type ResolvedTrack struct {
 	Track     Track
-	FilePath  string // absolute path to the backing file
+	FilePath  string // backing file: an absolute path from Resolve, or ResolveWith's key
 	FrameSize int
 	Start     int64 // byte offset of INDEX 01 (pregap excluded)
 	End       int64 // byte offset where the track ends, exclusive
@@ -23,15 +23,31 @@ type ResolvedTrack struct {
 // Resolve resolves every track's byte range, in sheet order. File names are
 // resolved relative to baseDir.
 func Resolve(sheet *Sheet, baseDir string) ([]ResolvedTrack, error) {
+	return ResolveWith(sheet, func(name string) (string, int64, error) {
+		path := filepath.Join(baseDir, filepath.FromSlash(name))
+		info, err := os.Stat(path)
+		if err != nil {
+			return "", 0, err
+		}
+		return path, info.Size(), nil
+	})
+}
+
+// FileResolver maps a FILE name, as written in a sheet, to a key
+// identifying the backing file (stored as ResolvedTrack.FilePath) and that
+// file's size in bytes.
+type FileResolver func(name string) (key string, size int64, err error)
+
+// ResolveWith is Resolve against files located by resolve rather than on
+// disk, e.g. files inside an archive or a build in progress.
+func ResolveWith(sheet *Sheet, resolve FileResolver) ([]ResolvedTrack, error) {
 	var out []ResolvedTrack
 
 	for _, file := range sheet.Files {
-		path := filepath.Join(baseDir, filepath.FromSlash(file.Name))
-		info, err := os.Stat(path)
+		path, size, err := resolve(file.Name)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", file.Name, err)
 		}
-		size := info.Size()
 
 		var frameSize int
 		for i, track := range file.Tracks {
@@ -90,19 +106,26 @@ func (rt ResolvedTrack) Copy(w io.Writer) error {
 	}
 	defer f.Close()
 
-	r := io.NewSectionReader(f, rt.Start, rt.End-rt.Start)
-
-	if rt.Track.IsAudio() {
-		_, err = io.Copy(w, r)
-		return err
-	}
-
-	offset, length, err := userDataLayout(rt.Track.Mode)
+	r, err := rt.Normalize(io.NewSectionReader(f, rt.Start, rt.End-rt.Start))
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(w, newStripReader(r, rt.FrameSize, offset, length))
+	_, err = io.Copy(w, r)
 	return err
+}
+
+// Normalize wraps r, which reads rt's raw bytes from Start to End, to yield
+// rt's normalized content (§7.2): audio unchanged, a data track's user data
+// only. This is exactly the content §6.4 converts a track to.
+func (rt ResolvedTrack) Normalize(r io.Reader) (io.Reader, error) {
+	if rt.Track.IsAudio() {
+		return r, nil
+	}
+	offset, length, err := userDataLayout(rt.Track.Mode)
+	if err != nil {
+		return nil, err
+	}
+	return newStripReader(r, rt.FrameSize, offset, length), nil
 }
 
 // Hash returns rt's normalized track hash (§7.2).

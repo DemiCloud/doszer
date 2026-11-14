@@ -51,7 +51,9 @@ Planned packages: `internal/vhd` and `internal/fat` (disk image reading for
 - Standard library first. Add a dependency only when reimplementing it would
   be substantial; current dependencies: `github.com/pelletier/go-toml/v2`.
 - External programs: only `ffmpeg`, for Ogg Vorbis encoding (no maintained
-  pure-Go encoder). Invoke it with `-fflags +bitexact`.
+  pure-Go encoder). Invoke it with `-fflags +bitexact` (fixed Ogg stream
+  serial numbers) and `-flags +bitexact` (no encoder version string):
+  with both, two builds produce byte-identical Ogg files.
 - `internal/zipw` registers its own Deflate compressor at
   `flate.BestCompression` (level 9), scoped to its own `*zip.Writer`:
   `archive/zip`'s built-in one uses level 5 (`register.go`'s
@@ -78,7 +80,9 @@ Planned packages: `internal/vhd` and `internal/fat` (disk image reading for
 
 ## DOSBox Pure facts
 
-Verified against DOSBox Pure 1.0 Preview 8 source.
+Verified against DOSBox Pure 1.0 Preview 8 source (now at
+`codeberg.org/schelling/dosbox-pure`; the GitHub repository is only a
+pointer to it).
 
 | Topic | Behaviour | Source |
 |---|---|---|
@@ -94,23 +98,25 @@ Verified against DOSBox Pure 1.0 Preview 8 source.
 | Save files | C: changes for ZIP content: `<save dir>/<content>.pure.zip`. OS image C: diff: `<content>-CDRIVE.sav`. D: disk: `<content>-<HASH>.sav` | `DBP_GetSaveFile` |
 | CD audio in CUE | PCM WAV and Ogg Vorbis only (`stb_vorbis`) | `src/dos/cdrom_image.cpp` |
 | Large deflated files | Random access requires full decompression once; an index is cached in the save | README |
+| CUE `FILE` type | `BINARY` reads raw sectors; any other type opens an `AudioFile`, which detects RIFF/WAVE (16-bit PCM only) or OggS from the file's own header (`C_SDL_SOUND` is undefined in `include/config.h`) | `src/dos/cdrom_image.cpp`, `LoadCueSheet`, `AudioFile::AudioFile` |
+| CUE `PREGAP` | Adds to the track's start without reading data; an INDEX 00 span in a track's own FILE is skipped and *not* counted toward position | `src/dos/cdrom_image.cpp`, `AddTrack` |
+| Disc image list | Every ISO/CUE/CHD/... in the content is listed, except an image sharing a CUE's name minus extension (so `<base>.iso` beside `<base>.cue` is hidden) | `dosbox_pure_libretro.cpp`, "Filter image files that have the same name as a cue file" |
 
 ## Status
 
 | Command | State |
 |---|---|
 | `init` | Implemented |
-| `build` | Implemented except ISO/Ogg/WAV conversion (§6.4); the CUE-renaming part of §6.4 is done |
+| `build` | Implemented |
 | `install` | Not implemented |
 | `repack` | Implemented |
 | `verify` | Implemented |
 
 Manifest parsing and every manifest rule in specification §11 are
-implemented and tested. `build` implements §6 in full except media
-conversion (§6.4: converting a disc image already sitting in the build to
-ISO/Ogg/WAV with a rewritten CUE, independent of `[[extract]]`), and
-enforces the archive-content rules of §11 (shell-owned files, `DOSBOX.BAT`).
-`verify` (`internal/verify`) applies those same rules, plus §8's
+implemented and tested. `build` implements §6 in full and enforces the
+archive-content rules of §11 (shell-owned files, `DOSBOX.BAT`).
+`verify` (`internal/verify`) applies those same rules, plus §6.4's
+conversion (via `build.UnconvertedMedia`), §8's
 determinism checks, §6.6's text normalization, §6.7's exclusions, and
 §6.8's runtime files - checking their *content* against what the embedded
 manifest implies (e.g. AUTOBOOT.DBP's bytes must match
@@ -171,23 +177,34 @@ if more than one matches), updating `boot.disc` to match if it referenced
 the old name. It runs for both `build` and `repack`, since a legacy
 archive's over-long, dump-specific CUE name (e.g. a Redump filename with
 region/version tags) is exactly what a retrofit needs fixed, not only a
-fresh build. Converting the tracks themselves (ISO/Ogg/WAV) is still
-pending - see Next steps.
+fresh build. It keeps the sheet's directory, since its `FILE` names are
+relative to it.
+
+`convertMedia` (`internal/build/convert.go`) is the rest of §6.4, run
+right after `renameMediaCue`. It plans every CUE sheet whose files are
+all in the build (`cue.ResolveWith` against the fileSet), then runs the
+conversions in parallel and applies them. Each converted track's output is
+exactly its §7.2 normalized content (`cue.ResolvedTrack.Normalize`), so a
+WAV/ISO build re-hashes to the manifest's own track hashes. A sheet already
+in converted form plans to nothing, which is both what makes repack
+idempotent and how `verify` checks §6.4 (`UnconvertedMedia`: "would §6.4
+change this sheet?"). A 2048-byte data track that is already its whole
+file is reused as the same `fileEntry`, so repack can still pass it through
+raw. Entries are streamed through `fileEntry.openRange` (`RawSource.Open`
+for an archive entry), never loaded whole: repacking a deflated 700 MB
+disc image peaked at 19 MB RSS. Measured on a real 9-track disc
+(418 MB data, 8 audio tracks): 30s to build with Ogg, most of it Deflate
+on the ISO.
 
 ## Next steps
 
-1. Media conversion (§6.4): ISO/Ogg/WAV output for a disc image already
-   sitting in the build (the CUE-renaming part is done - see Status). The
-   Ogg/WAV CUE `FILE` type keyword DOSBox Pure's `cdrom_image.cpp` expects
-   needs verifying against its source before writing this (ground rule:
-   verify, don't assume).
-2. `install`: VHD (dynamic and fixed) and FAT32 reading, template diffing,
+1. `install`: VHD (dynamic and fixed) and FAT32 reading, template diffing,
    `.pure.zip` extraction, launching DOSBox Pure, consuming
    `internal/config`'s `SystemDir`/`SaveDir`/`DosboxPure`/`Templates`.
 
-`internal/config` is implemented (README "Configuration") but has no
-consumer yet: no command currently needs `system_dir`, `save_dir`,
-`dosbox_pure` or `templates`.
+`internal/config` is implemented (README "Configuration"); `build` and
+`repack` consume `ogg_quality`. Nothing consumes `system_dir`, `save_dir`,
+`dosbox_pure` or `templates` yet.
 
 ## Resolved questions
 

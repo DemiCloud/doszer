@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DemiCloud/doszer/internal/build"
+	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/repack"
 	"github.com/DemiCloud/doszer/internal/verify"
@@ -182,15 +183,17 @@ func runBuild(args []string) error {
 	name := fs.String("name", "", "override the manifest's effective name")
 	dryRun := fs.Bool("dry-run", false, "print the build plan without writing an archive")
 	strict := fs.Bool("strict", false, "fail if any layout.trim or layout.rewrite rule matches nothing")
+	oggQuality := fs.Int("ogg-quality", 0, "Ogg Vorbis quality, -1 to 10")
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), `doszer build - build an archive from a source directory
 
 Usage: doszer build [options] <source> [<output.dosz>]
 
 Options:
-  -dry-run    print the build plan without writing an archive
-  -name STR   override the manifest's effective name
-  -strict     fail if a trim/rewrite rule matches nothing
+  -dry-run         print the build plan without writing an archive
+  -name STR        override the manifest's effective name
+  -ogg-quality N   Ogg Vorbis quality, -1 to 10
+  -strict          fail if a trim/rewrite rule matches nothing
 `)
 	}
 
@@ -205,11 +208,16 @@ Options:
 		return errUsage
 	}
 
+	cfg, err := config.Load(fs.Arg(0))
+	if err != nil {
+		return err
+	}
 	opts := build.Options{
-		SourceDir: fs.Arg(0),
-		Name:      *name,
-		DryRun:    *dryRun,
-		Strict:    *strict,
+		SourceDir:  fs.Arg(0),
+		Name:       *name,
+		DryRun:     *dryRun,
+		Strict:     *strict,
+		OggQuality: flagOr(fs, "ogg-quality", *oggQuality, cfg.OggQuality),
 	}
 	if fs.NArg() == 2 {
 		opts.OutputPath = fs.Arg(1)
@@ -246,6 +254,13 @@ func printBuildPlan(res *build.Result, dryRun bool) {
 			fmt.Printf("Flatten renames %d path(s):\n", len(res.Moved))
 			for _, m := range res.Moved {
 				fmt.Printf("  %s -> %s\n", m.From, m.To)
+			}
+		}
+
+		for _, c := range res.Converted {
+			fmt.Printf("Media converts %s to:\n", c.Cue)
+			for _, p := range c.Files {
+				fmt.Printf("  - %s\n", p)
 			}
 		}
 
@@ -316,15 +331,17 @@ func runRepack(args []string) error {
 	dryRun := fs.Bool("dry-run", false, "print the rebuild plan without writing an archive")
 	strict := fs.Bool("strict", false, "fail if any layout.trim or layout.rewrite rule matches nothing")
 	manifestPath := fs.String("manifest", "", "use this manifest instead of the archive's embedded one")
+	oggQuality := fs.Int("ogg-quality", 0, "Ogg Vorbis quality, -1 to 10")
 	fs.Usage = func() {
 		fmt.Fprint(fs.Output(), `doszer repack - rebuild an archive from its embedded manifest
 
 Usage: doszer repack [options] <input.dosz> [<output.dosz>]
 
 Options:
-  -dry-run       print the rebuild plan without writing an archive
-  -manifest STR  use this manifest instead of the archive's embedded one
-  -strict        fail if a trim/rewrite rule matches nothing
+  -dry-run         print the rebuild plan without writing an archive
+  -manifest STR    use this manifest instead of the archive's embedded one
+  -ogg-quality N   Ogg Vorbis quality, -1 to 10
+  -strict          fail if a trim/rewrite rule matches nothing
 `)
 	}
 
@@ -339,7 +356,17 @@ Options:
 		return errUsage
 	}
 
-	opts := repack.Options{InputPath: fs.Arg(0), DryRun: *dryRun, Strict: *strict, ManifestPath: *manifestPath}
+	cfg, err := config.Load("")
+	if err != nil {
+		return err
+	}
+	opts := repack.Options{
+		InputPath:    fs.Arg(0),
+		DryRun:       *dryRun,
+		Strict:       *strict,
+		ManifestPath: *manifestPath,
+		OggQuality:   flagOr(fs, "ogg-quality", *oggQuality, cfg.OggQuality),
+	}
 	if fs.NArg() == 2 {
 		opts.OutputPath = fs.Arg(1)
 	}
@@ -358,6 +385,17 @@ Options:
 		fmt.Printf("Repacked %s (%d entries)\n", res.OutputPath, len(res.Entries))
 	}
 	return nil
+}
+
+// flagOr returns the flag's value if it was given on the command line,
+// else the configured value: flags are configuration's highest layer.
+func flagOr(fs *flag.FlagSet, name string, flagValue, configured int) int {
+	set := false
+	fs.Visit(func(f *flag.Flag) { set = set || f.Name == name })
+	if set {
+		return flagValue
+	}
+	return configured
 }
 
 // reorder moves flags ahead of positional args so options may follow the

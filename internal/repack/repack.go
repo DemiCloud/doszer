@@ -31,6 +31,7 @@ type Options struct {
 	InputPath    string
 	OutputPath   string // defaults to "<effective name>.dosz" in the working directory
 	ManifestPath string // use this manifest instead of the archive's embedded one
+	OggQuality   int    // libvorbis quality for Ogg audio tracks (build.Options.OggQuality)
 	DryRun       bool   // compute and report the plan without writing an archive
 	Strict       bool   // fail if any §11 warning condition occurs
 }
@@ -96,6 +97,7 @@ func Run(opts Options) (*build.Result, error) {
 		OutputPath: opts.OutputPath,
 		DryRun:     opts.DryRun,
 		Strict:     opts.Strict,
+		OggQuality: opts.OggQuality,
 	})
 }
 
@@ -117,6 +119,7 @@ func rawSource(f *zip.File) *build.RawSource {
 		CompressedSize:   f.CompressedSize64,
 		UncompressedSize: f.UncompressedSize64,
 		Decompressed:     func() ([]byte, error) { return readEntry(f) },
+		Open:             f.Open,
 		Raw:              f.OpenRaw,
 	}
 }

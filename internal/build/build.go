@@ -1,7 +1,6 @@
 // Package build implements `doszer build`: spec §6's processing model,
 // producing a deterministic archive per §8. [[extract]] (§5.7) and media
-// identification (§7) are implemented; converting whole disc images already
-// sitting in the build (§6.4) is not, yet.
+// identification (§7) and disc image conversion (§6.4) are implemented.
 package build
 
 import (
@@ -11,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -25,6 +25,7 @@ type Options struct {
 	Name       string // Overrides the manifest's effective name, if non-empty.
 	DryRun     bool   // Compute and report the plan without writing an archive.
 	Strict     bool   // Fail the build if any §11 warning condition occurs.
+	OggQuality int    // libvorbis quality for Ogg audio tracks, -1 to 10 (internal/config's ogg_quality).
 }
 
 // Result reports what a build did or would do.
@@ -39,6 +40,9 @@ type Result struct {
 
 	RewriteHits     []RewriteHit // Files each layout.rewrite rule changed.
 	RewriteWarnings []string     // layout.rewrite rules that matched nothing.
+
+	Converted     []Conversion // Disc images §6.4 converted or renamed.
+	MediaWarnings []string     // CUE sheets §6.4 could not convert, and why.
 
 	Suggestions      []string // Rewrite rules suggested to cover paths flatten changed.
 	BinaryReferences []string // Binary files referencing a path flatten changed.
@@ -58,7 +62,8 @@ type Move struct {
 
 // Warnings returns every §11 SHOULD-warn condition hit during the build.
 func (r *Result) Warnings() []string {
-	return append(append([]string{}, r.TrimWarnings...), r.RewriteWarnings...)
+	w := append(append([]string{}, r.TrimWarnings...), r.RewriteWarnings...)
+	return append(w, r.MediaWarnings...)
 }
 
 // Run executes the §6 build pipeline and, unless opts.DryRun, writes the
@@ -111,7 +116,7 @@ func Repack(entries map[string]Entry, m *manifest.Manifest, opts Options) (*Resu
 }
 
 // runPipeline runs §6.2 onward against fs, shared by Run and Repack.
-func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options) (*Result, error) {
+func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options) (_ *Result, err error) {
 	effectiveName := m.Name
 	if opts.Name != "" {
 		effectiveName = opts.Name
@@ -136,6 +141,32 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options) (*Result, erro
 	}
 
 	if err := renameMediaCue(fs, m.Source.Media, &m.Boot, effectiveName); err != nil {
+		return nil, err
+	}
+
+	// Converted tracks are written next to the output archive, which needs
+	// room for them anyway, rather than to a possibly RAM-backed /tmp; the
+	// directory lives until writeArchive has copied them in.
+	var tmp string
+	defer func() {
+		if tmp != "" {
+			if rmErr := os.RemoveAll(tmp); err == nil {
+				err = rmErr
+			}
+		}
+	}()
+	tmpDir := func() (string, error) {
+		var mkErr error
+		if tmp == "" {
+			tmp, mkErr = os.MkdirTemp(filepath.Dir(outputPath), ".doszer-media-")
+		}
+		return tmp, mkErr
+	}
+	if opts.OggQuality < -1 || opts.OggQuality > 10 {
+		return nil, fmt.Errorf("ogg_quality %d is out of range (-1 to 10)", opts.OggQuality)
+	}
+	res.Converted, res.MediaWarnings, err = convertMedia(fs, m.AudioEncoding(), opts.OggQuality, opts.DryRun, tmpDir)
+	if err != nil {
 		return nil, err
 	}
 

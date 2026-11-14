@@ -10,8 +10,9 @@ import (
 )
 
 // renameMediaCue renames each CUE sheet in fs that matches a declared
-// [[source.media]] entry's track layout to the effective name (§6.4),
-// updating boot.disc in place if it referenced the old name.
+// [[source.media]] entry's track layout to the effective name (§6.4), in
+// the same directory, updating boot.disc in place if it referenced the old
+// name. convertMedia then names the sheet's track files after it.
 //
 // Matching is structural only - track count and the audio/data sequence,
 // read straight from the CUE text - not by re-hashing tracks: build already
@@ -59,7 +60,8 @@ func renameMediaCue(fs *fileSet, media []manifest.Media, boot *manifest.Boot, ef
 			if multi {
 				newName = fmt.Sprintf("%s (%s)", effectiveName, m.ID)
 			}
-			newPath := newName + ".cue"
+			// Same directory: the sheet's FILE names are relative to it.
+			newPath := path.Join(path.Dir(c.path), newName+".cue")
 
 			used[c.path] = true
 			if !strings.EqualFold(c.path, newPath) {
