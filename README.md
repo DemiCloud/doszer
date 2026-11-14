@@ -11,9 +11,9 @@ Conformance level: Recipe.
 
 ## Status
 
-Early development. `init`, `build`, `verify` and `repack` are implemented,
-including `[[extract]]`, media identification (§7) and disc image
-conversion (§6.4). `install` is not yet.
+Early development. Every command is implemented: `init`, `build`
+(including `[[extract]]`, media identification (§7) and disc image
+conversion (§6.4)), `install`, `repack` and `verify`.
 
 ## Requirements
 
@@ -34,7 +34,7 @@ make help    # every target
 ```
 doszer init    <source> [--os <path> | --shell <path> | --exec <path>] [--name <name>] [--force]
 doszer build   <source> [<output.dosz>] [--name <name>] [--dry-run] [--strict] [--ogg-quality <n>]
-doszer install <source> [--from <file>]
+doszer install <source> [--dir <path>] [--from <file> [--content <file>]] [--force] [--dry-run] [--keep]
 doszer repack  <input.dosz> [<output.dosz>] [--manifest <file>] [--dry-run] [--strict] [--ogg-quality <n>]
 doszer verify  <file.dosz>
 ```
@@ -125,25 +125,47 @@ directory, so it skips the `[x-doszer]` layer.
 
 ## Install
 
-`install` captures the files an installer writes and nothing else:
+`install` runs an installer under standalone DOSBox Pure and extracts what
+it wrote into the source. It packs the source (install media included,
+`DOSZ.TOML` and `DOSBOX.BAT` left out) into a temporary archive with a
+unique name, so the session's save files are fresh, starts DOSBox Pure on
+it, and waits for DOSBox Pure to exit. Then it reads the save files:
 
-| Boot model | Installer runs against | Changes land in | Compared against |
+| Boot model | Session starts | Install to | Changes read from |
 |---|---|---|---|
-| OS image | A disposable copy of the template | The disposable image | The template |
-| Shell | The shell (read-only) plus install media | `<content>.pure.zip` | — (changes only) |
-| Plain | Built-in DOS plus install media | `<content>.pure.zip` | — (changes only) |
+| OS image | the OS image (`boot.os`) | D: | `<name>-<HASH>.sav` over the D: disk DOSBox Pure builds from the archive |
+| Shell | the shell (`boot.shell`) | C: | `<name>.pure.zip` |
+| Plain | DOSBox Pure's start menu | C: | `<name>.pure.zip` |
 
-DOSBox Pure runs under a unique temporary content name, so the session writes
-a fresh save archive. Afterwards the chosen folder is extracted into the
-source; all other changed files are reported but not extracted.
+An OS image session writes a `FRONTEND.DBP` setting "Save Difference Per
+Content" for itself only, so the OS image is never modified and C: changes
+land in `<name>-CDRIVE.sav`; they're listed, not extracted, since every
+archive shares C:. Nothing in your DOSBox Pure configuration changes.
 
-`install --from <file>` skips the emulator and extracts from an existing
-`.vhd`, `.img` or `.pure.zip`.
+The folder to extract is `--dir`, or the one top-level folder every
+change is under. Other changes are listed. A file already in the source
+with different content stops the extraction unless `--force` is given.
+Save files are removed after a successful extraction unless `--keep` is
+given.
 
-Install sessions require `dosbox_pure_bootos_ramdisk = "false"` ("Keep") in
-the standalone DOSBox Pure used for authoring, so installed files land in
-the disposable image. Test builds with "Save Difference Per Content"
-(`"diff"`), the setting spec §12 requires for normal use.
+`install --from <file>` skips DOSBox Pure and extracts from an existing
+save or disk image:
+
+| `--from` | Also needs |
+|---|---|
+| `<content>-<HASH>.sav` (D:) | `--content`, the archive it was made over; the hash must match |
+| `<content>-CDRIVE.sav` (C:) | the manifest's `boot.os` |
+| `.pure.zip` | (`--content` to tell modified files from added ones) |
+| `.vhd`, `.img` | `--template` or a configured template to compare against, else `--dir` |
+
+DOSBox Pure's system and save directories come from `DOSBoxPure.cfg` beside
+the executable (`path_system`, `path_saves`, else `system/` and `saves/`),
+unless `system_dir`/`save_dir` are set. Under WSL, a Windows
+`DOSBoxPure.exe` is run with paths converted by `wslpath`.
+
+Limitations: a change is detected by size or modification time; the
+content must not have a `<content>.pure.zip` of its own layered over it,
+or parent archives.
 
 ## Frontend setup
 

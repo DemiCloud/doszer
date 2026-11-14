@@ -10,10 +10,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/config"
+	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/repack"
 	"github.com/DemiCloud/doszer/internal/verify"
@@ -37,7 +39,7 @@ func init() {
 	commands = []command{
 		{"init", "write a commented DOSZ.TOML into a source directory", runInit},
 		{"build", "build an archive from a source directory", runBuild},
-		{"install", "run an installer and extract the result into a source", notImplemented("install")},
+		{"install", "run an installer and extract the result into a source", runInstall},
 		{"repack", "rebuild an archive from its embedded manifest", runRepack},
 		{"verify", "check an archive against its manifest and the specification", runVerify},
 	}
@@ -85,12 +87,6 @@ func usage(w io.Writer) {
 // logError writes a timestamped error to stderr.
 func logError(err error) {
 	fmt.Fprintf(os.Stderr, "[%s] ERROR: %v\n", time.Now().Format("2006-01-02 15:04:05"), err)
-}
-
-func notImplemented(name string) func([]string) error {
-	return func([]string) error {
-		return fmt.Errorf("%s: not implemented yet", name)
-	}
 }
 
 // runInit implements `doszer init <source>`.
@@ -323,6 +319,134 @@ Usage: doszer verify <file.dosz>
 
 	fmt.Printf("%s conforms to the specification\n", fs.Arg(0))
 	return nil
+}
+
+// runInstall implements `doszer install <source>`.
+func runInstall(args []string) error {
+	fs := flag.NewFlagSet("install", flag.ContinueOnError)
+	dir := fs.String("dir", "", "folder to extract, relative to the drive root")
+	from := fs.String("from", "", "extract from this .sav, .pure.zip, .vhd or .img instead")
+	content := fs.String("content", "", "archive a -from save was made over")
+	template := fs.String("template", "", "pristine image to compare a -from image against")
+	force := fs.Bool("force", false, "overwrite differing files in the source")
+	dryRun := fs.Bool("dry-run", false, "report without writing")
+	keep := fs.Bool("keep", false, "keep the session's save files")
+	exe := fs.String("dosbox-pure", "", "DOSBox Pure executable")
+	systemDir := fs.String("system-dir", "", "DOSBox Pure system directory")
+	saveDir := fs.String("save-dir", "", "DOSBox Pure save directory")
+	fs.Usage = func() {
+		fmt.Fprint(fs.Output(), `doszer install - run an installer and extract the result into a source
+
+Usage: doszer install [options] <source>
+
+Options:
+  -content FILE      archive a -from save was made over
+  -dir PATH          folder to extract, relative to the drive root
+  -dosbox-pure FILE  DOSBox Pure executable
+  -dry-run           report without writing
+  -force             overwrite differing files in the source
+  -from FILE         extract from this .sav, .pure.zip, .vhd or .img instead
+  -keep              keep the session's save files
+  -save-dir DIR      DOSBox Pure save directory
+  -system-dir DIR    DOSBox Pure system directory
+  -template FILE     pristine image to compare a -from image against
+`)
+	}
+
+	if err := fs.Parse(reorder(fs, args)); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return errUsage
+		}
+		return err
+	}
+	if fs.NArg() != 1 {
+		fs.Usage()
+		return errUsage
+	}
+
+	cfg, err := config.Load(fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	opts := install.Options{
+		Source:    fs.Arg(0),
+		Exe:       stringOr(*exe, cfg.DosboxPure),
+		SystemDir: stringOr(*systemDir, cfg.SystemDir),
+		SaveDir:   stringOr(*saveDir, cfg.SaveDir),
+		Dir:       *dir,
+		Force:     *force,
+		DryRun:    *dryRun,
+		Keep:      *keep,
+		From:      *from,
+		Content:   *content,
+		Template:  *template,
+		Templates: cfg.Templates,
+	}
+
+	rep, err := install.Run(opts)
+	if rep != nil {
+		printInstallReport(rep, opts.DryRun)
+	}
+	return err
+}
+
+func stringOr(flagValue, configured string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	return configured
+}
+
+// printInstallReport summarizes what install found and extracted.
+func printInstallReport(rep *install.Report, dryRun bool) {
+	for _, p := range rep.Skipped {
+		fmt.Fprintf(os.Stderr, "[WARN] %s: left out of the install session\n", p)
+	}
+	if len(rep.Changes) > 0 {
+		fmt.Printf("%s %d file(s) changed\n", rep.Drive, len(rep.Changes))
+	}
+	if x := rep.Extracted; x != nil {
+		verb := "Extracted"
+		if dryRun {
+			verb = "Would extract"
+		}
+		fmt.Printf("%s %d file(s) from %s\\%s", verb, len(x.Written), rep.Drive, strings.ReplaceAll(rep.Dir, "/", "\\"))
+		if len(x.Unchanged) > 0 {
+			fmt.Printf(" (%d already identical)", len(x.Unchanged))
+		}
+		fmt.Println()
+		if dryRun {
+			for _, p := range x.Written {
+				fmt.Printf("  + %s\n", p)
+			}
+		}
+	}
+	var outside []install.Change
+	for _, c := range rep.Changes {
+		if rep.Extracted != nil && (c.Kind == install.Deleted || !inDir(c.Path, rep.Dir)) {
+			outside = append(outside, c)
+		}
+	}
+	if len(outside) > 0 {
+		fmt.Printf("Other changes on %s (not extracted):\n", rep.Drive)
+		for _, c := range outside {
+			fmt.Printf("  %-8s %s\n", c.Kind, c.Path)
+		}
+	}
+	if len(rep.Other) > 0 {
+		fmt.Printf("C: (OS image, not extracted): %d file(s) changed\n", len(rep.Other))
+		for _, c := range rep.Other {
+			fmt.Printf("  %-8s %s\n", c.Kind, c.Path)
+		}
+	}
+	for _, p := range rep.Kept {
+		fmt.Printf("Save file kept: %s\n", p)
+	}
+}
+
+func inDir(p, dir string) bool {
+	p, dir = strings.ToLower(p), strings.ToLower(dir)
+	return dir == "" || p == dir || strings.HasPrefix(p, dir+"/")
 }
 
 // runRepack implements `doszer repack <input.dosz> [<output.dosz>]`.
