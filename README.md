@@ -140,9 +140,10 @@ source; all other changed files are reported but not extracted.
 `install --from <file>` skips the emulator and extracts from an existing
 `.vhd`, `.img` or `.pure.zip`.
 
-Install sessions require `dosbox_pure_bootos_ramdisk = "false"` in the
-standalone DOSBox Pure used for authoring, so installed files land in the
-disposable image.
+Install sessions require `dosbox_pure_bootos_ramdisk = "false"` ("Keep") in
+the standalone DOSBox Pure used for authoring, so installed files land in
+the disposable image. Test builds with "Save Difference Per Content"
+(`"diff"`), the setting spec §12 requires for normal use.
 
 ## Frontend setup
 
