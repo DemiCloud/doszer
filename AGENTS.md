@@ -265,6 +265,14 @@ on the ISO.
    under RetroDECK. Without Explorer as the shell, opening Control Panel
    shows a harmless "Cannot find the file" error with a garbled name;
    open the applets directly (`control desk.cpl`).
+3. Gamepad mappings. Games need controller bindings to be playable on a
+   gamepad-only device (e.g. a Steam Machine). DOSBox Pure reads
+   `PADMAP.DBP` from the content root (hidden from D:, see the facts
+   table), so an archive could ship a per-game mapping, as it ships
+   `WINDOWS.BAT`. Not yet researched: its format, where DOSBox Pure
+   writes it when a mapping is changed in its menu (content or save),
+   and whether it belongs in the specification (a §6.8 runtime file or
+   a `[[file]]`) or only the README. Verify against the source first.
 
 `internal/config` is implemented (README "Configuration"); `build` and
 `repack` consume `ogg_quality`, `install` the rest. With the OS image
