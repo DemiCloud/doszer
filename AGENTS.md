@@ -37,6 +37,7 @@ internal/verify/     doszer verify: an archive against its manifest and spec §8
 internal/repack/     doszer repack: rebuild an archive from its own embedded manifest
 internal/vhd/        VHD reader (fixed, dynamic), for install
 internal/fat/        FAT12/16/32 reader with long names, as an io/fs.FS, for install
+internal/vdisk/      DOSBox Pure's synthesized D: disk + .sav diffs (D: and -CDRIVE), for install
 Makefile             build/test/vet/install/release (see `make help`)
 spec/MANIFEST.md     The specification (normative)
 README.md            doszer usage, configuration, install workflow
@@ -101,6 +102,8 @@ pointer to it).
 | `dosbox_pure_bootos_ramdisk` | `"false"` Keep (default: C: writes go into the OS image), `"true"` Discard, `"diff"` Save Difference Per Content. Only affects C:. Authoring uses Keep; spec §12's `diff` is the production setting (e.g. RetroDECK), which must never modify the image | `core_options.h`; `dosbox_pure_run.h`, `RunBoot` |
 | D: changes (OS image model) | Saved to `<content>-<HASH>.sav` under every ramdisk setting; only `dosbox_pure_bootos_dfreespace` = `discard`/`hide` disables it | `dosbox_pure_run.h`, `RunBoot`; `DBP_GetSaveFile(SFT_VIRTUALDISK)` |
 | `.sav` disk diff format | `FFDD\x01`, then records of a little-endian u32 sector number + 512 bytes; sector `0xFFFFFFFF` is a freed slot. Used for D: (over the disk `fatFromDOSDrive` synthesizes from the content) and for C: under `diff` (`<content>-CDRIVE.sav`, over the OS image) | `src/ints/bios_disk.cpp`, `differencingDisk`, `imageDisk::SetDifferencingDisk` |
+| Synthesized D: disk | `fatFromDOSDrive` builds a FAT disk from the content's DOS view: directory order is `zipDrive`'s hash map slot order (`BaseHashMap`, FNV-1 over sign-extended chars), short names come from `DBP_Make8dot3FileName`/`IncrementName` and are then regenerated Windows-style (`~N`) for long-named entries. Root holds the volume label (`Set_Label` form of `<name, ≤7 chars>-<ext>`). Hidden from D: `AUTOBOOT.DBP`, `PADMAP.DBP`, `FRONTEND.DBP`, `DOSBOX.CON`, `*.SKC`, and mountable images (ISO/CHD/CUE, validated IMG/IMA/VHD/JRC) except one sharing a CUE's name | `src/ints/bios_disk.cpp`, `fatFromDOSDrive`; `src/dos/drive_zip.cpp`; `dosbox_pure_libretro.cpp`, `DBP_GetSaveFile`, `init_dosbox_parse_drives` |
+| D: save hash | The `<HASH>` in `<content>-<HASH>.sav` is a CRC32 chained over every unhidden path, size, date, time and attributes (seeded with `dfreespace`); it is also the disk serial, so the name identifies exactly which content layout the diff belongs to | `DBP_GetSaveFile(SFT_VIRTUALDISK)` |
 | VHD support | Fixed and dynamic only (a parent name is rejected); a dynamic block sector whose bitmap bit is clear reads as zeros even if the file holds bytes there | `src/ints/bios_disk.cpp`, `sparseVhd::Init`, `sparseVhd::SeeBlock` |
 | CUE `FILE` type | `BINARY` reads raw sectors; any other type opens an `AudioFile`, which detects RIFF/WAVE (16-bit PCM only) or OggS from the file's own header (`C_SDL_SOUND` is undefined in `include/config.h`) | `src/dos/cdrom_image.cpp`, `LoadCueSheet`, `AudioFile::AudioFile` |
 | CUE `PREGAP` | Adds to the track's start without reading data; an INDEX 00 span in a track's own FILE is skipped and *not* counted toward position | `src/dos/cdrom_image.cpp`, `AddTrack` |
@@ -202,9 +205,22 @@ on the ISO.
 
 ## Next steps
 
-1. `install`: template diffing, `.pure.zip` extraction, launching DOSBox
-   Pure, consuming `internal/config`'s `SystemDir`/`SaveDir`/
-   `DosboxPure`/`Templates`. Disk reading is done: `internal/vhd` and
+1. `install`: the command itself - template diffing (C: from a Keep-mode
+   VHD vs its template, or `vdisk.NewOverlay` over the OS image for a
+   `-CDRIVE.sav`), D: changes (`vdisk.Open` + `OpenSave`, then
+   `fat.Open`), `.pure.zip` extraction for the shell/plain models,
+   launching DOSBox Pure, consuming `internal/config`'s `SystemDir`/
+   `SaveDir`/`DosboxPure`/`Templates`. `internal/vdisk` doesn't handle a
+   content with a `<content>.pure.zip` save layered over it, parent
+   archives, or deciding whether a large IMG/IMA/VHD/JRC in the content is
+   mountable (it reports these rather than guessing); install controls
+   its own content name, so the first shouldn't arise there. The D: port
+   was checked on a real archive and save (`Betrayal in Antara`):
+   it reproduces the save hash (`65DC55DB`) exactly, the save's changed
+   directory sectors differ from the reconstruction only in 1-4 bytes
+   (access dates), and all 1236 files read back identical to the archive,
+   with the game's own runtime files (`ANTARA/RWDATA`) appearing from the
+   save. Disk reading is done: `internal/vhd` and
    `internal/fat` (`fat.Open(vhdDisk)` gives an `fs.FS`) both match
    independent tools on the real Win98 image - `qemu-img convert` for the
    decoded disk (identical SHA-1), 7-Zip for the file system (all 2540
