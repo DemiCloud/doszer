@@ -264,8 +264,7 @@ on the ISO.
    Windows down and closed DOSBox Pure. It also ran on a Steam Machine
    under RetroDECK. Without Explorer as the shell, opening Control Panel
    shows a harmless "Cannot find the file" error with a garbled name;
-   open the applets directly (`control desk.cpl`). Still unchecked in the
-   image: Device Manager (new hardware prompts) and the network logon.
+   open the applets directly (`control desk.cpl`).
 
 `internal/config` is implemented (README "Configuration"); `build` and
 `repack` consume `ogg_quality`, `install` the rest. With the OS image
