@@ -256,6 +256,16 @@ on the ISO.
    with a second image, and that `FRONTEND.DBP`'s override takes effect
    on its own (that machine's `DOSBoxPure.cfg` already sets
    `bootos_ramdisk` to `diff`).
+2. Specification §12's OS image startup (README "Windows 9x OS image").
+   Passed (2026-11-14) with the Betrayal in Antara example on the Win98
+   image, under `diff`: `WINDOWS.BAT`'s `QUICKRES_RUNDLLENTRY 640x480x8`
+   switched modes without a restart prompt (no 256-colour warning), the
+   game started maximized without a title bar, and quitting it shut
+   Windows down and closed DOSBox Pure. It also ran on a Steam Machine
+   under RetroDECK. Without Explorer as the shell, opening Control Panel
+   shows a harmless "Cannot find the file" error with a garbled name;
+   open the applets directly (`control desk.cpl`). Still unchecked in the
+   image: Device Manager (new hardware prompts) and the network logon.
 
 `internal/config` is implemented (README "Configuration"); `build` and
 `repack` consume `ogg_quality`, `install` the rest. With the OS image

@@ -390,5 +390,14 @@ options:
 | `dosbox_pure_bootos_ramdisk` | `diff` | OS images are shared and MUST NOT be modified. |
 | `dosbox_pure_menu_time` | `0` | Exit when an auto-started program ends. |
 
-An OS image used with the OS image model MUST run `D:\WINDOWS.BAT`, if present,
-at startup.
+An OS image used with the OS image model MUST, at startup:
+
+1. if `D:\WINDOWS.BAT` exists, run it, wait for it to finish, then shut the
+   guest OS down;
+2. otherwise, start a shell from which the user can run programs.
+
+Such an OS image MUST NOT automatically run programs from a disc image when
+it is mounted or the guest OS starts (e.g. Windows AutoRun).
+
+`WINDOWS.BAT` SHOULD NOT shut the guest OS down itself, and SHOULD finish
+only when the program it starts has ended.

@@ -222,3 +222,33 @@ Archives assume these DOSBox Pure core options (see the specification, §12):
 
 OS images and system shells go in a `dosbox_pure/` subdirectory of the
 frontend's system directory, e.g. `dosbox_pure/Win98.vhd`.
+
+### Windows 9x OS image
+
+Specification §12's startup behaviour, for a Windows 98 image: in
+`C:\WINDOWS\SYSTEM.INI`, `[boot]`, replace `shell=Explorer.exe` with
+
+```ini
+shell=wscript.exe C:\WINDOWS\STARTRUN.VBS
+```
+
+and add `C:\WINDOWS\STARTRUN.VBS`:
+
+```vbs
+Set fso = CreateObject("Scripting.FileSystemObject")
+Set sh  = CreateObject("WScript.Shell")
+If fso.FileExists("D:\WINDOWS.BAT") Then
+    sh.Run "D:\WINDOWS.BAT", 0, True
+    sh.Run "RUNDLL32.EXE SHELL32.DLL,SHExitWindowsEx 1", 0, False
+Else
+    sh.Run "C:\WINDOWS\PROGMAN.EXE", 1, False
+End If
+```
+
+Window style `0` hides `WINDOWS.BAT`'s console window. The fallback is
+Program Manager: Explorer started by a script that isn't the configured
+shell opens a folder window, not the desktop. AutoRun is Explorer's, so
+with Explorer never running as the shell, discs are not AutoRun.
+
+Use a fixed VHD or raw image: DOSBox Pure loses writes to a dynamic VHD
+under `diff` (see "Install" above to convert one).

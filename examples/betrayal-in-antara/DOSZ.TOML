@@ -22,7 +22,11 @@ WINDOWS.BAT starts the game. Setup's registry entries and C:\\WINDOWS
 changes aren't needed.
 
 RESOURCE.WIN: Setup writes DirectDraw off and a fixed-size window; the
-rewrites below turn both on.
+rewrites below turn both on, and maximize the window without a title bar.
+
+Display: the game wants exactly 256 colours (it warns at more), so
+WINDOWS.BAT switches the desktop to 640x480x8 first; maximized, the game
+then fills the screen.
 """
 
 [boot]
@@ -58,17 +62,27 @@ from  = 'AllowResize=FALSE'
 to    = 'AllowResize=TRUE'
 files = ["ANTARA/RESOURCE.WIN"]
 
-# Run at startup by this Win98 image's own shell hook (DOSBox Pure only
-# runs WINDOWS.BAT itself for a shell, not an OS image). Shuts Windows down,
-# and so exits DOSBox Pure, when the game ends.
+# Start maximized, without a title bar. Setup writes no maximized key, so
+# it's added after titleBar. ANTARAR.EXE also reads allowTrueColor, which
+# only silences the 256-colour warning.
+[[layout.rewrite]]
+from  = 'titleBar=TRUE'
+to    = "titleBar=FALSE\r\nmaximized=TRUE"
+files = ["ANTARA/RESOURCE.WIN"]
+
+# Run at startup by the OS image, which shuts Windows down when it ends
+# (specification §12). QUICKRES_RUNDLLENTRY is Windows 98's own display
+# mode switch (DESKCP16.DLL, a 16-bit DLL, so RUNDLL, not RUNDLL32). START
+# /W makes each step wait: from a batch file, Windows programs otherwise
+# run in the background.
 [[file]]
 path = 'WINDOWS.BAT'
 text = '''
 @ECHO OFF
+START /W RUNDLL DESKCP16.DLL,QUICKRES_RUNDLLENTRY 640x480x8
 D:
 CD \ANTARA
 START /W ANTARAR.EXE
-C:\WINDOWS\RUNDLL32.EXE SHELL32.DLL,SHExitWindowsEx 1
 '''
 
 [[source.media]]
