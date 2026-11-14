@@ -5,7 +5,6 @@ package build
 
 import (
 	"archive/zip"
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -216,7 +215,12 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, mediaWarnings 
 	if err != nil {
 		return res, err
 	}
-	if err := writeArchive(fs, m, out); err != nil {
+	spoolDir, err := tmpDir()
+	if err != nil {
+		out.Close()
+		return res, err
+	}
+	if err := writeArchive(fs, m, out, spoolDir); err != nil {
 		out.Close()
 		return res, err
 	}
@@ -233,8 +237,11 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, mediaWarnings 
 // had, is copied through in its already-compressed form rather than being
 // decompressed and recompressed - repack's main cost on an archive most of
 // whose content a given run leaves untouched.
-func writeArchive(fs *fileSet, m *manifest.Manifest, w io.Writer) error {
+//
+// spoolDir holds zipw's temporary files for large compressed entries.
+func writeArchive(fs *fileSet, m *manifest.Manifest, w io.Writer, spoolDir string) error {
 	zw := zipw.New(w)
+	zw.TempDir = spoolDir
 
 	for _, p := range fs.paths() {
 		e, _ := fs.get(p)
@@ -259,19 +266,13 @@ func writeArchive(fs *fileSet, m *manifest.Manifest, w io.Writer) error {
 			continue
 		}
 
-		f, data, err := e.open()
+		r, err := e.reader()
 		if err != nil {
 			return fmt.Errorf("%s: %w", p, err)
 		}
-
-		var r io.Reader = bytes.NewReader(data)
-		if f != nil {
-			r = f
-		}
-
 		addErr := zw.Add(p, r, store, e.modified)
-		if f != nil {
-			f.Close()
+		if c, ok := r.(io.Closer); ok {
+			c.Close()
 		}
 		if addErr != nil {
 			return fmt.Errorf("%s: %w", p, addErr)

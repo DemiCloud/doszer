@@ -323,6 +323,8 @@ For reproducible output, an implementation MUST:
   `[[file]]` entry - MUST use 1980-01-01 00:00:00. Modification times are
   recorded in UTC.
 - Omit extra fields and set external attributes to zero.
+- Write no directory entries: a directory exists only as part of the paths
+  of the files in it.
 
 A rewrite (§6.5) or text normalization (§6.6) changes an entry's content
 without changing its source; its modification time is unaffected.

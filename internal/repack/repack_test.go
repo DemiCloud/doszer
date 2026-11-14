@@ -13,6 +13,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/repack"
+	"github.com/DemiCloud/doszer/internal/verify"
 )
 
 func writeFile(t *testing.T, dir, rel, content string) {
@@ -304,7 +305,8 @@ func TestRepackRejectsMissingManifest(t *testing.T) {
 		if f.Name == "DOSZ.TOML" {
 			continue
 		}
-		fw, err := w.CreateHeader(&f.FileHeader)
+		fh := f.FileHeader
+		fw, err := w.CreateHeader(&fh)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -348,7 +350,8 @@ shell = "dosbox_pure/Win31"
 	w := zip.NewWriter(&buf)
 	for _, f := range r.File {
 		if err := func() error {
-			fw, err := w.CreateHeader(&f.FileHeader)
+			fh := f.FileHeader
+			fw, err := w.CreateHeader(&fh)
 			if err != nil {
 				return err
 			}
@@ -482,7 +485,8 @@ func stripManifest(t *testing.T, path string) {
 		if strings.EqualFold(f.Name, manifest.FileName) {
 			continue
 		}
-		fw, err := w.CreateHeader(&f.FileHeader)
+		fh := f.FileHeader
+		fw, err := w.CreateHeader(&fh)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -612,5 +616,54 @@ func TestRepackPassesThroughUnchangedCompressedBytes(t *testing.T) {
 	got := readZipFile(t, outGame)
 	if got != content {
 		t.Error("GAME.EXE content changed across an untouched repack")
+	}
+}
+
+func TestRepackDropsDirectoryEntries(t *testing.T) {
+	in := buildLegacyArchive(t, plainManifestForDirs, map[string]string{
+		"GAME/":         "",
+		"GAME/GAME.EXE": "binary",
+	})
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := repack.Run(repack.Options{InputPath: in, OutputPath: out}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	entries := readZip(t, out)
+	if _, ok := entries["GAME/"]; ok {
+		t.Error("directory entry GAME/ carried into the output")
+	}
+	if _, ok := entries["GAME/GAME.EXE"]; !ok {
+		t.Error("GAME/GAME.EXE missing")
+	}
+	if err := verify.Verify(out); err != nil {
+		t.Errorf("Verify: %v", err)
+	}
+}
+
+const plainManifestForDirs = `
+format = 1
+name   = "Legacy Game"
+
+[boot]
+exec = 'C:\GAME\GAME.EXE'
+`
+
+// TestRepackOfABuildIsIdentical: an entry's bytes don't depend on whether
+// build compressed it or repack copied it through, so repacking a fresh
+// build reproduces it exactly.
+func TestRepackOfABuildIsIdentical(t *testing.T) {
+	in := buildArchive(t, plainManifest+"\n[pack]\nstore = [\"dat\"]\n", map[string]string{
+		"GAME.EXE":   strings.Repeat("deflated ", 1000),
+		"DATA.DAT":   strings.Repeat("stored ", 1000),
+		"README.TXT": "text\n",
+	})
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := repack.Run(repack.Options{InputPath: in, OutputPath: out}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	a, _ := os.ReadFile(in)
+	b, _ := os.ReadFile(out)
+	if !bytes.Equal(a, b) {
+		t.Error("repacking a fresh build changed its bytes")
 	}
 }

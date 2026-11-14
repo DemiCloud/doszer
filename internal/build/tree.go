@@ -83,6 +83,24 @@ func (e *fileEntry) open() (*os.File, []byte, error) {
 	return f, nil, err
 }
 
+// reader returns the entry's content as a stream: a file on disk (seekable,
+// so zipw can store it without a copy), its bytes, or an archive entry
+// decompressed on the fly rather than read into memory. The caller closes
+// it if it is an io.Closer.
+func (e *fileEntry) reader() (io.Reader, error) {
+	if e.data == nil && e.source != nil && e.source.Open != nil {
+		return e.source.Open()
+	}
+	f, data, err := e.open()
+	if err != nil {
+		return nil, err
+	}
+	if f != nil {
+		return f, nil
+	}
+	return bytes.NewReader(data), nil
+}
+
 // size returns the entry's uncompressed size without reading its content.
 func (e *fileEntry) size() (int64, error) {
 	if e.data != nil {

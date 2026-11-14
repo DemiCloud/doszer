@@ -53,6 +53,9 @@ func Run(opts Options) (*build.Result, error) {
 			mf = f
 			continue
 		}
+		if strings.HasSuffix(f.Name, "/") {
+			continue // a directory entry: §8.2 allows none
+		}
 		// Deferred: an entry the pipeline never reads or changes is copied
 		// through in its already-compressed form by writeArchive, rather
 		// than being decompressed here and recompressed there - repack's

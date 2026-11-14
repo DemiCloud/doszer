@@ -56,10 +56,16 @@ README.md            doszer usage, configuration, install workflow
   pure-Go encoder). Invoke it with `-fflags +bitexact` (fixed Ogg stream
   serial numbers) and `-flags +bitexact` (no encoder version string):
   with both, two builds produce byte-identical Ogg files.
-- `internal/zipw` registers its own Deflate compressor at
-  `flate.BestCompression` (level 9), scoped to its own `*zip.Writer`:
-  `archive/zip`'s built-in one uses level 5 (`register.go`'s
-  `newFlateWriter`), not even `flate.DefaultCompression` (6). Still
+- `internal/zipw` deflates at `flate.BestCompression` (level 9) itself:
+  `archive/zip`'s built-in compressor uses level 5 (`register.go`'s
+  `newFlateWriter`), not even `flate.DefaultCompression` (6). It writes
+  every entry through `CreateRaw` with CRC-32 and sizes in the local
+  header and no data descriptor - `Add` computes them first (a stored
+  seekable source is read twice; anything else goes through a spool,
+  in memory up to 32 MB, then a temp file beside the output) - so an
+  entry's bytes are the same whether `Add` compressed it or `AddRaw`
+  copied it through, and repacking a doszer archive reproduces it
+  byte for byte. Still
   weaker than a multi-pass encoder like 7-Zip's - investigated going
   further (see Resolved questions) and found no responsible option yet.
 - Manifest fields use `omitempty` (`internal/manifest/manifest.go`) so a
@@ -181,12 +187,11 @@ most of whose content a given run leaves untouched. Measured on a real
 1.7 GB, 1246-entry archive (stored, uncompressed disc images): 57s when a
 test manifest's `pack.store` didn't match the input's actual stored
 extension (every entry recompressed, since the store decision changed),
-7.5s once it did (nearly all entries passed through raw). This changes the
-archive's physical ZIP layout for a passed-through entry (no data
-descriptor, sizes/CRC32 written directly in the local header, since they're
-already known) without changing §9 equivalence; repacking a freshly-built
-archive once reaches this layout for everything untouched, repacking it
-again is then byte-for-byte stable.
+7.5s once it did (nearly all entries passed through raw). A passed-through
+entry is written exactly as `zipw.Add` would write it fresh, so repacking
+a doszer-built archive is byte-for-byte identical: checked on four real
+archives (a legacy archive's first repack canonicalizes it; the second
+reproduces the first).
 
 `renameMediaCue` (`internal/build/medianame.go`) is the part of §6.4 this
 implements now: a CUE sheet whose track layout (audio/data sequence, read

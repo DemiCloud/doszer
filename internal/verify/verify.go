@@ -84,7 +84,7 @@ func isEpoch(t time.Time) bool {
 
 // checkDeterministic enforces the structural part of §8.2 that applies to
 // every entry regardless of its source: compression method, external
-// attributes, extra fields and path order. A collected or extracted
+// attributes, extra fields, no directory entries and path order. A collected or extracted
 // entry's modification time is its source's own (§8.2), which verify has
 // no independent way to check; only the three generated files (checked
 // against the manifest in checkWithManifest and in Verify) must use the
@@ -104,6 +104,9 @@ func checkDeterministic(files []*zip.File) []error {
 		}
 		if len(f.Extra) != 0 {
 			errs = append(errs, fmt.Errorf("%s: must not have extra fields (§8.2)", f.Name))
+		}
+		if strings.HasSuffix(f.Name, "/") {
+			errs = append(errs, fmt.Errorf("%s: must not be a directory entry (§8.2)", f.Name))
 		}
 	}
 

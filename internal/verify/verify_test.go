@@ -291,7 +291,8 @@ parent = "Shared.shell"
 		if f.Name != "Shared.shell.parent" {
 			return copyEntry(w, f)
 		}
-		fw, err := w.CreateHeader(&f.FileHeader)
+		fh := f.FileHeader
+		fw, err := w.CreateHeader(&fh)
 		if err != nil {
 			return err
 		}
@@ -359,7 +360,8 @@ func TestVerifyRejectsStaleAutoboot(t *testing.T) {
 		if f.Name != "AUTOBOOT.DBP" {
 			return copyEntry(w, f)
 		}
-		fw, err := w.CreateHeader(&f.FileHeader)
+		fh := f.FileHeader
+		fw, err := w.CreateHeader(&fh)
 		if err != nil {
 			return err
 		}
@@ -526,5 +528,24 @@ tracks = [{ type = "data", sha1 = "`+tt.sha1+`" }]
 				t.Errorf("warnings %q, want %d", warnings, tt.warnings)
 			}
 		})
+	}
+}
+
+func TestVerifyRejectsDirectoryEntry(t *testing.T) {
+	path := buildArchive(t, plainManifest)
+	first := true
+	rewriteZip(t, path, func(w *zip.Writer, f *zip.File) error {
+		if first {
+			// "A/" sorts before every entry buildArchive writes.
+			first = false
+			if _, err := w.CreateHeader(&zip.FileHeader{Name: "A/", Method: zip.Store}); err != nil {
+				return err
+			}
+		}
+		return copyEntry(w, f)
+	})
+	err := verify.Verify(path)
+	if err == nil || !contains(err.Error(), "directory entry") {
+		t.Fatalf("Verify() = %v, want a directory entry error", err)
 	}
 }
