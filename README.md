@@ -163,6 +163,13 @@ Content" for itself only, so the OS image is never modified and C: changes
 land in `<name>-CDRIVE.sav`; they're listed, not extracted, since every
 archive shares C:. Nothing in your DOSBox Pure configuration changes.
 
+The OS image must be a raw `.img` or a fixed-size VHD, not a dynamic
+(growing) VHD: DOSBox Pure's "Save Difference" mode compares written
+sectors against the wrong bytes of a dynamic VHD and silently drops some
+writes, corrupting the session's C: (and, in a frontend, any game's C:
+changes). `install` refuses a dynamic VHD. To convert one:
+`qemu-img convert -O vpc -o subformat=fixed Win98.vhd Win98-fixed.vhd`.
+
 An OS image session boots `--os`, else the image `install_os` maps
 `boot.os` to, else `boot.os` itself: an archive's own image may start the
 game through a custom shell, while installing wants a plain Windows

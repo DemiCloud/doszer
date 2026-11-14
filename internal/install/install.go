@@ -51,6 +51,33 @@ func sessionOS(opts Options, m *manifest.Manifest) string {
 	return m.Boot.OS
 }
 
+// checkDiffSafe rejects a dynamic VHD as an OS image session's C:. With
+// "Save Difference Per Content", DOSBox Pure decides whether a written
+// sector changed by comparing it against the image file's bytes at
+// sector*512 (src/ints/bios_disk.cpp, imageDisk::Write_AbsoluteSector),
+// which for a dynamic VHD aren't that sector: a write that matches those
+// bytes - typically an all-zero sector - is dropped, and the sector reads
+// back as the image's old content. A raw image or fixed VHD stores sector
+// N at sector*512, so the comparison holds.
+func checkDiffSafe(systemDir, osPath string) error {
+	img, err := osImagePath(systemDir, osPath)
+	if err != nil {
+		return err
+	}
+	d, err := vhd.Open(img)
+	if errors.Is(err, vhd.ErrNotVHD) {
+		return nil // a raw image
+	}
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	if d.Type() == vhd.TypeDynamic {
+		return fmt.Errorf("%s is a dynamic VHD: DOSBox Pure's Save Difference mode loses writes on one (README \"Install\"); convert it to a fixed VHD or raw .img, e.g. qemu-img convert -O vpc -o subformat=fixed", img)
+	}
+	return nil
+}
+
 // osDriveDir picks the folder to extract from an OS image's C: changes:
 // Windows changes its own files during any session, so WINDOWS/ and files
 // in the root don't count.
@@ -106,6 +133,11 @@ func Run(opts Options) (*Report, error) {
 	env, err := Discover(opts.Exe, opts.SystemDir, opts.SaveDir)
 	if err != nil {
 		return nil, err
+	}
+	if m.Model() == manifest.ModelOS {
+		if err := checkDiffSafe(env.SystemDir, m.Boot.OS); err != nil {
+			return nil, err
+		}
 	}
 	s, err := Prepare(opts.Source, m)
 	if err != nil {

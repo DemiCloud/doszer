@@ -126,6 +126,7 @@ pointer to it).
 | Large deflated files | Random access requires full decompression once; an index is cached in the save | README |
 | `dosbox_pure_bootos_ramdisk` | `"false"` Keep (default: C: writes go into the OS image), `"true"` Discard, `"diff"` Save Difference Per Content. Only affects C:. Authoring uses Keep; spec §12's `diff` is the production setting (e.g. RetroDECK), which must never modify the image | `core_options.h`; `dosbox_pure_run.h`, `RunBoot` |
 | D: changes (OS image model) | Saved to `<content>-<HASH>.sav` under every ramdisk setting; only `dosbox_pure_bootos_dfreespace` = `discard`/`hide` disables it | `dosbox_pure_run.h`, `RunBoot`; `DBP_GetSaveFile(SFT_VIRTUALDISK)` |
+| `diff` on a dynamic VHD | Loses writes: `Write_AbsoluteSector` compares a written sector against the image *file's* bytes at `sector*512` (not the VHD's sector) to decide if it changed; a match (typically an all-zero sector where the file holds zeros) is not saved, or frees a saved one, and reads back as the VHD's old content. Raw `.img` and fixed VHDs are unaffected (sector N at `N*512`). Seen live: install sessions on a dynamic Win98 VHD lost files' zero-padded last sectors and corrupted directory/FAT sectors; `install` refuses a dynamic VHD | `src/ints/bios_disk.cpp`, `imageDisk::Write_AbsoluteSector` |
 | `.sav` disk diff format | `FFDD\x01`, then records of a little-endian u32 sector number + 512 bytes; sector `0xFFFFFFFF` is a freed slot. Used for D: (over the disk `fatFromDOSDrive` synthesizes from the content) and for C: under `diff` (`<content>-CDRIVE.sav`, over the OS image) | `src/ints/bios_disk.cpp`, `differencingDisk`, `imageDisk::SetDifferencingDisk` |
 | Synthesized D: disk | `fatFromDOSDrive` builds a FAT disk from the content's DOS view: directory order is `zipDrive`'s hash map slot order (`BaseHashMap`, FNV-1 over sign-extended chars), short names come from `DBP_Make8dot3FileName`/`IncrementName` and are then regenerated Windows-style (`~N`) for long-named entries. Root holds the volume label (`Set_Label` form of `<name, ≤7 chars>-<ext>`). Hidden from D: `AUTOBOOT.DBP`, `PADMAP.DBP`, `FRONTEND.DBP`, `DOSBOX.CON`, `*.SKC`, and mountable images (ISO/CHD/CUE, validated IMG/IMA/VHD/JRC) except one sharing a CUE's name | `src/ints/bios_disk.cpp`, `fatFromDOSDrive`; `src/dos/drive_zip.cpp`; `dosbox_pure_libretro.cpp`, `DBP_GetSaveFile`, `init_dosbox_parse_drives` |
 | D: save hash | The `<HASH>` in `<content>-<HASH>.sav` is a CRC32 chained over every unhidden path, size, date, time and attributes (seeded with `dfreespace`); it is also the disk serial, so the name identifies exactly which content layout the diff belongs to | `DBP_GetSaveFile(SFT_VIRTUALDISK)` |
@@ -248,11 +249,14 @@ on the ISO.
    wrote the `.pure.zip` before exiting, 32 files extracted). The OS
    image session booted Win98, kept `Win98.vhd` byte-identical and wrote
    `-CDRIVE.sav`, but the game's installer crashed (Betrayal in Antara
-   only installs to its default folder), so still unconfirmed: a live
-   `--drive c` / `--os` extraction, a live D: extraction, and that
-   `FRONTEND.DBP`'s override itself takes effect - that machine's
-   `DOSBoxPure.cfg` already sets `bootos_ramdisk` to `diff`, so the
-   run can't tell the two apart.
+   only installs to its default folder). A `--drive c` rerun extracted
+   1247 files, but some were corrupt: a DOSBox Pure bug loses writes in
+   `diff` mode on a dynamic VHD (DOSBox Pure facts table), confirmed by
+   applying the save independently - doszer read the disk exactly as
+   stored. Still to do: rerun on a fixed VHD (or raw .img) and compare
+   with a known-good install; a live D: extraction; and confirm
+   `FRONTEND.DBP`'s override takes effect (that machine's
+   `DOSBoxPure.cfg` already sets `bootos_ramdisk` to `diff`).
 
 `internal/config` is implemented (README "Configuration"); `build` and
 `repack` consume `ogg_quality`, `install` the rest. With the OS image

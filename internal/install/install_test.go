@@ -16,6 +16,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/vdisk"
+	"github.com/DemiCloud/doszer/internal/vhd"
 )
 
 var t0 = time.Date(1996, 12, 24, 23, 32, 0, 0, time.UTC)
@@ -290,6 +291,7 @@ func TestRunPlainSession(t *testing.T) {
 
 func TestRunOSSession(t *testing.T) {
 	exe, saveDir := fakeDOSBoxPure(t)
+	writeOSImage(t, saveDir, "Win98.img", make([]byte, 64<<10))
 	manifestText := "format = 1\nname = \"Example Game\"\n\n[boot]\nos = \"dosbox_pure/Win98\"\n"
 	src := writeSource(t, manifestText, map[string]string{"GAME/GAME.INI": "level=1\r\n"})
 
@@ -418,5 +420,65 @@ func TestRunOSSessionDriveC(t *testing.T) {
 	plain := writeSource(t, "format = 1\nname = \"Example Game\"\n", map[string]string{"SETUP.EXE": "MZ"})
 	if _, err := Run(Options{Source: plain, Exe: exe, Drive: "c"}); err == nil {
 		t.Fatal("--drive c accepted for a plain session")
+	}
+}
+
+// writeOSImage puts an OS image into fakeDOSBoxPure's system directory.
+func writeOSImage(t *testing.T, saveDir, name string, data []byte) {
+	t.Helper()
+	dir := filepath.Join(filepath.Dir(saveDir), "system", "dosbox_pure")
+	os.MkdirAll(dir, 0o755)
+	if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// vhdFooter builds a VHD footer for a disk of size bytes.
+func vhdFooter(diskType uint32, size, dataOffset uint64) []byte {
+	b := make([]byte, 512)
+	be := binary.BigEndian
+	copy(b, "conectix")
+	be.PutUint32(b[8:], 2)
+	be.PutUint32(b[12:], 0x00010000)
+	be.PutUint64(b[16:], dataOffset)
+	be.PutUint64(b[40:], size)
+	be.PutUint64(b[48:], size)
+	be.PutUint32(b[60:], diskType)
+	be.PutUint32(b[64:], vhd.Checksum(b, 64))
+	return b
+}
+
+func TestCheckDiffSafe(t *testing.T) {
+	const size = 4 << 20
+	be := binary.BigEndian
+	hdr := make([]byte, 1024)
+	copy(hdr, "cxsparse")
+	be.PutUint64(hdr[8:], ^uint64(0))
+	be.PutUint64(hdr[16:], 1536)
+	be.PutUint32(hdr[24:], 0x00010000)
+	be.PutUint32(hdr[28:], 2)
+	be.PutUint32(hdr[32:], 2<<20)
+	be.PutUint32(hdr[36:], vhd.Checksum(hdr, 36))
+	dynamic := append(append(append(vhdFooter(vhd.TypeDynamic, size, 512), hdr...), bytes.Repeat([]byte{0xFF}, 512)...), vhdFooter(vhd.TypeDynamic, size, 512)...)
+	fixed := append(make([]byte, size), vhdFooter(vhd.TypeFixed, size, ^uint64(0))...)
+
+	tests := []struct {
+		name, file string
+		data       []byte
+		wantErr    bool
+	}{
+		{"raw image", "OS.img", make([]byte, size), false},
+		{"fixed VHD", "OS.vhd", fixed, false},
+		{"dynamic VHD", "OS.vhd", dynamic, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			system := t.TempDir()
+			os.MkdirAll(filepath.Join(system, "dosbox_pure"), 0o755)
+			os.WriteFile(filepath.Join(system, "dosbox_pure", tt.file), tt.data, 0o644)
+			if err := checkDiffSafe(system, "dosbox_pure/OS"); (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
