@@ -151,10 +151,6 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, mediaWarnings 
 		res.Moved = append(res.Moved, Move{From: from, To: to})
 	}
 
-	if opts.DryRun {
-		res.Suggestions, res.BinaryReferences = suggestRewrites(fs, dropped)
-	}
-
 	if err := renameMediaCue(fs, m.Source.Media, &m.Boot, effectiveName); err != nil {
 		return nil, err
 	}
@@ -199,6 +195,12 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, mediaWarnings 
 	}
 	res.RewriteHits = hits
 	res.RewriteWarnings = rewriteWarnings
+
+	// After the manifest's own rules, so only references they leave are
+	// suggested.
+	if opts.DryRun {
+		res.Suggestions, res.BinaryReferences = suggestRewrites(fs, dropped)
+	}
 
 	if err := normalizeText(fs); err != nil {
 		return nil, err

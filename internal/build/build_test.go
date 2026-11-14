@@ -602,3 +602,32 @@ func equalSlices(a, b []string) bool {
 	}
 	return true
 }
+
+// TestDryRunSuggestsOnlyUncoveredReferences: flatten drops WRAP, so
+// references to WRAP\ need a rewrite; the dry run suggests one unless the
+// manifest's own rules already removed them.
+func TestDryRunSuggestsOnlyUncoveredReferences(t *testing.T) {
+	tests := []struct {
+		name  string
+		rules string
+		want  int
+	}{
+		{"no rule", "", 1},
+		{"rule covers it", "\n[[layout.rewrite]]\nfrom  = 'C:\\WRAP\\GAME'\nto    = 'D:\\GAME'\nfiles = [\"GAME/GAME.CFG\"]\n", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "DOSZ.TOML", "format = 1\nname = \"Example Game\"\n\n[boot]\nexec = 'C:\\GAME\\GAME.EXE'\n\n[layout]\nflatten = true\n"+tt.rules)
+			writeFile(t, dir, "WRAP/GAME/GAME.EXE", "MZ\x00")
+			writeFile(t, dir, "WRAP/GAME/GAME.CFG", "path=C:\\WRAP\\GAME\\DATA\r\n")
+			res, err := build.Run(build.Options{SourceDir: dir, DryRun: true, OutputPath: filepath.Join(t.TempDir(), "out.dosz")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.Suggestions) != tt.want {
+				t.Errorf("suggestions %q, want %d", res.Suggestions, tt.want)
+			}
+		})
+	}
+}
