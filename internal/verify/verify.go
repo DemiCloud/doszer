@@ -20,9 +20,17 @@ import (
 // Verify checks archivePath and returns every way it fails to conform, or
 // nil if it conforms.
 func Verify(archivePath string) error {
+	_, err := Check(archivePath)
+	return err
+}
+
+// Check is Verify, also returning warnings: conditions a conforming
+// archive can have but that are worth knowing, such as a declared media
+// its disc images don't match (§7.3).
+func Check(archivePath string) (warnings []string, err error) {
 	r, err := zip.OpenReader(archivePath)
 	if err != nil {
-		return fmt.Errorf("%s: %w", archivePath, err)
+		return nil, fmt.Errorf("%s: %w", archivePath, err)
 	}
 	defer r.Close()
 
@@ -39,7 +47,7 @@ func Verify(archivePath string) error {
 	mf, ok := findFold(byName, manifest.FileName)
 	if !ok {
 		errs = append(errs, fmt.Errorf("missing %s (§8.3)", manifest.FileName))
-		return errors.Join(errs...)
+		return nil, errors.Join(errs...)
 	}
 	if !isEpoch(mf.Modified) {
 		errs = append(errs, fmt.Errorf("%s: a generated file must use the fixed epoch (§8.2)", mf.Name))
@@ -48,19 +56,24 @@ func Verify(archivePath string) error {
 	data, err := readZipFile(mf)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("%s: %w", manifest.FileName, err))
-		return errors.Join(errs...)
+		return nil, errors.Join(errs...)
 	}
 
 	defaultName := strings.TrimSuffix(filepath.Base(archivePath), filepath.Ext(archivePath))
 	m, err := manifest.Parse(data, defaultName)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("embedded %s is invalid: %w", manifest.FileName, err))
-		return errors.Join(errs...)
+		return nil, errors.Join(errs...)
 	}
 
 	errs = append(errs, checkWithManifest(names, byName, m)...)
 
-	return errors.Join(errs...)
+	warnings, err = build.ArchiveMedia(r.File, m.Source.Media)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
+	return warnings, errors.Join(errs...)
 }
 
 // isEpoch reports whether t is the fixed 1980-01-01 00:00:00 timestamp

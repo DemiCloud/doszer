@@ -127,7 +127,8 @@ Manifest parsing and every manifest rule in specification §11 are
 implemented and tested. `build` implements §6 in full and enforces the
 archive-content rules of §11 (shell-owned files, `DOSBOX.BAT`).
 `verify` (`internal/verify`) applies those same rules, plus §6.4's
-conversion (via `build.UnconvertedMedia`), §8's
+conversion (via `build.UnconvertedMedia`), §7.3's media matching as
+warnings (via `build.ArchiveMedia`, `verify.Check`), §8's
 determinism checks, §6.6's text normalization, §6.7's exclusions, and
 §6.8's runtime files - checking their *content* against what the embedded
 manifest implies (e.g. AUTOBOOT.DBP's bytes must match

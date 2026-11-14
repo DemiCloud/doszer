@@ -329,7 +329,11 @@ Usage: doszer verify <file.dosz>
 		return errUsage
 	}
 
-	if err := verify.Verify(fs.Arg(0)); err != nil {
+	warnings, err := verify.Check(fs.Arg(0))
+	for _, w := range warnings {
+		fmt.Fprintf(os.Stderr, "[WARN] %s\n", w)
+	}
+	if err != nil {
 		return err
 	}
 

@@ -87,7 +87,8 @@ details:
   (a failure under `--strict`).
 - Audio already encoded (any CUE `FILE` type other than `BINARY`) is kept
   as it is, even if `[pack].audio` asks for the other encoding.
-- `verify` reports a CUE sheet that §6.4 would still change.
+- `verify` reports a CUE sheet that §6.4 would still change, and warns
+  about a `[[source.media]]` entry the archive's disc images don't match.
 
 ## Example
 

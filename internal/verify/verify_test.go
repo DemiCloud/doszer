@@ -3,8 +3,11 @@ package verify_test
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha1"
+	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -484,5 +487,44 @@ func TestVerifyDetectsCorruptBinaryEntry(t *testing.T) {
 	}
 	if err := verify.Verify(path); err == nil {
 		t.Fatal("Verify accepted a corrupted entry")
+	}
+}
+
+func TestCheckMedia(t *testing.T) {
+	iso := bytes.Repeat([]byte("ISO user data. "), 2048) // 15 sectors
+	sum := sha1.Sum(iso)
+	right := hex.EncodeToString(sum[:])
+	wrong := strings.Repeat("0", 40)
+
+	tests := []struct {
+		name     string
+		sha1     string
+		warnings int
+	}{
+		{"matching disc", right, 0},
+		{"different disc", wrong, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "DOSZ.TOML", plainManifest+`
+[[source.media]]
+id     = "disc1"
+tracks = [{ type = "data", sha1 = "`+tt.sha1+`" }]
+`)
+			writeFile(t, dir, "GAME.EXE", "binary")
+			writeFile(t, dir, "Test Game.iso", string(iso))
+			out := filepath.Join(t.TempDir(), "out.dosz")
+			if _, err := build.Run(build.Options{SourceDir: dir, OutputPath: out}); err != nil {
+				t.Fatalf("build.Run: %v", err)
+			}
+			warnings, err := verify.Check(out)
+			if err != nil {
+				t.Fatalf("Check: %v", err)
+			}
+			if len(warnings) != tt.warnings {
+				t.Errorf("warnings %q, want %d", warnings, tt.warnings)
+			}
+		})
 	}
 }

@@ -398,21 +398,7 @@ func encodeOgg(r io.Reader, out string, quality int) error {
 // aren't named as §6.4 requires - so verify can apply §6.4 to an archive
 // with the same rules build uses. It reads only the CUE sheets themselves.
 func UnconvertedMedia(files []*zip.File, audio string) []string {
-	fs := newFileSet()
-	for _, f := range files {
-		f := f
-		fs.set(f.Name, sourceEntry(&RawSource{
-			UncompressedSize: f.UncompressedSize64,
-			Decompressed: func() ([]byte, error) {
-				rc, err := f.Open()
-				if err != nil {
-					return nil, err
-				}
-				defer rc.Close()
-				return io.ReadAll(rc)
-			},
-		}, Epoch))
-	}
+	fs := zipFileSet(files)
 
 	var out []string
 	for _, p := range fs.paths() {
@@ -424,4 +410,35 @@ func UnconvertedMedia(files []*zip.File, audio string) []string {
 		}
 	}
 	return out
+}
+
+// ArchiveMedia applies §7.3 to an archive's own disc images against
+// declared, as repack does, returning its warnings: a media not found, or
+// tracks in lossy files that couldn't be verified. Entries are streamed.
+func ArchiveMedia(files []*zip.File, declared []manifest.Media) ([]string, error) {
+	_, warnings, err := locateMedia(zipFileSet(files), declared, nil)
+	return warnings, err
+}
+
+// zipFileSet is a fileSet over an archive's entries, read on demand.
+func zipFileSet(files []*zip.File) *fileSet {
+	fs := newFileSet()
+	for _, f := range files {
+		if strings.HasSuffix(f.Name, "/") {
+			continue
+		}
+		fs.set(f.Name, sourceEntry(&RawSource{
+			UncompressedSize: f.UncompressedSize64,
+			Decompressed: func() ([]byte, error) {
+				rc, err := f.Open()
+				if err != nil {
+					return nil, err
+				}
+				defer rc.Close()
+				return io.ReadAll(rc)
+			},
+			Open: f.Open,
+		}, Epoch))
+	}
+	return fs
 }
