@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"runtime"
 	"testing"
+	"testing/iotest"
 )
 
 func TestDeflate(t *testing.T) {
@@ -43,6 +44,45 @@ func TestDeflate(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestDeflateShortReads: block boundaries depend only on the input, not
+// on how a reader splits it (or how the Go runtime grows buffers).
+func TestDeflateShortReads(t *testing.T) {
+	data := bytes.Repeat([]byte("short reads, same blocks. "), (2*blockSize+999)/26)
+	var want bytes.Buffer
+	if _, err := deflate(&want, bytes.NewReader(data), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	readers := map[string]io.Reader{
+		"half":     iotest.HalfReader(bytes.NewReader(data)),
+		"data err": iotest.DataErrReader(bytes.NewReader(data)),
+		"odd":      &chunkReader{data: data, n: 70001},
+	}
+	for name, r := range readers {
+		var got bytes.Buffer
+		if _, err := deflate(&got, r, io.Discard); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !bytes.Equal(got.Bytes(), want.Bytes()) {
+			t.Errorf("%s: output differs from a whole-buffer reader", name)
+		}
+	}
+}
+
+// chunkReader returns at most n bytes per Read.
+type chunkReader struct {
+	data []byte
+	n    int
+}
+
+func (c *chunkReader) Read(p []byte) (int, error) {
+	if len(c.data) == 0 {
+		return 0, io.EOF
+	}
+	k := copy(p[:min(len(p), c.n)], c.data)
+	c.data = c.data[k:]
+	return k, nil
 }
 
 func TestDeflateReadError(t *testing.T) {

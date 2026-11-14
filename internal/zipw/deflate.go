@@ -18,6 +18,10 @@ const (
 	dictSize  = 32 << 10 // Deflate's window
 )
 
+// blockSem bounds the blocks being compressed at once, across every
+// concurrent deflate call: one per CPU.
+var blockSem = make(chan struct{}, runtime.GOMAXPROCS(0))
+
 type block struct {
 	data, dict []byte
 	last       bool
@@ -28,9 +32,7 @@ type block struct {
 // passing the uncompressed bytes through sum as well. It returns how many
 // bytes it read.
 func deflate(w io.Writer, r io.Reader, sum io.Writer) (int64, error) {
-	workers := runtime.GOMAXPROCS(0)
-	queue := make(chan *block, workers) // in input order, bounding memory
-	sem := make(chan struct{}, workers)
+	queue := make(chan *block, cap(blockSem)) // in input order, bounding memory
 	readErr := make(chan error, 1)
 	var n int64
 
@@ -52,10 +54,10 @@ func deflate(w io.Writer, r io.Reader, sum io.Writer) (int64, error) {
 				last = err == nil && len(next) == 0
 			}
 			b := &block{data: cur, dict: prev, last: last, out: make(chan []byte, 1)}
-			sem <- struct{}{}
+			blockSem <- struct{}{}
 			go func() {
 				b.out <- compressBlock(b)
-				<-sem
+				<-blockSem
 			}()
 			queue <- b
 			if last {
@@ -81,13 +83,28 @@ func deflate(w io.Writer, r io.Reader, sum io.Writer) (int64, error) {
 }
 
 // readBlock reads up to blockSize bytes; a short block means r is done.
+// Its buffer grows as data arrives, so a small file costs a small buffer.
 func readBlock(r io.Reader) ([]byte, error) {
-	buf := make([]byte, blockSize)
-	k, err := io.ReadFull(r, buf)
-	if err == io.EOF || err == io.ErrUnexpectedEOF {
-		err = nil
+	buf := make([]byte, 0, 64<<10)
+	for len(buf) < blockSize {
+		if len(buf) == cap(buf) {
+			// Exactly double (to at most blockSize): append's growth would
+			// round up to an allocation size class, letting a block run
+			// past blockSize by however much the Go runtime chose.
+			grown := make([]byte, len(buf), min(2*cap(buf), blockSize))
+			copy(grown, buf)
+			buf = grown
+		}
+		k, err := r.Read(buf[len(buf):min(cap(buf), blockSize)])
+		buf = buf[:len(buf)+k]
+		if err == io.EOF {
+			return buf, nil
+		}
+		if err != nil {
+			return buf, err
+		}
 	}
-	return buf[:k], err
+	return buf, nil
 }
 
 func compressBlock(b *block) []byte {

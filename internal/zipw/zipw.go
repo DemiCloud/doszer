@@ -17,9 +17,10 @@ var dosEpoch = time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
 
 const dosMaxYear = 2107
 
-// spoolLimit is how much compressed data Add holds in memory before
-// spilling it to a temporary file.
-const spoolLimit = 32 << 20
+// spoolLimit is how much compressed data Prepare holds in memory before
+// spilling it to a temporary file. It is kept small because a caller may
+// hold several prepared entries at once.
+const spoolLimit = 8 << 20
 
 // Writer writes a deterministic ZIP archive.
 //
@@ -30,7 +31,7 @@ const spoolLimit = 32 << 20
 type Writer struct {
 	zw *zip.Writer
 
-	// TempDir holds Add's temporary files for compressed data larger than
+	// TempDir holds temporary files for compressed data larger than
 	// spoolLimit; empty means os.TempDir.
 	TempDir string
 }
@@ -40,30 +41,51 @@ func New(w io.Writer) *Writer {
 	return &Writer{zw: zip.NewWriter(w)}
 }
 
-// Add writes one entry with the given modification time (§8.2), using
-// Store if store is set, else Deflate at flate.BestCompression, in parallel
-// (archive/zip's own Deflate compressor uses level 5). The CRC-32 and sizes
-// must precede the data, so a stored entry from an io.ReadSeeker is read
-// twice, and anything else is first written to a spool.
+// Add writes one entry with the given modification time (§8.2): Prepare,
+// then WritePrepared.
 func (w *Writer) Add(name string, r io.Reader, store bool, modified time.Time) error {
+	p, err := w.Prepare(r, store)
+	if err != nil {
+		return err
+	}
+	return w.WritePrepared(name, p, modified)
+}
+
+// Prepared is an entry's content, compressed and checksummed, ready for
+// WritePrepared. Preparing is safe to run concurrently, so a caller can
+// compress upcoming entries while writing earlier ones in order.
+type Prepared struct {
+	method       uint16
+	crc          uint32
+	csize, usize int64
+	body         io.Reader // the data to write: a spool, or the original io.ReadSeeker
+	sp           *spool
+}
+
+// Prepare reads r, using Store if store is set, else Deflate at
+// flate.BestCompression in parallel blocks (archive/zip's own Deflate
+// compressor uses level 5). The CRC-32 and sizes must precede the data, so
+// a stored entry from an io.ReadSeeker is read twice, and anything else is
+// first written to a spool. r must stay open until WritePrepared (or
+// Close) returns.
+func (w *Writer) Prepare(r io.Reader, store bool) (*Prepared, error) {
 	if rs, ok := r.(io.ReadSeeker); ok && store {
 		start, err := rs.Seek(0, io.SeekCurrent)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		h := crc32.NewIEEE()
 		n, err := io.Copy(h, rs)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if _, err := rs.Seek(start, io.SeekStart); err != nil {
-			return err
+			return nil, err
 		}
-		return w.AddRaw(name, zip.Store, h.Sum32(), uint64(n), uint64(n), io.LimitReader(rs, n), modified)
+		return &Prepared{method: zip.Store, crc: h.Sum32(), csize: n, usize: n, body: io.LimitReader(rs, n)}, nil
 	}
 
 	sp := &spool{dir: w.TempDir}
-	defer sp.close()
 	h := crc32.NewIEEE()
 	method := uint16(zip.Store)
 	var n int64
@@ -74,14 +96,27 @@ func (w *Writer) Add(name string, r io.Reader, store bool, modified time.Time) e
 		method = zip.Deflate
 		n, err = deflate(sp, r, h)
 	}
-	if err != nil {
-		return err
+	if err == nil {
+		var body io.Reader
+		if body, err = sp.reader(); err == nil {
+			return &Prepared{method: method, crc: h.Sum32(), csize: sp.size, usize: n, body: body, sp: sp}, nil
+		}
 	}
-	body, err := sp.reader()
-	if err != nil {
-		return err
+	sp.close()
+	return nil, err
+}
+
+// WritePrepared writes p as entry name, then releases it.
+func (w *Writer) WritePrepared(name string, p *Prepared, modified time.Time) error {
+	defer p.Close()
+	return w.AddRaw(name, p.method, p.crc, uint64(p.csize), uint64(p.usize), p.body, modified)
+}
+
+// Close releases p's temporary storage without writing it.
+func (p *Prepared) Close() {
+	if p.sp != nil {
+		p.sp.close()
 	}
-	return w.AddRaw(name, method, h.Sum32(), uint64(sp.size), uint64(n), body, modified)
 }
 
 // spool collects bytes in memory, moving them to a temporary file once

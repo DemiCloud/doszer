@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -246,47 +247,120 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, mediaWarnings 
 // whose content a given run leaves untouched.
 //
 // spoolDir holds zipw's temporary files for large compressed entries.
+//
+// Entries are compressed concurrently, up to one per CPU ahead of the one
+// being written, and written in path order: the output is the same as
+// compressing them one at a time.
 func writeArchive(fs *fileSet, m *manifest.Manifest, w io.Writer, spoolDir string) error {
 	zw := zipw.New(w)
 	zw.TempDir = spoolDir
 
-	for _, p := range fs.paths() {
-		e, _ := fs.get(p)
-		store := ShouldStore(p, m.Pack.Store)
-		wantMethod := uint16(zip.Deflate)
-		if store {
-			wantMethod = zip.Store
-		}
+	type job struct {
+		path  string
+		e     *fileEntry
+		store bool
+		raw   *RawSource // copied through instead of prepared
+		done  chan prepResult
+	}
 
-		if src := e.rawPassthrough(); src != nil && src.Method == wantMethod {
-			raw, err := src.Raw()
-			if err != nil {
-				return fmt.Errorf("%s: %w", p, err)
+	paths := fs.paths()
+	jobs := make(chan *job, len(paths))
+	slots := make(chan struct{}, runtime.GOMAXPROCS(0)) // prepared but not yet written
+	stop := make(chan struct{})
+	go func() {
+		defer close(jobs)
+		for _, p := range paths {
+			e, _ := fs.get(p)
+			j := &job{path: p, e: e, store: ShouldStore(p, m.Pack.Store), done: make(chan prepResult, 1)}
+			wantMethod := uint16(zip.Deflate)
+			if j.store {
+				wantMethod = zip.Store
 			}
-			err = zw.AddRaw(p, src.Method, src.CRC32, src.CompressedSize, src.UncompressedSize, raw, e.modified)
-			if c, ok := raw.(io.Closer); ok {
-				c.Close()
+			if src := e.rawPassthrough(); src != nil && src.Method == wantMethod {
+				j.raw = src
+				jobs <- j
+				continue
 			}
-			if err != nil {
-				return fmt.Errorf("%s: %w", p, err)
+			select {
+			case slots <- struct{}{}:
+			case <-stop:
+				return
+			}
+			go func() {
+				r, err := j.e.reader()
+				if err != nil {
+					j.done <- prepResult{err: err}
+					return
+				}
+				c, _ := r.(io.Closer)
+				prep, err := zw.Prepare(r, j.store)
+				if err != nil && c != nil {
+					c.Close()
+				}
+				j.done <- prepResult{prep, c, err}
+			}()
+			jobs <- j
+		}
+	}()
+
+	var err error
+	for j := range jobs {
+		if err != nil {
+			// Release whatever was already being prepared.
+			if j.raw == nil {
+				if res := <-j.done; res.err == nil {
+					res.prep.Close()
+					if res.closer != nil {
+						res.closer.Close()
+					}
+				}
 			}
 			continue
 		}
-
-		r, err := e.reader()
-		if err != nil {
-			return fmt.Errorf("%s: %w", p, err)
+		if err = writeJob(zw, j.path, j.e, j.raw, j.done); err != nil {
+			err = fmt.Errorf("%s: %w", j.path, err)
+			close(stop)
 		}
-		addErr := zw.Add(p, r, store, e.modified)
-		if c, ok := r.(io.Closer); ok {
-			c.Close()
-		}
-		if addErr != nil {
-			return fmt.Errorf("%s: %w", p, addErr)
+		if j.raw == nil {
+			<-slots
 		}
 	}
-
+	if err != nil {
+		return err
+	}
 	return zw.Close()
+}
+
+// prepResult is an entry writeArchive compressed ahead of writing it.
+type prepResult struct {
+	prep   *zipw.Prepared
+	closer io.Closer // the entry's reader, open until it is written
+	err    error
+}
+
+// writeJob writes one of writeArchive's entries: raw copied through, or
+// else the prepared result from done.
+func writeJob(zw *zipw.Writer, p string, e *fileEntry, raw *RawSource, done chan prepResult) error {
+	if raw != nil {
+		body, err := raw.Raw()
+		if err != nil {
+			return err
+		}
+		err = zw.AddRaw(p, raw.Method, raw.CRC32, raw.CompressedSize, raw.UncompressedSize, body, e.modified)
+		if c, ok := body.(io.Closer); ok {
+			c.Close()
+		}
+		return err
+	}
+	res := <-done
+	if res.err != nil {
+		return res.err
+	}
+	err := zw.WritePrepared(p, res.prep, e.modified)
+	if res.closer != nil {
+		res.closer.Close()
+	}
+	return err
 }
 
 // ShouldStore reports whether a path must use the Store method (§8.1):

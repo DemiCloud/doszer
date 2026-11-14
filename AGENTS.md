@@ -61,7 +61,13 @@ README.md            doszer usage, configuration, install workflow
   previous 32 KiB as its dictionary and sync-flushed, concatenated in order
   (pigz's scheme; `deflate.go`). Output depends only on the input, not on
   the CPU count. Measured on a local Descent II build: 28.8s to 7.1s on 32
-  CPUs, for 5.6 KB more output on 320 MB.
+  CPUs, for 5.6 KB more output on 320 MB. `build.writeArchive` also
+  prepares entries concurrently (`zipw.Prepare`, up to one per CPU ahead
+  of the entry being written, written in path order; one semaphore bounds
+  Deflate blocks across all of them): Antara's 1235 small files built in
+  1.0s instead of 4.6s, with byte-identical output. Block sizes must stay
+  exact - a buffer grown with `append` once let blocks exceed 1 MiB by
+  the runtime's size-class rounding (`TestDeflateShortReads`).
   `archive/zip`'s built-in compressor uses level 5 (`register.go`'s
   `newFlateWriter`), not even `flate.DefaultCompression` (6). It writes
   every entry through `CreateRaw` with CRC-32 and sizes in the local
