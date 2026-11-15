@@ -168,21 +168,137 @@ In RetroArch, each port's device type (Quick Menu, Controls) must be the
 default, "Use Gamepad Mapper" (it may show as `[Pad Mapper] ...`); a preset
 there ignores the archive's mapping for that port.
 
+## Boot models
+
+Every archive runs one of three ways (specification §4). Pick by what the
+game needs, from its box, manual or installer:
+
+| The game needs | Boot model | Manifest | The game's files are on |
+|---|---|---|---|
+| DOS | Plain | `exec` = program to start, or nothing (start menu) | C: |
+| An environment that runs on DOS, e.g. Windows 3.x | Shell | `shell` = the shell's path | C:, merged with the shell |
+| An operating system that boots itself, e.g. Windows 95 or 98 | OS image | `os` = the image's path | D: |
+
+- **Plain**: DOSBox Pure's built-in DOS, nothing else needed. Most DOS
+  games.
+- **Shell**: a `.dosz` of files laid under C: and run by the built-in DOS,
+  e.g. a Windows 3.x installation shared by several games. It starts
+  `C:\WINDOWS.BAT`, else `C:\AUTOEXEC.BAT`, else `C:\WINDOWS\WIN.COM`.
+- **OS image**: a hard disk image (`.vhd`/`.img`) with an installed
+  operating system, which boots itself. Windows 95 and 98 have to be
+  images, not shells: they start from their own DOS, which has to boot
+  from a disk. So does a game that needs a real MS-DOS rather than
+  DOSBox's.
+
+Shells and images aren't part of an archive. Each player provides their
+own, in the frontend's system directory; `shell` and `os` give its path
+there, without extension, and are the same for every game that uses it.
+
+A CD with both a DOS and a Windows version can use either; the DOS
+version needs nothing beyond DOSBox Pure.
+
 ## Example
 
 ```bash
 mkdir "Example Game"
 # copy the game's files and disc images into it
-doszer init --os dosbox_pure/Win98 "Example Game"
+doszer init --os path/to/image "Example Game"
 # edit Example Game/DOSZ.TOML
 doszer build --dry-run "Example Game"
 doszer build "Example Game"
 ```
 
-[examples/](examples/) holds complete manifests for real games, e.g.
-[Betrayal in Antara](examples/betrayal-in-antara/DOSZ.TOML): a Windows 95
+[examples/](examples/) holds complete manifests for real games:
+[Betrayal in Antara](examples/betrayal-in-antara/DOSZ.TOML), a Windows 95
 game under an OS image, with trimming, flattening, rewrites, a startup
-`WINDOWS.BAT` and its discs identified by track hash.
+`WINDOWS.BAT` and its discs identified by track hash; and
+[King's Quest VII](examples/kings-quest-vii/DOSZ.TOML), a DOS game
+installed from CD under the plain model.
+
+## From a CD to a .dosz
+
+A DOS game that installs from CD, start to finish, under the plain model
+(see "Boot models" for the others). This assumes a disc you own.
+[examples/kings-quest-vii](examples/kings-quest-vii/DOSZ.TOML) is the
+result for one.
+
+Once, point `doszer` at standalone DOSBox Pure, in
+`~/.config/doszer/config.toml`:
+
+```toml
+dosbox_pure = "/path/to/DOSBoxPure.exe"
+```
+
+1. **Dump the disc** to a BIN/CUE (or ISO) with any CD ripping tool, into
+   a new directory, e.g. `Example Game/`. The file names don't matter:
+   `build` renames the disc after the game.
+
+2. **Write a manifest:**
+
+   ```bash
+   doszer init "Example Game"
+   ```
+
+   It identifies the disc by its content, so later builds can check they
+   have the right one.
+
+3. **Install the game:**
+
+   ```bash
+   doszer install "Example Game"
+   ```
+
+   DOSBox Pure starts with the CD mounted as `D:`. Its start menu lists
+   every program on the CD: pick the installer (`INSTALL.BAT`,
+   `INSTALL.EXE`, `SETUP.EXE`, ...), or go to the command line and type
+   `D:` and then `INSTALL`. Install to `C:` and keep the default folder.
+   - Sound: DOSBox Pure emulates a Sound Blaster 16 at address 220, IRQ 7,
+     DMA 1 (high DMA 5); General MIDI (MPU-401 at 330) only once a MIDI
+     soundfont or device is chosen in its settings.
+   - If the installer offers to copy game data from the CD to the hard
+     disk for speed, choose the least: in the archive, the CD and the hard
+     disk are the same file, so a copy only makes it bigger.
+   - Errors from commands DOSBox doesn't have (e.g. `Illegal command:
+     mode.`) are usually harmless; the installer carries on.
+   - Note how the installer says to start the game.
+
+   Start the game once if you like, then close DOSBox Pure. `doszer`
+   copies the folder the installer created (e.g. `C:\GAME`) into
+   `Example Game/GAME/`.
+
+4. **Check the startup program.** `install` lists the batch files and
+   programs the installer wrote, and if exactly one batch file sits at
+   the top of the new folder (the one installers write to start the
+   game), sets it as `exec` in `Example Game/DOSZ.TOML`:
+
+   ```
+   Programs installed:
+     C:\GAME\GAME.BAT
+     C:\GAME\GAME.EXE
+     C:\GAME\SETUP.EXE
+   Set boot.exec = 'C:\GAME\GAME.BAT' in DOSZ.TOML
+   ```
+
+   Otherwise, set it yourself to what the installer said to run:
+
+   ```toml
+   [boot]
+   exec = 'C:\GAME\GAME.EXE'
+   ```
+
+   Keep the folder where it is: installers write their own path (and the
+   CD's drive letter, `D:`) into the game's batch and configuration files.
+
+5. **Build and check:**
+
+   ```bash
+   doszer build --dry-run "Example Game"
+   doszer build "Example Game"
+   doszer verify "Example Game.dosz"
+   ```
+
+6. **Play:** put `Example Game.dosz` with your other DOSBox Pure content.
+   It starts the game directly.
 
 ## Configuration
 
@@ -203,10 +319,10 @@ dosbox_pure = "/path/to/executable"  # standalone DOSBox Pure, used by install
 ogg_quality = 6
 
 [templates]                          # pristine OS images used by install
-"dosbox_pure/Win98" = "/path/to/Win98.template"
+"path/to/image" = "/path/to/image.template"
 
 [install_os]                         # image install sessions boot, by boot.os
-"dosbox_pure/Win98" = "dosbox_pure/Win98 Install"
+"path/to/image" = "path/to/install-image"
 ```
 
 A manifest overrides them the same way, under `[x-doszer]` (spec §5.10's
@@ -245,7 +361,7 @@ The OS image must be a raw `.img` or a fixed-size VHD, not a dynamic
 sectors against the wrong bytes of a dynamic VHD and silently drops some
 writes, corrupting the session's C: (and, in a frontend, any game's C:
 changes). `install` refuses a dynamic VHD. To convert one:
-`qemu-img convert -O vpc -o subformat=fixed Win98.vhd Win98-fixed.vhd`.
+`qemu-img convert -O vpc -o subformat=fixed dynamic.vhd fixed.vhd`.
 
 An OS image session boots `--os`, else the image `install_os` maps
 `boot.os` to, else `boot.os` itself: an archive's own image may start the
@@ -261,6 +377,13 @@ change is under. Other changes are listed. A file already in the source
 with different content stops the extraction unless `--force` is given.
 Save files are removed after a successful extraction unless `--keep` is
 given.
+
+For a plain model install, `install` lists the `.BAT`, `.COM` and `.EXE`
+files the installer added in the extracted folder or one folder below it,
+and if the manifest has no `exec` and exactly one batch file is at the
+shallowest level, sets `exec` to it (not under `--dry-run`, which only
+reports it). Under the other models the shell or OS image starts the
+game (`WINDOWS.BAT`), so there is no `exec` to set.
 
 `install --from <file>` skips DOSBox Pure and extracts from an existing
 save or disk image:
@@ -291,7 +414,10 @@ Archives assume these DOSBox Pure core options (see the specification, §12):
 | `dosbox_pure_menu_time` | `0` |
 
 OS images and system shells go in a `dosbox_pure/` subdirectory of the
-frontend's system directory, e.g. `dosbox_pure/Win98.vhd`.
+frontend's system directory, e.g. `dosbox_pure/<image>.vhd`, named
+however you like: a manifest's `shell` or `os` names the file by its path
+there (`dosbox_pure/<image>`), so archives that share one must use the
+same name.
 
 ### Windows 9x OS image
 

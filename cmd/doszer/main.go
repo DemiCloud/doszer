@@ -466,6 +466,18 @@ func printInstallReport(rep *install.Report, dryRun bool) {
 			fmt.Printf("  %-8s %s\n", c.Kind, c.Path)
 		}
 	}
+	if len(rep.Programs) > 0 {
+		fmt.Println("Programs installed:")
+		for _, p := range rep.Programs {
+			fmt.Printf("  %s\n", p)
+		}
+		switch {
+		case rep.Exec != "" && dryRun:
+			fmt.Printf("Would set boot.exec = '%s'\n", rep.Exec)
+		case rep.Exec != "":
+			fmt.Printf("Set boot.exec = '%s' in %s\n", rep.Exec, manifest.FileName)
+		}
+	}
 	for _, p := range rep.Kept {
 		fmt.Printf("Save file kept: %s\n", p)
 	}

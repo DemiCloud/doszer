@@ -278,6 +278,9 @@ func TestRunPlainSession(t *testing.T) {
 	if rep.Dir != "GAME" || len(rep.Extracted.Written) != 2 {
 		t.Fatalf("report %+v", rep)
 	}
+	if len(rep.Programs) != 1 || rep.Programs[0] != `C:\GAME\GAME.EXE` || rep.Exec != "" {
+		t.Fatalf("programs %q, exec %q", rep.Programs, rep.Exec)
+	}
 	if b, _ := os.ReadFile(filepath.Join(src, "GAME/GAME.EXE")); string(b) != "installed" {
 		t.Fatal("GAME.EXE not extracted")
 	}

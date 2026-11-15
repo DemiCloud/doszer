@@ -54,11 +54,15 @@ An archive uses exactly one boot model.
 
 | Model | OS location | C: drive | Archive contents appear on | Typical use |
 |---|---|---|---|---|
-| Plain | None (built-in DOS) | The archive | C: | DOS games |
-| Shell | System directory, `.dosz` | Shell, layered under the archive | C: (merged with the shell) | Windows 3.x |
-| OS image | System directory, `.vhd`/`.img` | The OS image | D: (separate drive) | Windows 9x |
+| Plain | None (built-in DOS) | The archive | C: | DOS programs |
+| Shell | System directory, `.dosz` | Shell, layered under the archive | C: (merged with the shell) | Programs for an environment that runs on DOS, e.g. Windows 3.x |
+| OS image | System directory, `.vhd`/`.img` | The OS image | D: (separate drive) | Programs for an operating system that boots itself, e.g. Windows 95 or 98, or a DOS other than the built-in one |
 
 Under the OS image model, CD-ROM images in the archive appear as E:.
+
+> A shell is files run by DOSBox Pure's built-in DOS, so it can hold any
+> environment started from DOS. Windows 95 and 98 cannot be shells: they
+> start from their own DOS, which has to boot from a disk.
 
 A shell is merged with the archive file by file; archive files replace shell
 files of the same name. An OS image is read by the guest OS directly; archive

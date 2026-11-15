@@ -11,7 +11,8 @@ type TemplateOptions struct {
 	Exec  string
 	Shell string
 	OS    string
-	Media []Media // [[source.media]] entries to write, from build.IdentifyMedia
+	Media []Media // [[source.media]] entries to write, from build.IdentifyMedia;
+	// a single disc is labelled with Name rather than its file name
 }
 
 // Template returns a commented starting manifest for `init`.
@@ -25,21 +26,25 @@ func Template(o TemplateOptions) string {
 [boot]
 # Set at most one of exec/shell/os.
 
-# Plain model: DOS program or batch file to run at startup.
+# Plain model (neither shell nor os set): DOSBox Pure's built-in DOS.
+# Program or batch file to run at startup; doszer install sets it when
+# the installer wrote exactly one batch file to start the game.
 `)
 	b.WriteString(line("exec", o.Exec, `'C:\GAME\GAME.EXE'`))
 	b.WriteString(`
-# System shell archive (.dosz), layered under C: on DOSBox's built-in DOS.
+# Shell model: an environment that runs on DOS (e.g. a Windows 3.x
+# installation), as a .dosz layered under C: on DOSBox's built-in DOS.
 # This archive (and any parent) is merged into the same C:.
 # Relative to DOSBox Pure's system directory, without extension.
 `)
-	b.WriteString(line("shell", o.Shell, `"dosbox_pure/Win31"`))
+	b.WriteString(line("shell", o.Shell, `"path/to/shell"`))
 	b.WriteString(`
-# Installed OS disk image (.vhd/.img), booted as C:.
+# OS image model: a disk image (.vhd/.img) with an installed operating
+# system that boots itself (e.g. Windows 95 or 98), booted as C:.
 # This archive (and any parent) appears as a separate drive, D:.
 # Relative to DOSBox Pure's system directory, without extension.
 `)
-	b.WriteString(line("os", o.OS, `"dosbox_pure/Win98"`))
+	b.WriteString(line("os", o.OS, `"path/to/image"`))
 	b.WriteString(`
 # Archive layered beneath this one, for files shared between games.
 # File name with extension, looked up in the same directory as this .dosz.
@@ -105,6 +110,9 @@ func Template(o TemplateOptions) string {
 `)
 	}
 	for i, m := range o.Media {
+		if len(o.Media) == 1 && o.Name != "" {
+			m.Label = o.Name
+		}
 		if i > 0 {
 			b.WriteString("\n")
 		}

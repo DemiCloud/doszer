@@ -30,6 +30,9 @@ then fills the screen.
 """
 
 [boot]
+# A Windows 98 image in DOSBox Pure's system directory (see README "Windows
+# 9x OS image"), by its path there without extension: change it to match
+# your own image's name.
 os = 'dosbox_pure/Win98'
 
 [layout]

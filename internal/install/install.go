@@ -101,6 +101,12 @@ type Report struct {
 	Other     []Change // changes on another drive (C: in the OS image model), reported only
 	Skipped   []string // source files left out of the session
 	Kept      []string // save files left in place
+
+	// Plain model only: the programs the install added that could start
+	// the game (StartPrograms, as DOS paths), and the one set as
+	// boot.exec when the manifest had none (StartProgram), else "".
+	Programs []string
+	Exec     string
 }
 
 // Run runs an install session, or reads opts.From, and extracts the
@@ -126,10 +132,43 @@ func Run(opts Options) (*Report, error) {
 		session.Boot.OS = sessionOS(opts, m)
 		m = &session
 	}
+	var rep *Report
 	if opts.From != "" {
-		return runFrom(opts, m)
+		rep, err = runFrom(opts, m)
+	} else {
+		rep, err = runSession(opts, m)
 	}
+	if err == nil {
+		err = setStartProgram(rep, m, opts)
+	}
+	return rep, err
+}
 
+// setStartProgram fills rep.Programs for a plain model install to C:, and
+// sets boot.exec to StartProgram's pick if the manifest has none (not in
+// a dry run, which only reports it).
+func setStartProgram(rep *Report, m *manifest.Manifest, opts Options) error {
+	if m.Model() != manifest.ModelPlain || rep.Drive != "C:" || rep.Extracted == nil {
+		return nil
+	}
+	for _, p := range StartPrograms(rep.Changes, rep.Dir) {
+		rep.Programs = append(rep.Programs, DOSPath(rep.Drive, p))
+	}
+	if m.Boot.Exec != "" {
+		return nil
+	}
+	if p := StartProgram(StartPrograms(rep.Changes, rep.Dir)); p != "" {
+		rep.Exec = DOSPath(rep.Drive, p)
+		if !opts.DryRun {
+			return manifest.SetExecFile(opts.Source, rep.Exec)
+		}
+	}
+	return nil
+}
+
+// runSession runs an install session under DOSBox Pure and extracts what
+// it wrote.
+func runSession(opts Options, m *manifest.Manifest) (*Report, error) {
 	env, err := Discover(opts.Exe, opts.SystemDir, opts.SaveDir)
 	if err != nil {
 		return nil, err

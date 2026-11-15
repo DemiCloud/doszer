@@ -1,0 +1,40 @@
+# Example: a DOS CD-ROM game under the plain model.
+#
+# The source directory beside this manifest holds:
+#   *.bin, *.cue             the game disc, dumped from the CD
+#   SIERRA/...               what the DOS installer wrote to C:
+#                            (extracted with `doszer install`)
+#
+# The CD stays in the archive: the game reads most of its data from it.
+
+format = 1
+name   = "King's Quest VII"
+notes  = """
+DOS version 2.00b (Sierra, 1995), on DOSBox Pure's own DOS.
+
+Source: SIERRA is the CD's DOS install (INSTALL.BAT) to the default
+C:\\SIERRA\\KQ7DOS with a Sound Blaster for music and audio, extracted with
+`doszer install`. The game's batch files and RESOURCE.CFG name the CD as
+D:, which is where DOSBox Pure mounts the first disc image.
+"""
+
+[boot]
+# Written by the installer: checks for the CD, then starts the game.
+exec = 'C:\SIERRA\KQ7DOS.BAT'
+
+[layout]
+trim = [
+  # Only if "Use 1 meg" or "Use 100 megs" was chosen at the installer's
+  # Performance Enhancement step: it copies the start of the CD's
+  # RESOURCE.000 to C:. In an archive the CD is no slower than C:, so the
+  # copy only duplicates it; without it, the install is the same as
+  # choosing "Use 0 megs".
+  "SIERRA/KQ7DOS/RESOURCE.000",
+]
+
+[[source.media]]
+id     = 'disc1'
+label  = "King's Quest VII"
+tracks = [
+  { type = "data", sha1 = "39dee9012efe4e9cf20b39613a2f0017781fc6f6" },
+]
