@@ -64,6 +64,12 @@ are skipped with a warning; use `audio = "wav"` to keep a disc fully
 verifiable. A disc that isn't found fails the build only when `[[extract]]`
 reads from it, and is otherwise a warning (a failure under `--strict`).
 
+`build` and `repack` record the game's name, the `doszer` version, the
+build date (UTC, or `SOURCE_DATE_EPOCH`'s) and this project's URL in the
+ZIP comment, which `unzip -z` and most archive tools show. It is outside
+the specification's reproducibility rules (§8.4): two builds of the same
+source differ only there, and `verify` ignores it.
+
 The default output is `<name>.dosz` in the current directory. `--name`
 overrides the manifest's `name`, which defaults to the source directory name.
 

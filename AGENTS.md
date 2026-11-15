@@ -81,7 +81,9 @@ README.md            doszer usage, configuration, install workflow
   in memory up to 32 MB, then a temp file beside the output) - so an
   entry's bytes are the same whether `Add` compressed it or `AddRaw`
   copied it through, and repacking a doszer archive reproduces it
-  byte for byte. Still
+  byte for byte, up to the archive comment (spec §8.4: name, doszer
+  version and build date, `build.Provenance`; date from
+  `SOURCE_DATE_EPOCH` if set). Still
   weaker than a multi-pass encoder like 7-Zip's - investigated going
   further (see Resolved questions) and found no responsible option yet.
 - Manifest fields use `omitempty` (`internal/manifest/manifest.go`) so a
@@ -218,7 +220,8 @@ test manifest's `pack.store` didn't match the input's actual stored
 extension (every entry recompressed, since the store decision changed),
 7.5s once it did (nearly all entries passed through raw). A passed-through
 entry is written exactly as `zipw.Add` would write it fresh, so repacking
-a doszer-built archive is byte-for-byte identical: checked on four real
+a doszer-built archive is byte-for-byte identical up to the archive
+comment, which records the new build's date: checked on four real
 archives (a legacy archive's first repack canonicalizes it; the second
 reproduces the first).
 

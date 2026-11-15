@@ -414,7 +414,8 @@ compression methods only. Files whose extension is listed in `store`, and
 
 ### 8.2 Deterministic structure
 
-For reproducible output, an implementation MUST:
+For reproducible output, an implementation MUST, for every entry (the
+archive comment is exempt, §8.4):
 
 - Order entries by path, comparing UTF-8 bytes.
 - Set every entry's modification time to its source's modification time: a
@@ -434,6 +435,14 @@ without changing its source; its modification time is unaffected.
 
 The archive MUST contain the manifest used for the build as `DOSZ.TOML`, with
 `name` set to the effective name.
+
+### 8.4 Archive comment
+
+The ZIP archive comment is not part of the archive's content: §8.2 does not
+apply to it, it plays no part in equivalence (§9), and a reader MUST NOT
+depend on it. An implementation MAY record build information there, for
+example the effective name, the implementation and its version, and the
+build date.
 
 ## 9. Equivalence
 

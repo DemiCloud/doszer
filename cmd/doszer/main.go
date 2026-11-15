@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,24 @@ var errUsage = errors.New("usage")
 
 // version is set via -ldflags "-X main.version=..." (see Makefile).
 var version = "dev"
+
+// homepage is recorded in every archive's comment (spec §8.4).
+const homepage = "https://github.com/demicloud/doszer"
+
+// provenance is what build and repack record in the archive comment: this
+// doszer and today's date in UTC, or SOURCE_DATE_EPOCH's
+// (reproducible-builds.org) if set.
+func provenance() (*build.Provenance, error) {
+	built := time.Now()
+	if s := os.Getenv("SOURCE_DATE_EPOCH"); s != "" {
+		secs, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("SOURCE_DATE_EPOCH: %q is not a number of seconds", s)
+		}
+		built = time.Unix(secs, 0)
+	}
+	return &build.Provenance{Generator: "doszer " + version, Homepage: homepage, Built: built}, nil
+}
 
 type command struct {
 	name    string
@@ -251,6 +270,9 @@ Options:
 	}
 	if fs.NArg() == 2 {
 		opts.OutputPath = fs.Arg(1)
+	}
+	if opts.Provenance, err = provenance(); err != nil {
+		return err
 	}
 
 	res, err := build.Run(opts)
@@ -520,6 +542,9 @@ Options:
 	}
 	if fs.NArg() == 2 {
 		opts.OutputPath = fs.Arg(1)
+	}
+	if opts.Provenance, err = provenance(); err != nil {
+		return err
 	}
 
 	res, err := repack.Run(opts)

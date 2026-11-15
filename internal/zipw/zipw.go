@@ -190,6 +190,12 @@ func (w *Writer) AddRaw(name string, method uint16, crc32 uint32, compressedSize
 	return err
 }
 
+// SetComment sets the archive comment, written by Close (at most 65535
+// bytes). It is outside the entries' determinism (spec §8.4).
+func (w *Writer) SetComment(comment string) error {
+	return w.zw.SetComment(comment)
+}
+
 // Close finishes writing the archive.
 func (w *Writer) Close() error {
 	return w.zw.Close()

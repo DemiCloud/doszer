@@ -27,6 +27,30 @@ type Options struct {
 	DryRun     bool   // Compute and report the plan without writing an archive.
 	Strict     bool   // Fail the build if any §11 warning condition occurs.
 	OggQuality int    // libvorbis quality for Ogg audio tracks, -1 to 10 (internal/config's ogg_quality).
+
+	// Provenance, if set, is recorded in the archive comment (§8.4).
+	Provenance *Provenance
+}
+
+// Provenance is the build information an archive comment records.
+type Provenance struct {
+	Generator string    // implementation and version, e.g. "doszer 1.0"
+	Homepage  string    // the implementation's URL, if any
+	Built     time.Time // build date
+}
+
+// Comment returns the archive comment for an archive named name, built
+// from manifest format format: the name, then who built it when, then the
+// homepage, CRLF-separated.
+func (p *Provenance) Comment(name string, format int) string {
+	lines := []string{
+		name,
+		fmt.Sprintf("Built by %s on %s (DOSZ manifest format %d)", p.Generator, p.Built.UTC().Format("2006-01-02"), format),
+	}
+	if p.Homepage != "" {
+		lines = append(lines, p.Homepage)
+	}
+	return strings.Join(lines, "\r\n") + "\r\n"
 }
 
 // Result reports what a build did or would do.
@@ -240,7 +264,11 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, mediaWarnings 
 	if err != nil {
 		return res, err
 	}
-	if err := writeArchive(fs, m, out, dir); err != nil {
+	comment := ""
+	if opts.Provenance != nil {
+		comment = opts.Provenance.Comment(res.EffectiveName, m.Format)
+	}
+	if err := writeArchive(fs, m, out, dir, comment); err != nil {
 		out.Close()
 		return res, err
 	}
@@ -266,9 +294,14 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, mediaWarnings 
 // Entries are compressed concurrently, up to one per CPU ahead of the one
 // being written, and written in path order: the output is the same as
 // compressing them one at a time.
-func writeArchive(fs *fileSet, m *manifest.Manifest, w io.Writer, spoolDir string) error {
+func writeArchive(fs *fileSet, m *manifest.Manifest, w io.Writer, spoolDir, comment string) error {
 	zw := zipw.New(w)
 	zw.TempDir = spoolDir
+	if comment != "" {
+		if err := zw.SetComment(comment); err != nil {
+			return err
+		}
+	}
 
 	type job struct {
 		path  string

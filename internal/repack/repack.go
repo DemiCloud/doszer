@@ -34,6 +34,8 @@ type Options struct {
 	OggQuality   int    // libvorbis quality for Ogg audio tracks (build.Options.OggQuality)
 	DryRun       bool   // compute and report the plan without writing an archive
 	Strict       bool   // fail if any §11 warning condition occurs
+
+	Provenance *build.Provenance // recorded in the archive comment, if set (§8.4)
 }
 
 // Run reads opts.InputPath's manifest - opts.ManifestPath if set, else the
@@ -101,6 +103,7 @@ func Run(opts Options) (*build.Result, error) {
 		DryRun:     opts.DryRun,
 		Strict:     opts.Strict,
 		OggQuality: opts.OggQuality,
+		Provenance: opts.Provenance,
 	})
 }
 

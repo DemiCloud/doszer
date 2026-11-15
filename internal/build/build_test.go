@@ -631,3 +631,43 @@ func TestDryRunSuggestsOnlyUncoveredReferences(t *testing.T) {
 		})
 	}
 }
+
+// §8.4: the provenance goes in the archive comment and changes nothing
+// else - the entries are byte-identical to a build without it.
+func TestRunWritesProvenanceComment(t *testing.T) {
+	dir := buildFixture(t)
+	tmp := t.TempDir()
+	plain, commented := filepath.Join(tmp, "plain.dosz"), filepath.Join(tmp, "commented.dosz")
+	if _, err := build.Run(build.Options{SourceDir: dir, OutputPath: plain}); err != nil {
+		t.Fatal(err)
+	}
+	p := &build.Provenance{Generator: "doszer 1.2.3", Homepage: "https://example.com/doszer", Built: time.Date(2026, 11, 15, 23, 30, 0, 0, time.FixedZone("", -8*3600))}
+	if _, err := build.Run(build.Options{SourceDir: dir, OutputPath: commented, Provenance: p}); err != nil {
+		t.Fatal(err)
+	}
+
+	zr, err := zip.OpenReader(commented)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	want := "Test Game\r\nBuilt by doszer 1.2.3 on 2026-11-16 (DOSZ manifest format 1)\r\nhttps://example.com/doszer\r\n"
+	if zr.Comment != want {
+		t.Errorf("comment %q, want %q", zr.Comment, want)
+	}
+
+	a, _ := os.ReadFile(plain)
+	b, _ := os.ReadFile(commented)
+	// The end of central directory record is 22 bytes plus the comment;
+	// everything before it, and the record up to its comment length, match.
+	if n := len(a) - 2; !bytes.Equal(a[:n], b[:n]) {
+		t.Error("entries differ with a comment")
+	}
+}
+
+func TestProvenanceCommentWithoutHomepage(t *testing.T) {
+	p := &build.Provenance{Generator: "x 1", Built: time.Unix(0, 0)}
+	if got := p.Comment("Game", 1); got != "Game\r\nBuilt by x 1 on 1970-01-01 (DOSZ manifest format 1)\r\n" {
+		t.Errorf("got %q", got)
+	}
+}
