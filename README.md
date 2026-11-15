@@ -144,7 +144,10 @@ to one of the above in Steam Input.
 Controller Mapper saves, and port 1's mapping again as `input_pad_` lines
 in `DOS.YML` (spec §6.8). DOSBox Pure uses `PADMAP.DBP`; `DOS.YML` adds the
 labels, shown in the Controller Mapper and the action wheel, and is what
-port 1 falls back to if a player resets their mapping. A player's own
+port 1 falls back to if a player resets their mapping. A stick axis is one
+binding there, so its two directions show one joined label
+(`lstick_up = "up Forward"` and `lstick_down = "down Backward"` both show
+"Forward / Backward"). A player's own
 changes are saved to their save file, over the archive's. Lines of a
 `DOS.YML` already in the source other than `input_pad_`/`input_wheel_` are
 kept.
