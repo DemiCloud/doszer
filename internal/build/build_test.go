@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -280,7 +281,7 @@ tracks = [{ type = "data", sha1 = "0123456789abcdef0123456789abcdef01234567" }]
 
 [[extract]]
 media = "disc1"
-from  = "/GAME"
+from  = "GAME"
 to    = "GAME"
 `)
 
@@ -753,5 +754,20 @@ trim = ["DISC/**"]
 	left, _ := os.ReadDir(outDir)
 	if len(left) != 1 {
 		t.Errorf("output directory holds %d entries, want only the archive", len(left))
+	}
+}
+
+func TestRunRejectsBackslashInSourceFileName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a backslash is a separator on Windows")
+	}
+	dir := t.TempDir()
+	writeFile(t, dir, "DOSZ.TOML", "format = 1\nname = \"Slash\"\n")
+	if err := os.WriteFile(filepath.Join(dir, `GAME\X.TXT`), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := build.Run(build.Options{SourceDir: dir, OutputPath: filepath.Join(t.TempDir(), "out.dosz")})
+	if err == nil || !strings.Contains(err.Error(), "must use / as separator") {
+		t.Fatalf("Run error = %v, want the backslash rejected", err)
 	}
 }

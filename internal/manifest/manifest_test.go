@@ -45,7 +45,7 @@ tracks = [
 
 [[extract]]
 media = "disc1"
-from  = "/RESOURCE"
+from  = "RESOURCE"
 to    = "GAME/RESOURCE"
 
 [[file]]
@@ -118,7 +118,18 @@ func TestParseInvalid(t *testing.T) {
 		{"parent without extension", "format = 1\n[boot]\nparent = \"Shared\"", "must include an extension"},
 		{"skip without startup", "format = 1\n[boot]\nskip = 10", "requires one of exec, shell or os"},
 		{"negative skip", "format = 1\n[boot]\nexec = 'C:\\G.EXE'\nskip = -1", "must not be negative"},
-		{"trim with dotdot", "format = 1\n[layout]\ntrim = [\"../x\"]", "must not contain '..'"},
+		{"trim with dotdot", "format = 1\n[layout]\ntrim = [\"../x\"]", `must not have a ".." component`},
+		{"file path with dot", "format = 1\n[[file]]\npath = \"GAME/./X.TXT\"\ntext = \"\"", `file[0].path: must not have a "." component`},
+		{"file path leading dot", "format = 1\n[[file]]\npath = \"./X.TXT\"\ntext = \"\"", `file[0].path: must not have a "." component`},
+		{"file path is dot", "format = 1\n[[file]]\npath = \".\"\ntext = \"\"", `file[0].path: must not have a "." component`},
+		{"file path doubled slash", "format = 1\n[[file]]\npath = \"GAME//X.TXT\"\ntext = \"\"", "file[0].path: must not have an empty component"},
+		{"file path trailing slash", "format = 1\n[[file]]\npath = \"GAME/X.TXT/\"\ntext = \"\"", "file[0].path: must not have an empty component"},
+		{"file path backslash", "format = 1\n[[file]]\npath = 'GAME\\X.TXT'\ntext = \"\"", "file[0].path: must use / as separator"},
+		{"extract to with dot", "format = 1\n[[source.media]]\nid = \"a\"\ntracks = [{type=\"data\",sha1=\"0123456789abcdef0123456789abcdef01234567\"}]\n[[extract]]\nmedia = \"a\"\nfrom = \"/\"\nto = \"GAME/.\"", `extract[0].to: must not have a "." component`},
+		{"extract from absolute", "format = 1\n[[source.media]]\nid = \"a\"\ntracks = [{type=\"data\",sha1=\"0123456789abcdef0123456789abcdef01234567\"}]\n[[extract]]\nmedia = \"a\"\nfrom = \"/RESOURCE\"\nto = \"GAME\"", "extract[0].from: must not have an empty component"},
+		{"trim pattern with dot", "format = 1\n[layout]\ntrim = [\"./*.TXT\"]", `layout.trim[0]: must not have a "." component`},
+		{"rewrite files trailing slash", "format = 1\n[[layout.rewrite]]\nfrom = \"a\"\nto = \"b\"\nfiles = [\"GAME/\"]", "layout.rewrite[0].files[0]: must not have an empty component"},
+		{"os doubled slash", "format = 1\n[boot]\nos = \"dosbox_pure//Win98\"", "boot.os: must not have an empty component"},
 		{"trim absolute", "format = 1\n[layout]\ntrim = [\"/x\"]", "must be relative"},
 		{"rewrite without files", "format = 1\n[[layout.rewrite]]\nfrom = \"a\"\nto = \"b\"", "files: must not be empty"},
 		{"store with dot", "format = 1\n[pack]\nstore = [\".iso\"]", "without a leading dot"},

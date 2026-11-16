@@ -375,8 +375,10 @@ func (m *Manifest) validate() []error {
 		if !ids[ex.Media] {
 			add("extract[%d].media: unknown media id %q", i, ex.Media)
 		}
-		if ex.From == "" {
-			add("extract[%d].from: must not be empty", i)
+		if ex.From != "/" { // the root directory (§5.7)
+			if err := CheckPath(ex.From); err != nil {
+				add("extract[%d].from: %v", i, err)
+			}
 		}
 		if err := checkRelativePath(ex.To); err != nil {
 			add("extract[%d].to: %v", i, err)
@@ -408,13 +410,11 @@ func (m *Manifest) validate() []error {
 
 // checkSystemPath validates a path relative to DOSBox Pure's system directory.
 func checkSystemPath(p string) error {
-	switch {
-	case strings.HasPrefix(p, "/"):
+	if strings.HasPrefix(p, "/") {
 		return fmt.Errorf("must be relative to the system directory, got %q", p)
-	case strings.Contains(p, `\`):
-		return fmt.Errorf("must use / as separator, got %q", p)
-	case hasDotDot(p):
-		return fmt.Errorf("must not contain '..', got %q", p)
+	}
+	if err := CheckPath(p); err != nil {
+		return err
 	}
 
 	lower := strings.ToLower(p)
@@ -429,24 +429,33 @@ func checkSystemPath(p string) error {
 
 // checkRelativePath validates a build-relative path or glob pattern.
 func checkRelativePath(p string) error {
-	switch {
-	case p == "":
-		return errors.New("must not be empty")
-	case strings.HasPrefix(p, "/"), strings.HasPrefix(p, `\`), len(p) >= 2 && p[1] == ':':
+	if strings.HasPrefix(p, "/") || strings.HasPrefix(p, `\`) || len(p) >= 2 && p[1] == ':' {
 		return fmt.Errorf("must be relative, got %q", p)
-	case hasDotDot(p):
-		return fmt.Errorf("must not contain '..', got %q", p)
 	}
-	return nil
+	return CheckPath(p)
 }
 
-func hasDotDot(p string) bool {
-	for _, part := range strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' }) {
-		if part == ".." {
-			return true
+// CheckPath reports whether p is a path as spec §2 defines it: "/"
+// separated, with no empty component (no leading, trailing or doubled
+// "/"), no "." or ".." component, and no "\". It doesn't check that p is
+// relative beyond that. An archive's entry names must be such paths too
+// (§8.2).
+func CheckPath(p string) error {
+	if p == "" {
+		return errors.New("must not be empty")
+	}
+	if strings.Contains(p, `\`) {
+		return fmt.Errorf("must use / as separator, got %q", p)
+	}
+	for _, part := range strings.Split(p, "/") {
+		switch part {
+		case "":
+			return fmt.Errorf("must not have an empty component (a leading, trailing or doubled /), got %q", p)
+		case ".", "..":
+			return fmt.Errorf("must not have a %q component, got %q", part, p)
 		}
 	}
-	return false
+	return nil
 }
 
 func joinErrors(errs []error) error {

@@ -32,8 +32,9 @@ document are to be interpreted as described in BCP 14 (RFC 2119, RFC 8174)
 when, and only when, they appear in all capitals.
 
 Paths in the manifest use `/` as separator and are relative unless stated
-otherwise. Path matching is case-insensitive, because the guest file systems
-are.
+otherwise. A path has no empty component (no leading, trailing or doubled
+`/`), no `.` or `..` component, and no `\`. Path matching is
+case-insensitive, because the guest file systems are.
 
 ## 3. Terminology
 
@@ -148,7 +149,7 @@ Copies content from identified media into the build.
 | Key | Type | Meaning |
 |---|---|---|
 | `media` | string | `id` of a `[[source.media]]` entry. |
-| `from` | string | Path within the media's data track file system. A directory copies its contents recursively. |
+| `from` | string | Path within the media's data track file system, or `/` for its root directory. A directory copies its contents recursively. |
 | `to` | string | Destination path within the build. |
 
 In the data track's ISO 9660 file system, a file's name is its file
@@ -433,6 +434,7 @@ archive comment is exempt, §8.4):
 - Omit extra fields and set external attributes to zero.
 - Write no directory entries: a directory exists only as part of the paths
   of the files in it.
+- Name every entry by a path as §2 defines it.
 
 A rewrite (§6.5) or text normalization (§6.6) changes an entry's content
 without changing its source; its modification time is unaffected.
@@ -479,7 +481,7 @@ An implementation MUST reject a manifest that violates any of the following:
 | `skip` is set only if one of `exec`, `shell`, `os` is set, and is not negative. |
 | `shell` and `os` contain no extension, no leading `/` and no `\`. |
 | `parent` contains an extension and no `/`. |
-| Paths contain no `..` component and are not absolute. |
+| Paths are relative and have no empty, `.` or `..` component and no `\` (§2). |
 | `[[source.media]]` `id` values are unique. |
 | `[[extract]]` `media` refers to an existing `id`. |
 | `sha1` values are 40 lowercase hexadecimal characters. |

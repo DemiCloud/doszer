@@ -81,6 +81,16 @@ keep the one that sorts last (e.g. `readme.txt` over `README.TXT`) and
 warn (a failure under `--strict`). A `[[file]]` entry replaces a file at
 its path whatever the case.
 
+Every path in a manifest and every entry name in an archive is `/`
+separated, with no empty, `.` or `..` component and no `\` (spec §2,
+§8.2): `GAME/./X.TXT`, `GAME//X.TXT` or a trailing `/` is rejected, not
+cleaned up. `[[extract]] from = "/"` names the disc's root directory.
+`build` rejects a source file whose name contains a `\`. `repack` reads
+a legacy archive's entry names as paths: `GAME\X.TXT` (written by some
+Windows tools), `./GAME/X.TXT` and `/GAME/X.TXT` become `GAME/X.TXT`,
+and an entry outside the archive (`../X.TXT`) or two entries naming the
+same path are an error.
+
 The default output is `<name>.dosz` in the current directory. `--name`
 overrides the manifest's `name`, which defaults to the source directory name.
 

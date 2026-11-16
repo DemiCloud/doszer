@@ -627,3 +627,23 @@ store = ["iso"]
 		t.Fatalf("Verify = %v, want a checksum error for the ISO", err)
 	}
 }
+
+func TestVerifyRejectsMalformedEntryNames(t *testing.T) {
+	for _, bad := range []string{"./GAME.CFG", "GAME//X.DAT", `GAME\X.DAT`, "GAME/./X.DAT", "GAME/../X.DAT"} {
+		t.Run(bad, func(t *testing.T) {
+			path := buildArchive(t, plainManifest)
+			rewriteZip(t, path, func(w *zip.Writer, f *zip.File) error {
+				if f.Name == "DOSZ.TOML" { // keep the bad entry where sorting puts it
+					if _, err := w.CreateRaw(&zip.FileHeader{Name: bad, Method: zip.Store}); err != nil {
+						return err
+					}
+				}
+				return copyEntry(w, f)
+			})
+			err := verify.Verify(path)
+			if err == nil || !strings.Contains(err.Error(), "entry name") || !strings.Contains(err.Error(), "§8.2") {
+				t.Fatalf("Verify = %v, want an entry name error", err)
+			}
+		})
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -772,4 +773,50 @@ func keys(m map[string]*zip.File) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+func TestRepackNormalizesLegacyEntryNames(t *testing.T) {
+	manifestPath := filepath.Join(t.TempDir(), "DOSZ.TOML")
+	writeFile(t, filepath.Dir(manifestPath), "DOSZ.TOML", "format = 1\nname = \"Legacy\"\n")
+
+	tests := []struct {
+		name    string
+		entries [][2]string
+		want    []string // entry paths, DOSZ.TOML aside
+		wantErr string
+	}{
+		{"backslashes", [][2]string{{`GAME\DATA\X.DAT`, "x"}, {`GAME\`, ""}}, []string{"GAME/DATA/X.DAT"}, ""},
+		{"dot and doubled slash", [][2]string{{"./README.TXT", "r"}, {"GAME//Y.DAT", "y"}, {"/Z.DAT", "z"}}, []string{"GAME/Y.DAT", "README.TXT", "Z.DAT"}, ""},
+		{"leaves the archive", [][2]string{{"../EVIL.EXE", "x"}}, nil, "not a file path within the archive"},
+		{"leaves it further in", [][2]string{{`GAME\..\..\EVIL.EXE`, "x"}}, nil, "not a file path within the archive"},
+		{"same entry twice", [][2]string{{`GAME\X.DAT`, "1"}, {"GAME/X.DAT", "2"}}, nil, `are both GAME/X.DAT`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "out.dosz")
+			_, err := repack.Run(repack.Options{InputPath: legacyArchive(t, tt.entries), OutputPath: out, ManifestPath: manifestPath})
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want one containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for name := range readZip(t, out) {
+				if name != manifest.FileName {
+					got = append(got, name)
+				}
+			}
+			sort.Strings(got)
+			if strings.Join(got, ",") != strings.Join(tt.want, ",") {
+				t.Errorf("entries = %v, want %v", got, tt.want)
+			}
+			if err := verify.Verify(out); err != nil {
+				t.Errorf("Verify: %v", err)
+			}
+		})
+	}
 }

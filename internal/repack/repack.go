@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -52,20 +53,29 @@ func Run(opts Options) (*build.Result, error) {
 
 	var mf *zip.File
 	entries := make(map[string]build.Entry, len(r.File))
+	from := make(map[string]string, len(r.File)) // entry path -> name in the archive
 	for _, f := range r.File {
-		if strings.EqualFold(f.Name, manifest.FileName) {
+		if strings.HasSuffix(f.Name, "/") || strings.HasSuffix(f.Name, `\`) {
+			continue // a directory entry: §8.2 allows none
+		}
+		name, err := entryPath(f.Name)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", opts.InputPath, err)
+		}
+		if other, dup := from[name]; dup {
+			return nil, fmt.Errorf("%s: entries %q and %q are both %s", opts.InputPath, other, f.Name, name)
+		}
+		from[name] = f.Name
+		if strings.EqualFold(name, manifest.FileName) {
 			mf = f
 			continue
-		}
-		if strings.HasSuffix(f.Name, "/") {
-			continue // a directory entry: §8.2 allows none
 		}
 		// Deferred: an entry the pipeline never reads or changes is copied
 		// through in its already-compressed form by writeArchive, rather
 		// than being decompressed here and recompressed there - repack's
 		// main cost on an archive most of whose content a given run leaves
 		// untouched.
-		entries[f.Name] = build.Entry{Source: rawSource(f), Modified: f.Modified}
+		entries[name] = build.Entry{Source: rawSource(f), Modified: f.Modified}
 	}
 
 	defaultName := strings.TrimSuffix(filepath.Base(opts.InputPath), filepath.Ext(opts.InputPath))
@@ -113,6 +123,18 @@ func Run(opts Options) (*build.Result, error) {
 		OggQuality: opts.OggQuality,
 		Provenance: opts.Provenance,
 	})
+}
+
+// entryPath is an archive entry's name as a path §2 allows (§8.2): a
+// legacy archive's "GAME\X.TXT" (written by some Windows tools),
+// "./GAME/X.TXT" or "GAME//X.TXT" is GAME/X.TXT. A name that leaves the
+// archive ("../X") is an error.
+func entryPath(name string) (string, error) {
+	p := path.Clean("/" + strings.ReplaceAll(name, `\`, "/"))
+	if p == "/" || strings.HasPrefix(path.Clean(strings.ReplaceAll(name, `\`, "/")), "../") {
+		return "", fmt.Errorf("entry %q: not a file path within the archive", name)
+	}
+	return strings.TrimPrefix(p, "/"), nil
 }
 
 func readEntry(f *zip.File) ([]byte, error) {
