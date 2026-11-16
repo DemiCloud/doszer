@@ -396,6 +396,22 @@ shallowest level, sets `exec` to it (not under `--dry-run`, which only
 reports it). Under the other models the shell or OS image starts the
 game (`WINDOWS.BAT`), so there is no `exec` to set.
 
+Installers for Windows 95 and 98 often record settings in the registry,
+on C:, which the archive boots as it was, without them. So whenever C:
+changes are read from a Windows 9x OS image (an OS image session, or
+`--from` a `-CDRIVE.sav` or an image with a template), `install` compares
+its registry (`WINDOWS\SYSTEM.DAT`, `WINDOWS\USER.DAT`) before and after,
+and writes what the installer added for its program as `INSTALL.REG` in
+the extracted folder: keys under `Software`, except the ones Windows
+changes on its own (`Microsoft`, `Classes`, `Description`). It prints the
+line `WINDOWS.BAT` needs to restore them at each startup:
+
+```bat
+REGEDIT /S D:\GAME\INSTALL.REG
+```
+
+A game that reads nothing from the registry runs without it.
+
 `install --from <file>` skips DOSBox Pure and extracts from an existing
 save or disk image:
 

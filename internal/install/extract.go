@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/DemiCloud/doszer/internal/status"
 )
 
 // Extracted reports what Extract did, or would do.
@@ -47,11 +49,15 @@ func Extract(src fs.FS, changes []Change, dir, dest string, force, dryRun bool) 
 	if len(conflicts) > 0 && !force {
 		return nil, fmt.Errorf("would overwrite %d file(s) in %s that differ (use --force): %s", len(conflicts), dest, strings.Join(conflicts, ", "))
 	}
-	for _, c := range jobs {
+	if !dryRun && len(jobs) > 0 {
+		status.Step("Copying %s into the source", dir)
+	}
+	for i, c := range jobs {
 		res.Written = append(res.Written, c.Path)
 		if dryRun {
 			continue
 		}
+		status.Count(i+1, len(jobs))
 		if err := copyOut(src, c, filepath.Join(dest, filepath.FromSlash(c.Path))); err != nil {
 			return res, err
 		}

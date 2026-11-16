@@ -37,6 +37,7 @@ internal/padmap/     [[input.pad]] (§5.9): PADMAP.DBP and DOS.YML encoding (§6
 internal/verify/     doszer verify: an archive against its manifest and spec §8/§11
 internal/repack/     doszer repack: rebuild an archive from its own embedded manifest
 internal/vhd/        VHD reader (fixed, dynamic), for install
+internal/w9xreg/     Windows 9x registry (SYSTEM.DAT/USER.DAT) reader, diff, REGEDIT4 writer, for install
 internal/fat/        FAT12/16/32 reader with long names, as an io/fs.FS, for install
 internal/vdisk/      DOSBox Pure's synthesized D: disk + .sav diffs (D: and -CDRIVE), for install
 internal/install/    doszer install: session content, launching DOSBox Pure, diffing, extraction

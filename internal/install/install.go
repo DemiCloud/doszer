@@ -108,6 +108,12 @@ type Report struct {
 	// boot.exec when the manifest had none (StartProgram), else "".
 	Programs []string
 	Exec     string
+
+	// OS image model: RegistryFile as a DOS path, holding the registry
+	// entries the installer added for its program (exportRegistry), and
+	// how many values; "" if it added none.
+	Registry       string
+	RegistryValues int
 }
 
 // Run runs an install session, or reads opts.From, and extracts the
@@ -238,19 +244,34 @@ func collectOS(rep *Report, s *Session, env Env, opts Options) ([]string, error)
 			}
 			return saves, extractOverlay(rep, img, sf.CDrive, opts)
 		}
-		if rep.Other, err = diffOverlay(img, sf.CDrive); err != nil {
+		status.Step("Comparing C: with the OS image")
+		before, after, closeC, err := openOverlay(img, sf.CDrive)
+		if err != nil {
 			return saves, fmt.Errorf("C: changes: %w", err)
 		}
+		defer closeC()
+		if rep.Other, err = Diff(before, after); err != nil {
+			return saves, fmt.Errorf("C: changes: %w", err)
+		}
+		if err := extractD(rep, s, sf, &saves, opts); err != nil {
+			return saves, err
+		}
+		return saves, exportRegistry(rep, before, after, opts)
 	} else if opts.Drive == "C" {
 		return saves, errors.New("the session left no C: changes")
 	}
+	return saves, extractD(rep, s, sf, &saves, opts)
+}
 
+// extractD extracts an OS image session's D: changes.
+func extractD(rep *Report, s *Session, sf SaveFiles, saves *[]string, opts Options) error {
 	if _, err := os.Stat(sf.DDrive); err != nil {
-		return saves, errors.New("the session left no D: changes: install the game to D:")
+		return errors.New("the session left no D: changes: install the game to D:")
 	}
-	saves = append(saves, sf.DDrive)
+	*saves = append(*saves, sf.DDrive)
 	rep.Drive = "D:"
-	return saves, extractVDisk(rep, s.Content, sf.DDrive, opts)
+	status.Step("Reading D: changes")
+	return extractVDisk(rep, s.Content, sf.DDrive, opts)
 }
 
 // extractVDisk extracts from a content's D: disk with a .sav applied.
@@ -327,35 +348,33 @@ func extract(rep *Report, src fs.FS, opts Options) error {
 	return err
 }
 
-// diffOverlay lists the changes a .sav makes to a disk image.
-func diffOverlay(image, sav string) ([]Change, error) {
+// openOverlay opens a disk image's file system as it is (before) and
+// with a .sav applied (after), until closeAll is called.
+func openOverlay(image, sav string) (before, after fs.FS, closeAll func(), err error) {
 	disk, size, closeDisk, err := openDisk(image)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
-	defer closeDisk()
 	f, err := os.Open(sav)
 	if err != nil {
-		return nil, err
+		closeDisk()
+		return nil, nil, nil, err
 	}
-	defer f.Close()
+	closeAll = func() { f.Close(); closeDisk() }
 	info, err := f.Stat()
-	if err != nil {
-		return nil, err
+	if err == nil {
+		var ov io.ReaderAt
+		if ov, err = vdisk.NewOverlay(disk, size, f, info.Size()); err == nil {
+			if before, err = fat.Open(disk); err == nil {
+				after, err = fat.Open(ov)
+			}
+		}
 	}
-	ov, err := vdisk.NewOverlay(disk, size, f, info.Size())
 	if err != nil {
-		return nil, err
+		closeAll()
+		return nil, nil, nil, err
 	}
-	before, err := fat.Open(disk)
-	if err != nil {
-		return nil, err
-	}
-	after, err := fat.Open(ov)
-	if err != nil {
-		return nil, err
-	}
-	return Diff(before, after)
+	return before, after, closeAll, nil
 }
 
 // openDisk opens a VHD, or failing that a raw disk image.
@@ -437,29 +456,12 @@ func runFrom(opts Options, m *manifest.Manifest) (*Report, error) {
 }
 
 func extractOverlay(rep *Report, image, sav string, opts Options) error {
-	disk, size, closeDisk, err := openDisk(image)
+	status.Step("Reading C: changes")
+	bfs, afs, closeAll, err := openOverlay(image, sav)
 	if err != nil {
 		return err
 	}
-	defer closeDisk()
-	f, err := os.Open(sav)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	info, _ := f.Stat()
-	ov, err := vdisk.NewOverlay(disk, size, f, info.Size())
-	if err != nil {
-		return err
-	}
-	bfs, err := fat.Open(disk)
-	if err != nil {
-		return err
-	}
-	afs, err := fat.Open(ov)
-	if err != nil {
-		return err
-	}
+	defer closeAll()
 	if rep.Changes, err = Diff(bfs, afs); err != nil {
 		return err
 	}
@@ -468,7 +470,10 @@ func extractOverlay(rep *Report, image, sav string, opts Options) error {
 			return err
 		}
 	}
-	return extract(rep, afs, opts)
+	if err := extract(rep, afs, opts); err != nil {
+		return err
+	}
+	return exportRegistry(rep, bfs, afs, opts)
 }
 
 // extractImage extracts from a whole disk image: compared against
@@ -497,7 +502,10 @@ func extractImage(rep *Report, image string, opts Options) error {
 		if rep.Changes, err = Diff(bfs, afs); err != nil {
 			return err
 		}
-		return extract(rep, afs, opts)
+		if err := extract(rep, afs, opts); err != nil {
+			return err
+		}
+		return exportRegistry(rep, bfs, afs, opts)
 	}
 	if opts.Dir == "" {
 		return errors.New("without a template to compare against, choose the folder to extract with --dir")

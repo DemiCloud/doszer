@@ -517,6 +517,14 @@ func printInstallReport(rep *install.Report, dryRun bool) {
 			fmt.Printf("Set boot.exec = '%s' in %s\n", rep.Exec, manifest.FileName)
 		}
 	}
+	if rep.Registry != "" {
+		verb := "Wrote"
+		if dryRun {
+			verb = "Would write"
+		}
+		fmt.Printf("%s %d registry value(s) the installer added to %s\n", verb, rep.RegistryValues, rep.Registry)
+		fmt.Printf("To restore them at startup, WINDOWS.BAT needs: REGEDIT /S %s\n", rep.Registry)
+	}
 	for _, p := range rep.Kept {
 		fmt.Printf("Save file kept: %s\n", p)
 	}
