@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -42,6 +43,16 @@ type fileEntry struct {
 	data     []byte     // in-memory content; authoritative when non-nil
 	source   *RawSource // original compressed form; set only until data is filled
 	modified time.Time
+
+	mu  sync.Mutex
+	cur *cursor // a source stream openRange left open part-way, for the next caller
+}
+
+// cursor is a stream of a RawSource's decompressed content and how far
+// into it it has read.
+type cursor struct {
+	rc  io.ReadCloser
+	pos int64
 }
 
 func diskEntry(path string, modified time.Time) *fileEntry {
@@ -161,17 +172,28 @@ func (e *fileEntry) size() (int64, error) {
 // without loading the whole entry into memory: §6.4 reads disc images
 // that can be hundreds of megabytes. A RawSource-backed entry without
 // Open, or one already read into memory, is served from its bytes.
+//
+// A compressed entry can only be read from its start, so a stream closed
+// part-way is kept and taken by the next call starting at or after where
+// it stopped: reading one disc image's tracks in order (§7.3's hashes)
+// decompresses it once rather than once per track.
 func (e *fileEntry) openRange(off, n int64) (io.ReadCloser, error) {
 	if e.data == nil && e.source != nil && e.source.Open != nil {
-		rc, err := e.source.Open()
+		c := e.takeCursor(off)
+		if c == nil {
+			rc, err := e.source.Open()
+			if err != nil {
+				return nil, err
+			}
+			c = &cursor{rc: rc}
+		}
+		k, err := io.CopyN(io.Discard, c.rc, off-c.pos)
+		c.pos += k
 		if err != nil {
+			c.rc.Close()
 			return nil, err
 		}
-		if _, err := io.CopyN(io.Discard, rc, off); err != nil {
-			rc.Close()
-			return nil, err
-		}
-		return readCloser{io.LimitReader(rc, n), rc}, nil
+		return &cursorReader{e: e, c: c, left: n}, nil
 	}
 	if e.data == nil && e.source == nil {
 		f, err := os.Open(e.diskPath)
@@ -188,6 +210,61 @@ func (e *fileEntry) openRange(off, n int64) (io.ReadCloser, error) {
 		return nil, err
 	}
 	return io.NopCloser(bytes.NewReader(data[min(off, int64(len(data))):min(off+n, int64(len(data)))])), nil
+}
+
+// takeCursor returns the entry's kept stream if it hasn't read past off,
+// leaving the entry without one; else nil.
+func (e *fileEntry) takeCursor(off int64) *cursor {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	c := e.cur
+	if c == nil || c.pos > off {
+		return nil
+	}
+	e.cur = nil
+	return c
+}
+
+// cursorReader reads up to left bytes of a cursor, giving the cursor back
+// to its entry on Close.
+type cursorReader struct {
+	e    *fileEntry
+	c    *cursor
+	left int64
+}
+
+func (r *cursorReader) Read(p []byte) (int, error) {
+	if r.left <= 0 {
+		return 0, io.EOF
+	}
+	if int64(len(p)) > r.left {
+		p = p[:r.left]
+	}
+	k, err := r.c.rc.Read(p)
+	r.c.pos += int64(k)
+	r.left -= int64(k)
+	return k, err
+}
+
+// Close keeps the stream for the next openRange unless it has reached the
+// end of the content, replacing any stream kept before it.
+func (r *cursorReader) Close() error {
+	c := r.c
+	if c == nil {
+		return nil
+	}
+	r.c = nil
+	if c.pos >= int64(r.e.source.UncompressedSize) {
+		return c.rc.Close()
+	}
+	r.e.mu.Lock()
+	old := r.e.cur
+	r.e.cur = c
+	r.e.mu.Unlock()
+	if old != nil {
+		old.rc.Close()
+	}
+	return nil
 }
 
 type readCloser struct {

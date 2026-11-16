@@ -252,7 +252,13 @@ raw. Entries are streamed through `fileEntry.openRange` (`RawSource.Open`
 for an archive entry), never loaded whole: repacking a deflated 700 MB
 disc image peaked at 19 MB RSS. Measured on a real 9-track disc
 (418 MB data, 8 audio tracks): 30s to build with Ogg, most of it Deflate
-on the ISO.
+on the ISO. A deflated archive entry can only be read from its start, so
+a multi-track BIN is decompressed once, not once per track: `openRange`
+keeps a part-read stream for the next in-order caller (§7.3's hashes),
+and `materializeShared` decompresses a BIN that several conversion jobs
+share to the build's temp directory first. A synthetic 225 MB, 16-track
+deflated BIN/CUE repacked in 3.5s instead of 20.5s, byte-identical
+(`TestStreamedSourceDecompressedOnce` counts the bytes read).
 
 ## Next steps
 

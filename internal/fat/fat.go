@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf16"
 )
@@ -46,7 +47,8 @@ const (
 	attrLFN       = 0x0F // read-only|hidden|system|volume ID
 )
 
-// FS is a FAT file system. It is safe for concurrent use: it only reads.
+// FS is a FAT file system. It is safe for concurrent use: it only reads,
+// and its directory cache is locked.
 type FS struct {
 	r    io.ReaderAt
 	base int64 // byte offset of the volume within r
@@ -61,6 +63,12 @@ type FS struct {
 	clusterCount      uint32
 	fat               []uint32 // the first FAT, decoded
 	endOfChainAtLeast uint32
+
+	// Every directory read, by first cluster (0: FAT12/16's fixed root).
+	// Opening a path reads each directory on it, so walking a whole disk
+	// would otherwise reread every ancestor for every file.
+	mu   sync.Mutex
+	dirs map[uint32][]*entry
 }
 
 // Open finds the FAT file system on a disk: the first FAT partition in an
@@ -137,6 +145,7 @@ func New(r io.ReaderAt, base int64) (*FS, error) {
 		rootDirSector:   reserved + numFATs*fatSize,
 		rootDirEntries:  rootEntries,
 		clusterCount:    uint32(clusterCount),
+		dirs:            map[uint32][]*entry{},
 	}
 	switch {
 	case clusterCount < 4085:
@@ -225,9 +234,33 @@ type entry struct {
 
 func (e *entry) isDir() bool { return e.attr&attrDirectory != 0 }
 
-// readDir reads a directory's entries: the fixed root (dir == nil on
-// FAT12/16) or a cluster chain.
+// readDir returns a directory's entries: the fixed root (dir == nil on
+// FAT12/16) or a cluster chain. Entries are shared between callers and
+// never modified.
 func (f *FS) readDir(dir *entry) ([]*entry, error) {
+	var key uint32 // the fixed root
+	if dir != nil {
+		key = dir.cluster // 0 for ".." pointing at FAT12/16's root: the same
+	} else if f.kind == FAT32 {
+		key = f.rootCluster
+	}
+	f.mu.Lock()
+	entries, ok := f.dirs[key]
+	f.mu.Unlock()
+	if ok {
+		return entries, nil
+	}
+	entries, err := f.readDirUncached(dir)
+	if err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	f.dirs[key] = entries
+	f.mu.Unlock()
+	return entries, nil
+}
+
+func (f *FS) readDirUncached(dir *entry) ([]*entry, error) {
 	var data []byte
 	if dir == nil && f.kind != FAT32 {
 		data = make([]byte, f.rootDirEntries*32)

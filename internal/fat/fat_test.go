@@ -6,6 +6,8 @@ import (
 	"io"
 	"io/fs"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -372,4 +374,62 @@ func TestReadAtPastEnd(t *testing.T) {
 	if n, err := ra.ReadAt(p, 1); n != 2 || err != io.EOF || string(p[:n]) != "bc" {
 		t.Fatalf("ReadAt = %d %v %q", n, err, p[:n])
 	}
+}
+
+// countingReaderAt counts ReadAt calls.
+type countingReaderAt struct {
+	r     io.ReaderAt
+	calls atomic.Int64
+}
+
+func (c *countingReaderAt) ReadAt(p []byte, off int64) (int, error) {
+	c.calls.Add(1)
+	return c.r.ReadAt(p, off)
+}
+
+func TestDirectoriesReadOnce(t *testing.T) {
+	for _, kind := range []Kind{FAT12, FAT16, FAT32} {
+		r := &countingReaderAt{r: bytes.NewReader(buildFAT(t, kind, testTree()))}
+		f, err := Open(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Opening a file reads no file data, only the directories on its
+		// path; once those are cached, opening it again reads nothing.
+		paths := []string{"Program Files/A long file name.txt", "Program Files/FRAG.BIN", "AUTOEXEC.BAT"}
+		for _, p := range paths {
+			if _, err := f.Open(p); err != nil {
+				t.Fatal(err)
+			}
+		}
+		before := r.calls.Load()
+		for range 10 {
+			for _, p := range paths {
+				if _, err := f.Open(p); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		if n := r.calls.Load() - before; n != 0 {
+			t.Errorf("FAT%d: %d reads reopening cached paths, want 0", kind, n)
+		}
+	}
+}
+
+func TestConcurrentWalk(t *testing.T) {
+	f, err := Open(bytes.NewReader(buildFAT(t, FAT32, testTree())))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := fstest.TestFS(f, "AUTOEXEC.BAT", "Program Files/FRAG.BIN"); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
 }

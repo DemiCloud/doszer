@@ -287,6 +287,10 @@ func runJobs(jobs []*mediaJob, dir string, oggQuality int) error {
 		}
 	}
 
+	if err := materializeShared(jobs, dir); err != nil {
+		return err
+	}
+
 	status.Step("Converting disc images")
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -312,6 +316,59 @@ func runJobs(jobs []*mediaJob, dir string, oggQuality int) error {
 	}
 	wg.Wait()
 	return errors.Join(errs...)
+}
+
+// materializeShared decompresses, once, every compressed source (an
+// archive entry being repacked) that more than one job reads, to a file in
+// dir that those jobs then read instead. Each job reads its own track
+// concurrently, and a compressed stream can only be read from its start,
+// so without this every track would decompress the file up to its own
+// start again.
+func materializeShared(jobs []*mediaJob, dir string) error {
+	count := map[*fileEntry]int{}
+	for _, j := range jobs {
+		if j.src.data == nil && j.src.source != nil {
+			count[j.src]++
+		}
+	}
+	disk := map[*fileEntry]*fileEntry{}
+	for i, j := range jobs {
+		if count[j.src] < 2 {
+			continue
+		}
+		if _, ok := disk[j.src]; !ok {
+			if len(disk) == 0 {
+				status.Step("Decompressing disc images")
+			}
+			p := filepath.Join(dir, fmt.Sprintf("source-%04d", i))
+			if err := writeEntry(j.src, p); err != nil {
+				return fmt.Errorf("%s: %w", j.track.FilePath, err)
+			}
+			disk[j.src] = diskEntry(p, j.src.modified)
+		}
+		j.src = disk[j.src]
+	}
+	return nil
+}
+
+// writeEntry streams e's content to a new file at p.
+func writeEntry(e *fileEntry, p string) error {
+	r, err := e.reader()
+	if err != nil {
+		return err
+	}
+	if c, ok := r.(io.Closer); ok {
+		defer c.Close()
+	}
+	f, err := os.Create(p)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(f, r)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
 
 // run writes the job's output file: the track's normalized content
