@@ -1,6 +1,8 @@
 package build
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -8,10 +10,13 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/DemiCloud/doszer/internal/cue"
+	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/status"
 )
@@ -22,6 +27,10 @@ type resolvedMedia struct {
 	Image  string              // the disc image's path in the build
 	Tracks []cue.ResolvedTrack // FilePath is a path in fs
 	fs     *fileSet
+
+	// isoFile is a temporary file holding the first data track's
+	// normalized content, written while it was hashed; "" if none was.
+	isoFile string
 }
 
 // openTrack streams t's raw bytes, from Start to End.
@@ -39,34 +48,80 @@ func openTrack(fs *fileSet, t cue.ResolvedTrack) (io.ReadCloser, error) {
 
 // discImage is a candidate for §7.3: a CUE sheet or ISO image in the build.
 type discImage struct {
-	path   string
-	tracks []cue.ResolvedTrack
-	hashes []string // computed on demand, by track index
+	path    string
+	tracks  []cue.ResolvedTrack
+	hashes  []string // computed on demand, by track index
+	isoFile string   // see resolvedMedia.isoFile
 }
 
-// hash returns track i's normalized hash, computing it once.
-func (d *discImage) hash(fs *fileSet, i int) (string, error) {
-	if d.hashes == nil {
-		d.hashes = make([]string, len(d.tracks))
-	}
+// teeTarget asks locateMedia to keep a copy of the first data track of
+// each image it hashes for a media an [[extract]] reads, so extracting
+// needn't read the track again: temporary files go in dir and are
+// appended to *files for the caller to remove.
+type teeTarget struct {
+	dir   string
+	files *[]*os.File
+}
+
+// hash returns track i's normalized hash, computing it once. If tee is
+// set, the normalized content is also written to it.
+func (d *discImage) hash(fs *fileSet, i int, tee io.Writer) (string, error) {
 	if d.hashes[i] == "" {
 		rc, err := openTrack(fs, d.tracks[i])
 		if err != nil {
 			return "", err
 		}
 		defer rc.Close()
-		if d.hashes[i], err = d.tracks[i].HashFrom(rc); err != nil {
+		n, err := d.tracks[i].Normalize(rc)
+		if err != nil {
 			return "", err
 		}
+		h := sha1.New()
+		w := io.Writer(h)
+		if tee != nil {
+			w = io.MultiWriter(h, tee)
+		}
+		if _, err := io.Copy(w, n); err != nil {
+			return "", err
+		}
+		d.hashes[i] = hex.EncodeToString(h.Sum(nil))
 	}
 	return d.hashes[i], nil
+}
+
+// streamed reports whether any of the image's tracks is in a compressed
+// archive entry, which is read from its start in one stream (openRange)
+// rather than at random, so its tracks must be hashed in order.
+func (d *discImage) streamed(fs *fileSet) bool {
+	for _, t := range d.tracks {
+		if e, ok := fs.get(t.FilePath); ok && e.data == nil && e.source != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// directISO returns where t's normalized content already lies, whole and
+// unchanged, in a file on disk: a data track of 2048-byte sectors in a
+// file collected from the source directory. [[extract]] reads such a track
+// in place.
+func directISO(fs *fileSet, t cue.ResolvedTrack) (path string, off, size int64, ok bool) {
+	e, found := fs.get(t.FilePath)
+	if !found || t.Track.IsAudio() || t.FrameSize != 2048 || e.data != nil || e.source != nil || e.ranged {
+		return "", 0, 0, false
+	}
+	size = t.End - t.Start
+	return e.diskPath, t.Start, size - size%2048, true
 }
 
 // locateMedia matches every declared media entry to a disc image in fs,
 // verifying its track hashes (§7.3). A media that no image matches is an
 // error if one of extracts references it, a warning otherwise; so is an
 // image that can't be read, since it might have been the match.
-func locateMedia(fs *fileSet, declared []manifest.Media, extracts []manifest.Extract) (map[string]resolvedMedia, []string, error) {
+//
+// tee, if set, keeps the first data track of images hashed for a media
+// extracts reference (teeTarget).
+func locateMedia(fs *fileSet, declared []manifest.Media, extracts []manifest.Extract, tee *teeTarget) (map[string]resolvedMedia, []string, error) {
 	if len(declared) == 0 {
 		return nil, nil, nil
 	}
@@ -81,12 +136,16 @@ func locateMedia(fs *fileSet, declared []manifest.Media, extracts []manifest.Ext
 	var warnings []string
 	var errs []error
 	for _, media := range declared {
-		img, unverified, near, err := matchMedia(fs, media, images)
+		mediaTee := tee
+		if !used[media.ID] {
+			mediaTee = nil
+		}
+		img, unverified, near, err := matchMedia(fs, media, images, mediaTee)
 		if err != nil {
 			return nil, warnings, fmt.Errorf("source.media %q: %w", media.ID, err)
 		}
 		if img != nil {
-			resolved[media.ID] = resolvedMedia{Image: img.path, Tracks: img.tracks, fs: fs}
+			resolved[media.ID] = resolvedMedia{Image: img.path, Tracks: img.tracks, fs: fs, isoFile: img.isoFile}
 			if unverified > 0 {
 				warnings = append(warnings, fmt.Sprintf("source.media %q: %s: %d track(s) in lossy audio files not verified", media.ID, img.path, unverified))
 			}
@@ -111,12 +170,12 @@ func locateMedia(fs *fileSet, declared []manifest.Media, extracts []manifest.Ext
 // matchMedia returns the first image matching media (§7.3) and how many of
 // its tracks couldn't be verified, or nil and the images that have
 // media's track layout but different hashes.
-func matchMedia(fs *fileSet, media manifest.Media, images []*discImage) (match *discImage, unverified int, near []string, err error) {
+func matchMedia(fs *fileSet, media manifest.Media, images []*discImage, tee *teeTarget) (match *discImage, unverified int, near []string, err error) {
 	for _, img := range images {
 		if !sameShape(media.Tracks, img.tracks) {
 			continue
 		}
-		ok, skipped, err := verifyTracks(fs, media.Tracks, img)
+		ok, skipped, err := verifyTracks(fs, media.Tracks, img, tee)
 		if err != nil {
 			return nil, 0, nil, fmt.Errorf("%s: %w", img.path, err)
 		}
@@ -143,22 +202,106 @@ func sameShape(declared []manifest.Track, tracks []cue.ResolvedTrack) bool {
 }
 
 // verifyTracks compares every verifiable track's hash to its declared
-// hash, stopping at the first mismatch, and counts the tracks it skipped.
-func verifyTracks(fs *fileSet, declared []manifest.Track, img *discImage) (ok bool, skipped int, err error) {
-	for i, d := range declared {
+// hash and counts the tracks it skipped. Tracks read from disk are hashed
+// concurrently, one per CPU; an image in a compressed archive entry is
+// hashed in order, so it is decompressed once, stopping at the first
+// mismatch.
+func verifyTracks(fs *fileSet, declared []manifest.Track, img *discImage, tee *teeTarget) (ok bool, skipped int, err error) {
+	if img.hashes == nil {
+		img.hashes = make([]string, len(img.tracks))
+	}
+	var todo []int
+	for i := range declared {
 		if !img.tracks[i].Verifiable() {
 			skipped++
 			continue
 		}
-		got, err := img.hash(fs, i)
-		if err != nil {
-			return false, 0, fmt.Errorf("track %d: %w", i+1, err)
+		todo = append(todo, i)
+	}
+
+	teeIdx, teeFile, err := img.startTee(fs, tee)
+	if err != nil {
+		return false, 0, err
+	}
+	defer func() {
+		if teeFile != nil && (!ok || err != nil) {
+			os.Remove(teeFile.Name()) // not this media: free the space now
 		}
-		if got != d.SHA1 {
-			return false, 0, nil
+	}()
+	writerFor := func(i int) io.Writer {
+		if i == teeIdx {
+			return teeFile
+		}
+		return nil
+	}
+
+	if img.streamed(fs) {
+		for _, i := range todo {
+			got, err := img.hash(fs, i, writerFor(i))
+			if err != nil {
+				return false, 0, fmt.Errorf("track %d: %w", i+1, err)
+			}
+			if got != declared[i].SHA1 {
+				return false, 0, nil
+			}
+		}
+	} else {
+		errs := make([]error, len(img.tracks))
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, runtime.GOMAXPROCS(0))
+		for _, i := range todo {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func() {
+				defer func() { <-sem; wg.Done() }()
+				if _, err := img.hash(fs, i, writerFor(i)); err != nil {
+					errs[i] = fmt.Errorf("track %d: %w", i+1, err)
+				}
+			}()
+		}
+		wg.Wait()
+		if err := errors.Join(errs...); err != nil {
+			return false, 0, err
+		}
+		for _, i := range todo {
+			if img.hashes[i] != declared[i].SHA1 {
+				return false, 0, nil
+			}
 		}
 	}
+	if teeFile != nil {
+		img.isoFile = teeFile.Name()
+	}
 	return true, skipped, nil
+}
+
+// startTee creates the file the image's first data track is copied to
+// while it is hashed, if tee asks for one and the track will be hashed
+// now: not already hashed, and not readable in place (directISO). It
+// returns that track's index, or -1.
+func (img *discImage) startTee(fs *fileSet, tee *teeTarget) (int, *os.File, error) {
+	if tee == nil || img.isoFile != "" {
+		return -1, nil, nil
+	}
+	for i, t := range img.tracks {
+		if t.Track.IsAudio() {
+			continue
+		}
+		if img.hashes[i] != "" || !t.Verifiable() {
+			return -1, nil, nil
+		}
+		if _, _, _, ok := directISO(fs, t); ok {
+			return -1, nil, nil
+		}
+		f, err := os.CreateTemp(tee.dir, ".doszer-media-*.iso")
+		if err != nil {
+			return -1, nil, err
+		}
+		*tee.files = append(*tee.files, f)
+		interrupt.Remove(f.Name()) // left registered: removing a removed file is harmless
+		return i, f, nil
+	}
+	return -1, nil, nil
 }
 
 // discImages resolves every disc image in fs: each CUE sheet, and each ISO
@@ -262,42 +405,81 @@ func findCueSheets(sourceDir string) ([]string, error) {
 // a [[source.media]] entry (§5.6, §7.2), for `init` to write: ids disc1,
 // disc2, ... in path order, labelled with the CUE sheet's name. A CUE
 // sheet that can't be read or resolved is skipped and reported in
-// skipped; one with the same tracks as an earlier one is left out.
+// skipped; one with the same tracks as an earlier one is left out. Every
+// track of every image is hashed concurrently, one per CPU.
 func IdentifyMedia(sourceDir string) (media []manifest.Media, skipped []string, err error) {
 	cues, err := findCueSheets(sourceDir)
 	if err != nil {
 		return nil, nil, err
 	}
 	sort.Strings(cues)
-	seen := map[string]bool{}
+
+	type image struct {
+		rel    string
+		path   string
+		tracks []cue.ResolvedTrack
+		sums   []string
+		errs   []error
+	}
+	var images []*image
 	for _, p := range cues {
 		rel, _ := filepath.Rel(sourceDir, p)
-		status.Step("Identifying %s", filepath.Base(p))
+		rel = filepath.ToSlash(rel)
 		tracks, err := resolveCueFile(p)
 		if err != nil {
-			skipped = append(skipped, fmt.Sprintf("%s: %v", filepath.ToSlash(rel), err))
+			skipped = append(skipped, fmt.Sprintf("%s: %v", rel, err))
 			continue
 		}
 		if lossy := countUnverifiable(tracks); lossy > 0 {
-			skipped = append(skipped, fmt.Sprintf("%s: %d track(s) in lossy audio files, which can't be hashed", filepath.ToSlash(rel), lossy))
+			skipped = append(skipped, fmt.Sprintf("%s: %d track(s) in lossy audio files, which can't be hashed", rel, lossy))
 			continue
 		}
+		images = append(images, &image{rel: rel, path: p, tracks: tracks,
+			sums: make([]string, len(tracks)), errs: make([]error, len(tracks))})
+	}
+
+	status.Step("Identifying disc images")
+	total := 0
+	for _, img := range images {
+		total += len(img.tracks)
+	}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	done := 0
+	sem := make(chan struct{}, runtime.GOMAXPROCS(0))
+	for _, img := range images {
+		for i, t := range img.tracks {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func() {
+				defer func() { <-sem; wg.Done() }()
+				img.sums[i], img.errs[i] = t.Hash()
+				mu.Lock()
+				done++
+				status.Count(done, total)
+				mu.Unlock()
+			}()
+		}
+	}
+	wg.Wait()
+
+	seen := map[string]bool{}
+	for _, img := range images {
 		m := manifest.Media{
 			ID:    fmt.Sprintf("disc%d", len(media)+1),
-			Label: strings.TrimSuffix(filepath.Base(p), filepath.Ext(p)),
+			Label: strings.TrimSuffix(filepath.Base(img.path), filepath.Ext(img.path)),
 		}
 		var key strings.Builder
-		for i, t := range tracks {
-			sum, err := t.Hash()
-			if err != nil {
-				return nil, skipped, fmt.Errorf("%s: track %d: %w", filepath.ToSlash(rel), i+1, err)
+		for i, t := range img.tracks {
+			if img.errs[i] != nil {
+				return nil, skipped, fmt.Errorf("%s: track %d: %w", img.rel, i+1, img.errs[i])
 			}
 			typ := manifest.TrackData
 			if t.Track.IsAudio() {
 				typ = manifest.TrackAudio
 			}
-			m.Tracks = append(m.Tracks, manifest.Track{Type: typ, SHA1: sum})
-			key.WriteString(typ + sum)
+			m.Tracks = append(m.Tracks, manifest.Track{Type: typ, SHA1: img.sums[i]})
+			key.WriteString(typ + img.sums[i])
 		}
 		if seen[key.String()] {
 			continue

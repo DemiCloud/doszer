@@ -208,7 +208,7 @@ func TestLocateMedia(t *testing.T) {
 						fs.set(p, dataEntry(b, Epoch))
 					}
 				}
-				resolved, warnings, err := locateMedia(fs, tt.media, tt.extracts)
+				resolved, warnings, err := locateMedia(fs, tt.media, tt.extracts, nil)
 				if (err != nil) != tt.wantErr {
 					t.Fatalf("%s: err = %v, wantErr %v", src, err, tt.wantErr)
 				}
@@ -300,7 +300,7 @@ func TestLocateMediaAcceptsBareISO(t *testing.T) {
 
 	isoDir := t.TempDir()
 	os.WriteFile(filepath.Join(isoDir, "Game.iso"), user, 0o644)
-	if resolved, _, err := locateMedia(dirSet(t, isoDir), media, nil); err != nil || len(resolved) != 1 {
+	if resolved, _, err := locateMedia(dirSet(t, isoDir), media, nil, nil); err != nil || len(resolved) != 1 {
 		t.Fatalf("bare ISO not recognized as the same media: %v", err)
 	}
 }

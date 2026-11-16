@@ -711,3 +711,47 @@ to    = "GAME"
 		t.Fatalf("Run error = %v, want a directory loop", err)
 	}
 }
+
+func TestRunExtractsFromRawSectors(t *testing.T) {
+	// A MODE1/2352 BIN can't be read in place: its data track is copied
+	// while §7.3 hashes it, and extracted from that copy.
+	iso := buildISOWithSubdir(t, "RESOURCE", map[string][]byte{"A.DAT": []byte("file a")})
+	var bin bytes.Buffer
+	for off := 0; off < len(iso); off += 2048 {
+		sector := bytes.Repeat([]byte{0xEE}, 2352) // sync/header/ECC, stripped
+		copy(sector[16:], iso[off:off+2048])
+		bin.Write(sector)
+	}
+	dir := t.TempDir()
+	writeFile(t, dir, "DISC/game.bin", bin.String())
+	writeFile(t, dir, "DISC/game.cue", "FILE \"game.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n")
+	writeFile(t, dir, "DOSZ.TOML", fmt.Sprintf(`
+format = 1
+name   = "Raw Extract Game"
+
+[[source.media]]
+id = "disc1"
+tracks = [{ type = "data", sha1 = "%x" }]
+
+[[extract]]
+media = "disc1"
+from  = "RESOURCE/A.DAT"
+to    = "GAME/A.DAT"
+
+[layout]
+trim = ["DISC/**"]
+`, sha1.Sum(iso)))
+
+	outDir := t.TempDir()
+	out := filepath.Join(outDir, "out.dosz")
+	if _, err := build.Run(build.Options{SourceDir: dir, OutputPath: out}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got := readZipFile(t, readZip(t, out)["GAME/A.DAT"]); got != "file a" {
+		t.Errorf("GAME/A.DAT = %q", got)
+	}
+	left, _ := os.ReadDir(outDir)
+	if len(left) != 1 {
+		t.Errorf("output directory holds %d entries, want only the archive", len(left))
+	}
+}

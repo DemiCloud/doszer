@@ -37,14 +37,24 @@ type Change struct {
 // case-insensitively (FAT). A file counts as modified when its size or
 // modification time differs: FAT updates the time on every write, and
 // comparing content would mean reading every file of a whole OS disk.
+//
+// The two are listed concurrently: they are separate file systems (an
+// image and the image with a save applied), each safe for concurrent use.
 func Diff(before, after fs.FS) ([]Change, error) {
+	var b map[string]fileInfo
+	var errB error
+	listed := make(chan struct{})
+	go func() {
+		defer close(listed)
+		b, errB = listFiles(after)
+	}()
 	a, err := listFiles(before)
+	<-listed
 	if err != nil {
 		return nil, err
 	}
-	b, err := listFiles(after)
-	if err != nil {
-		return nil, err
+	if errB != nil {
+		return nil, errB
 	}
 	var out []Change
 	for key, fb := range b {

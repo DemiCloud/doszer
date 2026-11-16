@@ -464,7 +464,7 @@ func encodeOgg(r io.Reader, out string, quality int) error {
 // aren't named as §6.4 requires - so verify can apply §6.4 to an archive
 // with the same rules build uses. It reads only the CUE sheets themselves.
 func UnconvertedMedia(files []*zip.File, audio string) []string {
-	fs := zipFileSet(files)
+	fs := zipFileSet(files, nil)
 
 	var out []string
 	for _, p := range fs.paths() {
@@ -481,30 +481,98 @@ func UnconvertedMedia(files []*zip.File, audio string) []string {
 // ArchiveMedia applies §7.3 to an archive's own disc images against
 // declared, as repack does, returning its warnings: a media not found, or
 // tracks in lossy files that couldn't be verified. Entries are streamed.
-func ArchiveMedia(files []*zip.File, declared []manifest.Media) ([]string, error) {
-	_, warnings, err := locateMedia(zipFileSet(files), declared, nil)
-	return warnings, err
+//
+// It also returns, by entry name, the result of the CRC-32 check of every
+// entry it read through to its end, so a caller checking every entry's
+// CRC-32 (verify) doesn't decompress a disc image a second time.
+func ArchiveMedia(files []*zip.File, declared []manifest.Media) (warnings []string, crc map[string]error, err error) {
+	var mu sync.Mutex
+	crc = map[string]error{}
+	fs := zipFileSet(files, func(name string, err error) {
+		mu.Lock()
+		crc[name] = err
+		mu.Unlock()
+	})
+	_, warnings, err = locateMedia(fs, declared, nil, nil)
+	return warnings, crc, err
 }
 
-// zipFileSet is a fileSet over an archive's entries, read on demand.
-func zipFileSet(files []*zip.File) *fileSet {
+// zipFileSet is a fileSet over an archive's entries, read on demand. If
+// readThrough is set, it is called once for each entry a stream reads to
+// its end, with the result of archive/zip's CRC-32 check.
+func zipFileSet(files []*zip.File, readThrough func(name string, err error)) *fileSet {
 	fs := newFileSet()
 	for _, f := range files {
 		if strings.HasSuffix(f.Name, "/") {
 			continue
 		}
+		open := f.Open
+		if readThrough != nil {
+			open = func() (io.ReadCloser, error) {
+				rc, err := f.Open()
+				if err != nil {
+					return nil, err
+				}
+				return &endChecker{rc: rc, left: int64(f.UncompressedSize64), done: func(err error) { readThrough(f.Name, err) }}, nil
+			}
+		}
 		fs.set(f.Name, sourceEntry(&RawSource{
 			UncompressedSize: f.UncompressedSize64,
 			Decompressed: func() ([]byte, error) {
-				rc, err := f.Open()
+				rc, err := open()
 				if err != nil {
 					return nil, err
 				}
 				defer rc.Close()
 				return io.ReadAll(rc)
 			},
-			Open: f.Open,
+			Open: open,
 		}, Epoch))
 	}
 	return fs
 }
+
+// endChecker reads an archive entry's stream and reports, once, how it
+// ended: archive/zip checks an entry's CRC-32 only when a read reaches
+// io.EOF, which a reader limited to the entry's exact size (openRange's)
+// never asks for, so endChecker reads one byte further itself.
+type endChecker struct {
+	rc       io.ReadCloser
+	left     int64
+	done     func(error)
+	reported bool
+}
+
+func (c *endChecker) Read(p []byte) (int, error) {
+	if c.left <= 0 && c.reported {
+		return 0, io.EOF
+	}
+	n, err := c.rc.Read(p)
+	c.left -= int64(n)
+	switch {
+	case c.reported:
+	case err == io.EOF:
+		c.report(nil) // archive/zip has checked the size and CRC-32
+	case err != nil:
+		c.report(err)
+	case c.left <= 0:
+		var probe [1]byte
+		k, perr := c.rc.Read(probe[:])
+		switch {
+		case k > 0:
+			c.report(zip.ErrFormat) // longer than its recorded size
+		case perr == io.EOF:
+			c.report(nil)
+		case perr != nil:
+			c.report(perr)
+		}
+	}
+	return n, err
+}
+
+func (c *endChecker) report(err error) {
+	c.reported = true
+	c.done(err)
+}
+
+func (c *endChecker) Close() error { return c.rc.Close() }

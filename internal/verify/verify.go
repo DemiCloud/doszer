@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DemiCloud/doszer/internal/build"
@@ -68,11 +70,13 @@ func Check(archivePath string) (warnings []string, err error) {
 		return nil, errors.Join(errs...)
 	}
 
-	errs = append(errs, checkWithManifest(names, byName, m)...)
+	// First, so the disc images it reads through have had their CRC-32
+	// checked and checkWithManifest needn't decompress them again.
+	warnings, crcChecked, mediaErr := build.ArchiveMedia(r.File, m.Source.Media)
 
-	warnings, err = build.ArchiveMedia(r.File, m.Source.Media)
-	if err != nil {
-		errs = append(errs, err)
+	errs = append(errs, checkWithManifest(names, byName, m, crcChecked)...)
+	if mediaErr != nil {
+		errs = append(errs, mediaErr)
 	}
 
 	return warnings, errors.Join(errs...)
@@ -122,11 +126,13 @@ func checkDeterministic(files []*zip.File) []error {
 // checkWithManifest enforces the rules that depend on the embedded
 // manifest: §8.1's store requirements, §6.4's disc image conversion, §6.6's
 // text normalization, §6.7's exclusions, §11's archive-content rules, and the runtime files §6.8
-// requires - not just their presence, but their content.
-func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.Manifest) []error {
+// requires - not just their presence, but their content. crcChecked holds
+// the CRC-32 results of entries already read through (build.ArchiveMedia).
+func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.Manifest, crcChecked map[string]error) []error {
 	var errs []error
 
-	for _, name := range names {
+	contentErrs := checkContents(names, byName, crcChecked)
+	for i, name := range names {
 		f := byName[name]
 
 		if build.ShouldStore(name, m.Pack.Store) && f.Method != zip.Store {
@@ -135,26 +141,7 @@ func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.
 		if build.IsExcluded(name) {
 			errs = append(errs, fmt.Errorf("%s: must not be in the archive (§6.7)", name))
 		}
-
-		// Only a file named like a text file (§6.6) needs its content in
-		// memory; every other entry is streamed, which still checks its
-		// CRC-32, so a large disc image costs no memory.
-		if !build.IsTextFile(name, nil) {
-			if err := checkCRC(f); err != nil {
-				errs = append(errs, fmt.Errorf("%s: %w", name, err))
-			}
-			continue
-		}
-		content, err := readZipFile(f)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", name, err))
-			continue
-		}
-		if build.IsTextFile(name, content) {
-			if !bytes.Equal(content, build.NormalizeCRLF(content)) {
-				errs = append(errs, fmt.Errorf("%s: not CRLF-normalized (§6.6)", name))
-			}
-		}
+		errs = append(errs, contentErrs[i]...)
 	}
 
 	files := make([]*zip.File, 0, len(names))
@@ -210,6 +197,63 @@ func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.
 	}
 
 	return errs
+}
+
+// checkContents reads every entry, checking its CRC-32 and, for a text
+// file, §6.6's CRLF normalization. Decompressing an entry uses one core,
+// so entries are read concurrently, one per CPU; errors are returned by
+// entry, in names' order. An entry in crcChecked isn't read again unless
+// it is a text file.
+func checkContents(names []string, byName map[string]*zip.File, crcChecked map[string]error) [][]error {
+	out := make([][]error, len(names))
+	next := make(chan int)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	done := 0
+	for range min(runtime.GOMAXPROCS(0), max(len(names), 1)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range next {
+				out[i] = checkContent(names[i], byName[names[i]], crcChecked)
+				mu.Lock()
+				done++
+				status.Count(done, len(names))
+				mu.Unlock()
+			}
+		}()
+	}
+	for i := range names {
+		next <- i
+	}
+	close(next)
+	wg.Wait()
+	return out
+}
+
+// checkContent is checkContents for one entry.
+func checkContent(name string, f *zip.File, crcChecked map[string]error) []error {
+	// Only a file named like a text file (§6.6) needs its content in
+	// memory; every other entry is streamed, which still checks its
+	// CRC-32, so a large disc image costs no memory.
+	if !build.IsTextFile(name, nil) {
+		err, checked := crcChecked[name]
+		if !checked {
+			err = checkCRC(f)
+		}
+		if err != nil {
+			return []error{fmt.Errorf("%s: %w", name, err)}
+		}
+		return nil
+	}
+	content, err := readZipFile(f)
+	if err != nil {
+		return []error{fmt.Errorf("%s: %w", name, err)}
+	}
+	if build.IsTextFile(name, content) && !bytes.Equal(content, build.NormalizeCRLF(content)) {
+		return []error{fmt.Errorf("%s: not CRLF-normalized (§6.6)", name)}
+	}
+	return nil
 }
 
 // checkGenerated checks a §6.8 file the [[input.pad]] mapping implies:

@@ -56,7 +56,7 @@ func collect(sourceDir string, m *manifest.Manifest, tempDir string, tempFiles *
 		return nil, nil, fmt.Errorf("collect: %w", err)
 	}
 
-	media, warnings, err := locateMedia(result, m.Source.Media, m.Extract)
+	media, warnings, err := locateMedia(result, m.Source.Media, m.Extract, &teeTarget{dir: tempDir, files: tempFiles})
 	if err != nil {
 		return nil, warnings, err
 	}

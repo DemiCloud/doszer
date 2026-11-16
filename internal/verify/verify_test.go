@@ -587,3 +587,43 @@ func TestVerifyRejectsStaleInputPadFiles(t *testing.T) {
 		})
 	}
 }
+
+func TestVerifyDetectsCorruptDiscImage(t *testing.T) {
+	// The ISO is read through by the media check (§7.3), whose CRC-32
+	// result verify reuses instead of reading it again: damage must still
+	// be an error, not only a media warning.
+	iso := bytes.Repeat([]byte("ISO user data. "), 2048)
+	sum := sha1.Sum(iso)
+	dir := t.TempDir()
+	writeFile(t, dir, "DOSZ.TOML", plainManifest+`
+[[source.media]]
+id     = "disc1"
+tracks = [{ type = "data", sha1 = "`+hex.EncodeToString(sum[:])+`" }]
+
+[pack]
+store = ["iso"]
+`)
+	writeFile(t, dir, "GAME.EXE", "binary")
+	writeFile(t, dir, "Test Game.iso", string(iso))
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := build.Run(build.Options{SourceDir: dir, OutputPath: out}); err != nil {
+		t.Fatalf("build.Run: %v", err)
+	}
+	if err := verify.Verify(out); err != nil {
+		t.Fatalf("Verify before damage: %v", err)
+	}
+
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := bytes.Index(data, []byte("ISO user data."))
+	copy(data[i+5000:], "DAMAGE")
+	if err := os.WriteFile(out, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = verify.Verify(out)
+	if err == nil || !strings.Contains(err.Error(), "Test Game.iso: zip: checksum error") {
+		t.Fatalf("Verify = %v, want a checksum error for the ISO", err)
+	}
+}

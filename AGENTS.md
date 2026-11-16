@@ -260,6 +260,17 @@ share to the build's temp directory first. A synthetic 225 MB, 16-track
 deflated BIN/CUE repacked in 3.5s instead of 20.5s, byte-identical
 (`TestStreamedSourceDecompressedOnce` counts the bytes read).
 
+Tracks on disk are hashed concurrently (`verifyTracks`, `IdentifyMedia`);
+an image in a compressed entry stays in order, for the reason above. For
+a media an `[[extract]]` reads, `locateMedia` copies the first data track
+to a temp file while hashing it (`teeTarget`), and a data track that is
+already 2048-byte sectors on disk is extracted from in place
+(`directISO`), so neither is read twice. `verify` reuses the CRC-32
+result of every entry `build.ArchiveMedia` read through (`endChecker`
+reads one byte past the end, since `archive/zip` checks only at
+`io.EOF`), then checks the rest concurrently: a synthetic 297 MB archive
+(300 files, two 16-track discs) verified in 2.1s instead of 4.6s.
+
 ## Next steps
 
 1. Finish the live `install` test against real DOSBox Pure. Passed

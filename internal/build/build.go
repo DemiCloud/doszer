@@ -149,7 +149,7 @@ func Repack(entries map[string]Entry, m *manifest.Manifest, opts Options) (*Resu
 	}
 	// The archive's disc images are verified as a source's would be (§7.3);
 	// [[extract]] already happened, so a missing media is only a warning.
-	_, mediaWarnings, err := locateMedia(fs, m.Source.Media, nil)
+	_, mediaWarnings, err := locateMedia(fs, m.Source.Media, nil, nil)
 	if err != nil {
 		return nil, err
 	}
