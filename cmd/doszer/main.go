@@ -146,7 +146,6 @@ func parse(fs *pflag.FlagSet, args []string, help string, min, max int) (ok bool
 	return true, nil
 }
 
-// logError writes a timestamped error to stderr.
 // endSteps ends the step a command was showing (status), as completed
 // unless err, before the command prints its results.
 func endSteps(err error) {
@@ -157,6 +156,7 @@ func endSteps(err error) {
 	}
 }
 
+// logError writes a timestamped error to stderr.
 func logError(err error) {
 	fmt.Fprintf(os.Stderr, "[%s] ERROR: %v\n", time.Now().Format("2006-01-02 15:04:05"), err)
 }

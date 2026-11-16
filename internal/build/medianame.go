@@ -33,7 +33,7 @@ func renameMediaCue(fs *fileSet, media []manifest.Media, boot *manifest.Boot, ef
 			continue
 		}
 		e, _ := fs.get(p)
-		data, err := e.bytes()
+		data, err := e.peek()
 		if err != nil {
 			return fmt.Errorf("%s: %w", p, err)
 		}
@@ -48,7 +48,21 @@ func renameMediaCue(fs *fileSet, media []manifest.Media, boot *manifest.Boot, ef
 	multi := len(media) > 1
 
 	for _, m := range media {
-		for _, c := range candidates {
+		newName := effectiveName
+		if multi {
+			newName = fmt.Sprintf("%s (%s)", effectiveName, m.ID)
+		}
+		// A matching sheet that already has the name comes first, so
+		// another match isn't renamed onto it.
+		ordered := make([]candidate, 0, len(candidates))
+		for _, named := range []bool{true, false} {
+			for _, c := range candidates {
+				if strings.EqualFold(path.Base(c.path), newName+".cue") == named {
+					ordered = append(ordered, c)
+				}
+			}
+		}
+		for _, c := range ordered {
 			if used[c.path] {
 				continue
 			}
@@ -56,15 +70,14 @@ func renameMediaCue(fs *fileSet, media []manifest.Media, boot *manifest.Boot, ef
 				continue
 			}
 
-			newName := effectiveName
-			if multi {
-				newName = fmt.Sprintf("%s (%s)", effectiveName, m.ID)
-			}
 			// Same directory: the sheet's FILE names are relative to it.
 			newPath := path.Join(path.Dir(c.path), newName+".cue")
 
 			used[c.path] = true
 			if !strings.EqualFold(c.path, newPath) {
+				if _, exists := fs.get(newPath); exists {
+					return fmt.Errorf("%s: renaming it to %s would replace an existing file (§6.4)", c.path, newPath)
+				}
 				e, _ := fs.get(c.path)
 				fs.delete(c.path)
 				fs.set(newPath, e)

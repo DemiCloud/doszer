@@ -94,9 +94,15 @@ func Run(opts Options) (*build.Result, error) {
 	}
 
 	// §6.1's final layering step: [[file]] entries replace a collected
-	// file at the same path, same as build's collect(). A [[file]] entry
-	// has no source of its own, so it gets the fixed epoch (§8.2).
+	// file at the same path (case-insensitively, §2), same as build's
+	// collect(). A [[file]] entry has no source of its own, so it gets the
+	// fixed epoch (§8.2).
 	for _, f := range m.File {
+		for p := range entries {
+			if strings.EqualFold(p, f.Path) {
+				delete(entries, p)
+			}
+		}
 		entries[f.Path] = build.Entry{Data: []byte(*f.Text), Modified: build.Epoch}
 	}
 

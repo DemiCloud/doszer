@@ -69,6 +69,7 @@ type Result struct {
 
 	Converted     []Conversion // Disc images §6.4 converted or renamed.
 	MediaWarnings []string     // media §7.3 could not find or fully verify; CUE sheets §6.4 could not convert.
+	PathWarnings  []string     // collected paths differing only in case (§2), of which one was kept.
 
 	Suggestions      []string // Rewrite rules suggested to cover paths flatten changed.
 	BinaryReferences []string // Binary files referencing a path flatten changed.
@@ -88,7 +89,8 @@ type Move struct {
 
 // Warnings returns every §11 SHOULD-warn condition hit during the build.
 func (r *Result) Warnings() []string {
-	w := append(append([]string{}, r.TrimWarnings...), r.RewriteWarnings...)
+	w := append(append([]string{}, r.PathWarnings...), r.TrimWarnings...)
+	w = append(w, r.RewriteWarnings...)
 	return append(w, r.MediaWarnings...)
 }
 
@@ -109,12 +111,12 @@ func Run(opts Options) (*Result, error) {
 	}()
 	// Beside the output, like runPipeline's temporary files: an extracted
 	// data track can be hundreds of megabytes, and /tmp may be RAM-backed.
-	fs, mediaWarnings, err := collect(opts.SourceDir, m, filepath.Dir(opts.OutputPath), &tempFiles)
+	fs, pathWarnings, mediaWarnings, err := collect(opts.SourceDir, m, filepath.Dir(opts.OutputPath), &tempFiles)
 	if err != nil {
 		return nil, err
 	}
 
-	return runPipeline(fs, m, opts, mediaWarnings)
+	return runPipeline(fs, m, opts, pathWarnings, mediaWarnings)
 }
 
 // Entry is one already-collected file for Repack: its content and the
@@ -137,14 +139,20 @@ type Entry struct {
 // `doszer repack` to rebuild an archive from nothing but its own embedded
 // manifest, treating the archive's own content as the collected build.
 // entries' keys are archive-relative paths; DOSZ.TOML must not be among
-// them (§6.1 excludes it from collect, same as a source directory).
+// them (§6.1 excludes it from collect, same as a source directory). Of two
+// keys differing only in case, the later in sorted order is kept, with a
+// warning.
 func Repack(entries map[string]Entry, m *manifest.Manifest, opts Options) (*Result, error) {
 	fs := newFileSet()
-	for p, e := range entries {
+	var pathWarnings []string
+	for _, p := range sortedKeys(entries) {
+		e := entries[p]
+		fe := dataEntry(e.Data, e.Modified)
 		if e.Source != nil {
-			fs.set(p, sourceEntry(e.Source, e.Modified))
-		} else {
-			fs.set(p, dataEntry(e.Data, e.Modified))
+			fe = sourceEntry(e.Source, e.Modified)
+		}
+		if w := fs.collected(p, fe); w != "" {
+			pathWarnings = append(pathWarnings, w)
 		}
 	}
 	// The archive's disc images are verified as a source's would be (§7.3);
@@ -153,12 +161,13 @@ func Repack(entries map[string]Entry, m *manifest.Manifest, opts Options) (*Resu
 	if err != nil {
 		return nil, err
 	}
-	return runPipeline(fs, m, opts, mediaWarnings)
+	return runPipeline(fs, m, opts, pathWarnings, mediaWarnings)
 }
 
 // runPipeline runs §6.2 onward against fs, shared by Run and Repack.
-// mediaWarnings are §7.3's, from verifying fs's media.
-func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, mediaWarnings []string) (_ *Result, err error) {
+// pathWarnings are collect's (fileSet.collected), mediaWarnings §7.3's,
+// from verifying fs's media.
+func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, pathWarnings, mediaWarnings []string) (_ *Result, err error) {
 	effectiveName := m.Name
 	if opts.Name != "" {
 		effectiveName = opts.Name
@@ -169,7 +178,7 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, mediaWarnings 
 		outputPath = effectiveName + ".dosz"
 	}
 
-	res := &Result{Manifest: m, EffectiveName: effectiveName, OutputPath: outputPath, fs: fs}
+	res := &Result{Manifest: m, EffectiveName: effectiveName, OutputPath: outputPath, PathWarnings: pathWarnings, fs: fs}
 
 	status.Step("Applying the manifest")
 	res.Trimmed, res.TrimWarnings = trim(fs, m.Layout.Trim)

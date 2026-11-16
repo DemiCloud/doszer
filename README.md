@@ -75,6 +75,12 @@ ZIP comment, which `unzip -z` and most archive tools show. It is outside
 the specification's reproducibility rules (§8.4): two builds of the same
 source differ only there, and `verify` ignores it.
 
+Paths match case-insensitively (spec §2), so two source files or archive
+entries whose paths differ only in case are one file: `build` and `repack`
+keep the one that sorts last (e.g. `readme.txt` over `README.TXT`) and
+warn (a failure under `--strict`). A `[[file]]` entry replaces a file at
+its path whatever the case.
+
 The default output is `<name>.dosz` in the current directory. `--name`
 overrides the manifest's `name`, which defaults to the source directory name.
 

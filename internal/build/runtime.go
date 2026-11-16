@@ -93,7 +93,7 @@ func addRuntimeFiles(fs *fileSet, m *manifest.Manifest, effectiveName string) er
 
 	var existing []byte
 	if e, ok := fs.get("DOS.YML"); ok {
-		b, err := e.bytes()
+		b, err := e.peek()
 		if err != nil {
 			return fmt.Errorf("DOS.YML: %w", err)
 		}

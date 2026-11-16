@@ -290,12 +290,12 @@ func (m *Manifest) validate() []error {
 		add("boot: at most one of exec, shell and os may be set")
 	}
 
-	for key, value := range map[string]string{"boot.shell": m.Boot.Shell, "boot.os": m.Boot.OS} {
-		if value == "" {
+	for _, kv := range [][2]string{{"boot.shell", m.Boot.Shell}, {"boot.os", m.Boot.OS}} {
+		if kv[1] == "" {
 			continue
 		}
-		if err := checkSystemPath(value); err != nil {
-			add("%s: %v", key, err)
+		if err := checkSystemPath(kv[1]); err != nil {
+			add("%s: %v", kv[0], err)
 		}
 	}
 

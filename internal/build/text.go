@@ -39,7 +39,7 @@ func normalizeText(fs *fileSet) error {
 			continue
 		}
 		e, _ := fs.get(p)
-		content, err := e.bytes()
+		content, err := e.peek()
 		if err != nil {
 			return err
 		}

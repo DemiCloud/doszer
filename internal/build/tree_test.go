@@ -3,6 +3,7 @@ package build
 import (
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -132,5 +133,21 @@ func TestFlattenKeepsCaseVariantSiblings(t *testing.T) {
 	fs := newTestSet("Data/a.txt", "DATA/b.txt")
 	if _, _, err := flatten(fs, true); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCollectedWarnsOnCaseDuplicates(t *testing.T) {
+	fs := newFileSet()
+	if w := fs.collected("GAME/README.TXT", dataEntry([]byte("a"), Epoch)); w != "" {
+		t.Errorf("first path warned: %s", w)
+	}
+	if w := fs.collected("GAME/A.TXT", dataEntry([]byte("b"), Epoch)); w != "" {
+		t.Errorf("unrelated path warned: %s", w)
+	}
+	if w := fs.collected("game/readme.txt", dataEntry([]byte("c"), Epoch)); !strings.Contains(w, "GAME/README.TXT and game/readme.txt") {
+		t.Errorf("warning = %q", w)
+	}
+	if got := strings.Join(fs.paths(), ","); got != "GAME/A.TXT,game/readme.txt" {
+		t.Errorf("paths = %s", got)
 	}
 }

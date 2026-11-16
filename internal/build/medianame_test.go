@@ -115,3 +115,30 @@ func TestRenameMediaCueKeepsDirectory(t *testing.T) {
 		t.Fatalf("want CD/Example Game.cue, got %v", fs.paths())
 	}
 }
+
+func TestRenameMediaCueCollisions(t *testing.T) {
+	sheet := []byte("FILE \"T.BIN\" BINARY\n  TRACK 01 MODE1/2048\n    INDEX 01 00:00:00\n")
+	media := []manifest.Media{{ID: "disc1", Tracks: []manifest.Track{{Type: manifest.TrackData, SHA1: strings.Repeat("a", 40)}}}}
+
+	t.Run("matching sheet already named", func(t *testing.T) {
+		// AAA.cue sorts first but must not be renamed onto Example Game.cue.
+		fs := newFileSet()
+		fs.set("AAA.cue", dataEntry(sheet, Epoch))
+		fs.set("Example Game.cue", dataEntry(sheet, Epoch))
+		if err := renameMediaCue(fs, media, &manifest.Boot{}, "Example Game"); err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Join(fs.paths(), ","); got != "AAA.cue,Example Game.cue" {
+			t.Errorf("paths = %s", got)
+		}
+	})
+
+	t.Run("unrelated file in the way", func(t *testing.T) {
+		fs := newFileSet()
+		fs.set("Game (USA).cue", dataEntry(sheet, Epoch))
+		fs.set("EXAMPLE GAME.CUE", dataEntry([]byte("not a cue sheet"), Epoch))
+		if err := renameMediaCue(fs, media, &manifest.Boot{}, "Example Game"); err == nil {
+			t.Fatalf("renamed over an existing file; paths %v", fs.paths())
+		}
+	})
+}

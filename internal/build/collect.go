@@ -20,11 +20,15 @@ import (
 // Files extracted from media stay in temporary images created in tempDir
 // and appended to *tempFiles, which the caller removes once the archive is
 // written.
-func collect(sourceDir string, m *manifest.Manifest, tempDir string, tempFiles *[]*os.File) (*fileSet, []string, error) {
+//
+// Two source files whose paths differ only in case (possible on a
+// case-sensitive file system) are one file to §2: the later in walk
+// order, which is lexical, is kept, and pathWarnings names both.
+func collect(sourceDir string, m *manifest.Manifest, tempDir string, tempFiles *[]*os.File) (_ *fileSet, pathWarnings, mediaWarnings []string, err error) {
 	status.Step("Collecting files")
 	result := newFileSet()
 
-	err := filepath.WalkDir(sourceDir, func(p string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(sourceDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -49,26 +53,28 @@ func collect(sourceDir string, m *manifest.Manifest, tempDir string, tempFiles *
 		if err != nil {
 			return err
 		}
-		result.set(rel, diskEntry(abs, info.ModTime()))
+		if w := result.collected(rel, diskEntry(abs, info.ModTime())); w != "" {
+			pathWarnings = append(pathWarnings, w)
+		}
 		return nil
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("collect: %w", err)
+		return nil, nil, nil, fmt.Errorf("collect: %w", err)
 	}
 
-	media, warnings, err := locateMedia(result, m.Source.Media, m.Extract, &teeTarget{dir: tempDir, files: tempFiles})
+	media, mediaWarnings, err := locateMedia(result, m.Source.Media, m.Extract, &teeTarget{dir: tempDir, files: tempFiles})
 	if err != nil {
-		return nil, warnings, err
+		return nil, pathWarnings, mediaWarnings, err
 	}
 	if err := applyExtracts(result, media, m.Extract, tempDir, tempFiles); err != nil {
-		return nil, warnings, err
+		return nil, pathWarnings, mediaWarnings, err
 	}
 
 	for _, f := range m.File {
 		result.set(f.Path, dataEntry([]byte(*f.Text), Epoch))
 	}
 
-	return result, warnings, nil
+	return result, pathWarnings, mediaWarnings, nil
 }
 
 // trim removes files matching any pattern (§6.2), warning per §11 on a

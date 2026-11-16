@@ -709,3 +709,67 @@ func TestRepackInPlace(t *testing.T) {
 		t.Errorf("temporary files left behind: %v", left)
 	}
 }
+
+// legacyArchive writes a plain ZIP (not built by doszer) with the given
+// entries, in order.
+func legacyArchive(t *testing.T, entries [][2]string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "legacy.zip")
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, e := range entries {
+		w, err := zw.Create(e[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Write([]byte(e[1]))
+	}
+	zw.Close()
+	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestRepackCaseDuplicates(t *testing.T) {
+	manifestPath := filepath.Join(t.TempDir(), "DOSZ.TOML")
+	writeFile(t, filepath.Dir(manifestPath), "DOSZ.TOML", "format = 1\nname = \"Case Game\"\n\n[[file]]\npath = \"SETUP.CFG\"\ntext = \"from the manifest\"\n")
+
+	// Both orders of the archive's entries must give the same result: one
+	// README kept with a warning, and the [[file]] entry replacing the
+	// archive's differently-cased setup.cfg.
+	for _, order := range [][][2]string{
+		{{"readme.txt", "lower"}, {"README.TXT", "upper"}, {"setup.cfg", "archive"}},
+		{{"setup.cfg", "archive"}, {"README.TXT", "upper"}, {"readme.txt", "lower"}},
+	} {
+		out := filepath.Join(t.TempDir(), "out.dosz")
+		res, err := repack.Run(repack.Options{InputPath: legacyArchive(t, order), OutputPath: out, ManifestPath: manifestPath})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(res.PathWarnings) != 1 || !strings.Contains(res.PathWarnings[0], "keeping readme.txt") {
+			t.Errorf("PathWarnings = %q, want one keeping readme.txt", res.PathWarnings)
+		}
+		entries := readZip(t, out)
+		if f, ok := entries["readme.txt"]; !ok || readZipFile(t, f) != "lower" {
+			t.Errorf("readme.txt missing or wrong; entries %v", keys(entries))
+		}
+		if _, ok := entries["README.TXT"]; ok {
+			t.Error("README.TXT kept alongside readme.txt")
+		}
+		if f, ok := entries["SETUP.CFG"]; !ok || readZipFile(t, f) != "from the manifest" {
+			t.Errorf("SETUP.CFG missing or not the [[file]] entry; entries %v", keys(entries))
+		}
+		if _, ok := entries["setup.cfg"]; ok {
+			t.Error("the archive's setup.cfg kept alongside the [[file]] entry")
+		}
+	}
+}
+
+func keys(m map[string]*zip.File) []string {
+	var out []string
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}

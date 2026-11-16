@@ -331,7 +331,7 @@ func resolveImage(fs *fileSet, p string) ([]cue.ResolvedTrack, error) {
 		sheet = isoSheet(path.Base(p))
 	} else {
 		e, _ := fs.get(p)
-		data, err := e.bytes()
+		data, err := e.peek()
 		if err != nil {
 			return nil, err
 		}

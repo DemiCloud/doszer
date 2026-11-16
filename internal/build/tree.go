@@ -315,6 +315,19 @@ func (fs *fileSet) set(path string, e *fileEntry) {
 	fs.index[lower] = path
 }
 
+// collected adds path like set, for a file collected from a source
+// directory or an archive, where two paths differing only in case are two
+// files that §2 says are one. The later one is kept, so callers add paths
+// in sorted order, and a warning is returned naming both; else "".
+func (fs *fileSet) collected(path string, e *fileEntry) string {
+	var warning string
+	if existing, ok := fs.index[strings.ToLower(path)]; ok && existing != path {
+		warning = fmt.Sprintf("%s and %s differ only in case, which names one file (§2): keeping %s", existing, path, path)
+	}
+	fs.set(path, e)
+	return warning
+}
+
 func (fs *fileSet) delete(path string) {
 	lower := strings.ToLower(path)
 	if existing, ok := fs.index[lower]; ok {

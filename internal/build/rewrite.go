@@ -29,7 +29,7 @@ func applyRewrite(fs *fileSet, rules []manifest.Rewrite) ([]RewriteHit, []string
 			}
 
 			e, _ := fs.get(p)
-			content, err := e.bytes()
+			content, err := e.peek()
 			if err != nil {
 				return nil, nil, err
 			}

@@ -124,7 +124,7 @@ func convertMedia(fs *fileSet, audio string, oggQuality int, dryRun bool, tmpDir
 // if it is a CUE sheet that can't be converted (reported as a warning).
 func planSheet(fs *fileSet, cuePath, audio string) (*sheetPlan, []*mediaJob, error) {
 	cueEntry, _ := fs.get(cuePath)
-	data, err := cueEntry.bytes()
+	data, err := cueEntry.peek()
 	if err != nil {
 		return nil, nil, err
 	}

@@ -253,3 +253,39 @@ func TestLocateMediaRemovesUnmatchedTee(t *testing.T) {
 		}
 	}
 }
+
+func TestInspectedEntriesStayRaw(t *testing.T) {
+	// Reading an entry only to decide nothing changes must leave it
+	// eligible for writeArchive's raw pass-through.
+	var read atomic.Int64
+	src := func(s string) *fileEntry { return sourceEntry(countingSource([]byte(s), &read), Epoch) }
+	fs := newFileSet()
+	fs.set("GAME.BAT", src("@ECHO OFF\r\nGAME\r\n")) // already §6.6-normalized
+	fs.set("SETUP.CFG", src("sound=sb16\r\n"))       // matched by a rule, not changed
+	fs.set("EDIT.CFG", src("path=C:\\GAME\\\r\n"))   // changed by it
+	fs.set("DOS.YML", src("cycles: max\r\n"))        // no [[input.pad]]: left alone
+	fs.set("GAME.CUE", src("FILE \"GAME.iso\" BINARY\r\n  TRACK 01 MODE1/2048\r\n    INDEX 01 00:00:00\r\n"))
+	fs.set("GAME.iso", dataEntry(bytes.Repeat([]byte{1}, 2048), Epoch))
+
+	if err := normalizeText(fs); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := applyRewrite(fs, []manifest.Rewrite{{From: `C:\GAME\`, To: `C:\`, Files: []string{"*.CFG"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := convertMedia(fs, manifest.AudioOgg, 6, false, tempDirFunc(t)); err != nil {
+		t.Fatal(err)
+	}
+	m := &manifest.Manifest{Format: 1, Name: "Game"}
+	if err := addRuntimeFiles(fs, m, "Game"); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"GAME.BAT", "SETUP.CFG", "DOS.YML", "GAME.CUE"} {
+		if e, _ := fs.get(p); e.rawPassthrough() == nil {
+			t.Errorf("%s: no longer passed through raw", p)
+		}
+	}
+	if e, _ := fs.get("EDIT.CFG"); e.rawPassthrough() != nil || string(e.data) != "path=C:\\\r\n" {
+		t.Errorf("EDIT.CFG: not rewritten: %q", e.data)
+	}
+}
