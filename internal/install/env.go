@@ -21,10 +21,16 @@ type Env struct {
 	SystemDir string
 	SaveDir   string
 	wsl       bool // Exe is a Windows program run from WSL
+
+	// settings, when the system or save directory was given rather than
+	// read from DOSBox Pure's configuration: that configuration (empty if
+	// there is none), which Run passes on with both directories set.
+	settings map[string]any
 }
 
 // Discover fills in Env for exe. systemDir and saveDir override what
-// DOSBox Pure's own configuration says. Otherwise they are read the way
+// DOSBox Pure's own configuration says, for doszer and for the DOSBox Pure
+// it runs (Run). Otherwise they are read the way
 // standalone DOSBox Pure resolves them (dosbox-pure-unleashed main.cpp,
 // sDOSBoxPure::Load) when started from its own directory, as install does:
 // DOSBoxPure.cfg in that directory, its path_system/path_saves settings,
@@ -42,31 +48,43 @@ func Discover(exe, systemDir, saveDir string) (Env, error) {
 	}
 	e := Env{Exe: exe, wsl: runningWSLWindowsExe(exe)}
 
-	if systemDir == "" || saveDir == "" {
-		dir := filepath.Dir(exe)
-		data, err := os.ReadFile(filepath.Join(dir, "DOSBoxPure.cfg"))
-		if err != nil {
-			return Env{}, fmt.Errorf("no DOSBoxPure.cfg beside %s to locate its system and save directories (set system_dir and save_dir): %w", exe, err)
+	given := systemDir != "" || saveDir != ""
+	for _, d := range []string{systemDir, saveDir} {
+		if d == "" {
+			continue
 		}
-		var cfg map[string]any
+		if fi, err := os.Stat(d); err != nil || !fi.IsDir() {
+			return Env{}, fmt.Errorf("%s: not a directory", d)
+		}
+	}
+	dir := filepath.Dir(exe)
+	cfg := map[string]any{}
+	data, err := os.ReadFile(filepath.Join(dir, "DOSBoxPure.cfg"))
+	switch {
+	case err == nil:
 		if err := json.Unmarshal(data, &cfg); err != nil {
 			return Env{}, fmt.Errorf("DOSBoxPure.cfg: %w", err)
 		}
-		resolve := func(key, fallback string) (string, error) {
-			if v, ok := cfg[key].(string); ok && v != "" {
-				return e.hostPath(v, dir)
-			}
-			return filepath.Join(dir, fallback), nil
+	case systemDir == "" || saveDir == "":
+		return Env{}, fmt.Errorf("no DOSBoxPure.cfg beside %s to locate its system and save directories (set system_dir and save_dir): %w", exe, err)
+	}
+	if given {
+		e.settings = cfg
+	}
+	resolve := func(key, fallback string) (string, error) {
+		if v, ok := cfg[key].(string); ok && v != "" {
+			return e.hostPath(v, dir)
 		}
-		if systemDir == "" {
-			if systemDir, err = resolve("path_system", "system"); err != nil {
-				return Env{}, err
-			}
+		return filepath.Join(dir, fallback), nil
+	}
+	if systemDir == "" {
+		if systemDir, err = resolve("path_system", "system"); err != nil {
+			return Env{}, err
 		}
-		if saveDir == "" {
-			if saveDir, err = resolve("path_saves", "saves"); err != nil {
-				return Env{}, err
-			}
+	}
+	if saveDir == "" {
+		if saveDir, err = resolve("path_saves", "saves"); err != nil {
+			return Env{}, err
 		}
 	}
 	e.SystemDir, e.SaveDir = systemDir, saveDir
@@ -111,19 +129,52 @@ func (e Env) exePath(p string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// Run starts DOSBox Pure on content and waits for it to exit. It runs in
-// DOSBox Pure's own directory so the DOSBoxPure.cfg there is the one used
-// (standalone DOSBox Pure prefers one in the working directory).
-func (e Env) Run(content string) error {
+// Run starts DOSBox Pure on content and waits for it to exit. Standalone
+// DOSBox Pure uses the DOSBoxPure.cfg in its working directory if there is
+// one (dosbox-pure-unleashed main.cpp, sDOSBoxPure::Load), and takes its
+// system and save directories from that file's path_system/path_saves. So
+// it runs in its own directory, using its own configuration, unless
+// Discover was given a directory: then it runs in workDir, with a copy of
+// that configuration naming both directories.
+func (e Env) Run(content, workDir string) error {
 	arg, err := e.exePath(content)
 	if err != nil {
 		return err
 	}
 	cmd := exec.Command(e.Exe, arg)
 	cmd.Dir = filepath.Dir(e.Exe)
+	if e.settings != nil {
+		if err := e.writeSettings(workDir); err != nil {
+			return err
+		}
+		cmd.Dir = workDir
+	}
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("DOSBox Pure: %w", err)
 	}
 	return nil
+}
+
+// writeSettings writes the DOSBoxPure.cfg Run uses in dir: DOSBox Pure's
+// own settings, with the system and save directories Discover settled on.
+func (e Env) writeSettings(dir string) error {
+	cfg := make(map[string]any, len(e.settings)+2)
+	for k, v := range e.settings {
+		cfg[k] = v
+	}
+	for key, p := range map[string]string{"path_system": e.SystemDir, "path_saves": e.SaveDir} {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return err
+		}
+		if cfg[key], err = e.exePath(abs); err != nil {
+			return err
+		}
+	}
+	data, err := json.MarshalIndent(cfg, "", "\t")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "DOSBoxPure.cfg"), data, 0o644)
 }

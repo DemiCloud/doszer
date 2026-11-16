@@ -41,6 +41,7 @@ internal/fat/        FAT12/16/32 reader with long names, as an io/fs.FS, for ins
 internal/vdisk/      DOSBox Pure's synthesized D: disk + .sav diffs (D: and -CDRIVE), for install
 internal/install/    doszer install: session content, launching DOSBox Pure, diffing, extraction
 internal/interrupt/  removes registered temporary paths on SIGINT/SIGTERM
+internal/status/     terminal progress: current step with a spinner, finished steps
 examples/            complete example manifests (checked by internal/manifest's TestExamples)
 Makefile             build/test/vet/install/release (see `make help`)
 spec/MANIFEST.md     The specification (normative)

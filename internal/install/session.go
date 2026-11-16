@@ -12,6 +12,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/status"
 	"github.com/DemiCloud/doszer/internal/vdisk"
 	"github.com/DemiCloud/doszer/internal/zipw"
 )
@@ -46,6 +47,7 @@ var sessionExcluded = []string{manifest.FileName, "AUTOBOOT.DBP", "FRONTEND.DBP"
 // OS image or shell (the plain model starts at DOSBox Pure's start menu,
 // to run the installer from) and, for an OS image, FRONTEND.DBP.
 func Prepare(source string, m *manifest.Manifest) (*Session, error) {
+	status.Step("Packing the source for the session")
 	abs, err := filepath.Abs(source)
 	if err != nil {
 		return nil, err

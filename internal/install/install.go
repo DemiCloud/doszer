@@ -13,6 +13,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/fat"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/status"
 	"github.com/DemiCloud/doszer/internal/vdisk"
 	"github.com/DemiCloud/doszer/internal/vhd"
 )
@@ -183,10 +184,12 @@ func runSession(opts Options, m *manifest.Manifest) (*Report, error) {
 		return nil, err
 	}
 	defer s.Close()
-	if err := env.Run(s.Content); err != nil {
+	status.Step("DOSBox Pure is running: install the game, then close DOSBox Pure")
+	if err := env.Run(s.Content, s.Dir); err != nil {
 		return nil, err
 	}
 
+	status.Step("Reading the session's changes")
 	rep := &Report{Skipped: s.Skipped}
 	var saves []string
 	switch s.Model {

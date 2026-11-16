@@ -15,6 +15,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/status"
 )
 
 // Verify checks archivePath and returns every way it fails to conform, or
@@ -28,6 +29,7 @@ func Verify(archivePath string) error {
 // archive can have but that are worth knowing, such as a declared media
 // its disc images don't match (§7.3).
 func Check(archivePath string) (warnings []string, err error) {
+	status.Step("Checking %s", filepath.Base(archivePath))
 	r, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", archivePath, err)

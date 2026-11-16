@@ -24,6 +24,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/status"
 )
 
 // Options configures a repack.
@@ -42,6 +43,7 @@ type Options struct {
 // archive's embedded one - treats the archive's own entries as the
 // collected build, and runs §6.2 onward (build.Repack).
 func Run(opts Options) (*build.Result, error) {
+	status.Step("Reading %s", filepath.Base(opts.InputPath))
 	r, err := zip.OpenReader(opts.InputPath)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", opts.InputPath, err)

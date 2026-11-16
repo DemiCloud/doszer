@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -239,8 +240,48 @@ func TestDiscover(t *testing.T) {
 	if e.SystemDir != filepath.Join(dir, "system") || e.SaveDir != filepath.Join(dir, "mysaves") {
 		t.Fatalf("dirs %s %s", e.SystemDir, e.SaveDir)
 	}
-	if e, _ := Discover(exe, "/sys", "/saves"); e.SystemDir != "/sys" || e.SaveDir != "/saves" {
+	if e.settings != nil {
+		t.Fatal("DOSBox Pure's own directories would be overridden")
+	}
+
+	sys, saves := t.TempDir(), t.TempDir()
+	e, err = Discover(exe, sys, saves)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.SystemDir != sys || e.SaveDir != saves {
 		t.Fatal("explicit dirs ignored")
+	}
+	if _, err := Discover(exe, filepath.Join(sys, "missing"), ""); err == nil {
+		t.Fatal("missing system directory accepted")
+	}
+
+	// Run hands the given directories to DOSBox Pure, keeping its other
+	// settings.
+	work := t.TempDir()
+	if err := e.writeSettings(work); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(work, "DOSBoxPure.cfg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg["path_system"] != sys || cfg["path_saves"] != saves || cfg["interface_contentpath"] != "x" {
+		t.Fatalf("DOSBoxPure.cfg: %s", data)
+	}
+
+	// Only the system directory given: the saves still come from DOSBox
+	// Pure's configuration, and both are passed on.
+	e, err = Discover(exe, sys, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.SaveDir != filepath.Join(dir, "mysaves") || e.settings == nil {
+		t.Fatalf("save dir %s, settings %v", e.SaveDir, e.settings)
 	}
 }
 

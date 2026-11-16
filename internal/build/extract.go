@@ -11,6 +11,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/iso9660"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/status"
 )
 
 // applyExtracts performs every [[extract]] entry, in order (§5.7, §6.1):
@@ -22,6 +23,9 @@ import (
 // images are appended to *tempFiles for the caller to remove once the
 // archive is written.
 func applyExtracts(fs *fileSet, media map[string]resolvedMedia, extracts []manifest.Extract, tempFiles *[]*os.File) error {
+	if len(extracts) > 0 {
+		status.Step("Extracting files from disc images")
+	}
 	images := map[string]*iso9660.Image{}
 	paths := map[string]string{}
 

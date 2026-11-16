@@ -16,6 +16,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/status"
 	"github.com/DemiCloud/doszer/internal/zipw"
 )
 
@@ -168,6 +169,7 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, mediaWarnings 
 
 	res := &Result{Manifest: m, EffectiveName: effectiveName, OutputPath: outputPath, fs: fs}
 
+	status.Step("Applying the manifest")
 	res.Trimmed, res.TrimWarnings = trim(fs, m.Layout.Trim)
 
 	moved, dropped := flatten(fs, m.Layout.Flatten)
@@ -268,6 +270,7 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, mediaWarnings 
 	if opts.Provenance != nil {
 		comment = opts.Provenance.Comment(res.EffectiveName, m.Format)
 	}
+	status.Step("Writing %s", filepath.Base(outputPath))
 	if err := writeArchive(fs, m, out, dir, comment); err != nil {
 		out.Close()
 		return res, err
@@ -352,6 +355,7 @@ func writeArchive(fs *fileSet, m *manifest.Manifest, w io.Writer, spoolDir, comm
 	}()
 
 	var err error
+	written := 0
 	for j := range jobs {
 		if err != nil {
 			// Release whatever was already being prepared.
@@ -372,6 +376,8 @@ func writeArchive(fs *fileSet, m *manifest.Manifest, w io.Writer, spoolDir, comm
 		if j.raw == nil {
 			<-slots
 		}
+		written++
+		status.Count(written, len(paths))
 	}
 	if err != nil {
 		return err

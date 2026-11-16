@@ -13,6 +13,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/cue"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/status"
 )
 
 // resolvedMedia is a declared [[source.media]] entry matched to the disc
@@ -69,6 +70,7 @@ func locateMedia(fs *fileSet, declared []manifest.Media, extracts []manifest.Ext
 	if len(declared) == 0 {
 		return nil, nil, nil
 	}
+	status.Step("Identifying disc images")
 	images, unreadable := discImages(fs)
 	used := map[string]bool{}
 	for _, ex := range extracts {
@@ -270,6 +272,7 @@ func IdentifyMedia(sourceDir string) (media []manifest.Media, skipped []string, 
 	seen := map[string]bool{}
 	for _, p := range cues {
 		rel, _ := filepath.Rel(sourceDir, p)
+		status.Step("Identifying %s", filepath.Base(p))
 		tracks, err := resolveCueFile(p)
 		if err != nil {
 			skipped = append(skipped, fmt.Sprintf("%s: %v", filepath.ToSlash(rel), err))

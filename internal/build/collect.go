@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/status"
 )
 
 // collect performs §6.1: the source directory's files, excluding
@@ -19,6 +20,7 @@ import (
 // Files extracted from media stay in temporary images appended to
 // *tempFiles, which the caller removes once the archive is written.
 func collect(sourceDir string, m *manifest.Manifest, tempFiles *[]*os.File) (*fileSet, []string, error) {
+	status.Step("Collecting files")
 	result := newFileSet()
 
 	err := filepath.WalkDir(sourceDir, func(p string, d fs.DirEntry, err error) error {

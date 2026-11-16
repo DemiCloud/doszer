@@ -21,6 +21,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/repack"
+	"github.com/DemiCloud/doszer/internal/status"
 	"github.com/DemiCloud/doszer/internal/verify"
 )
 
@@ -68,7 +69,9 @@ func init() {
 
 func main() {
 	interrupt.Handle()
+	status.Enable(os.Stderr)
 	if err := run(os.Args[1:]); err != nil {
+		status.Stop()
 		if !errors.Is(err, errUsage) {
 			logError(err)
 		}
@@ -144,6 +147,16 @@ func parse(fs *pflag.FlagSet, args []string, help string, min, max int) (ok bool
 }
 
 // logError writes a timestamped error to stderr.
+// endSteps ends the step a command was showing (status), as completed
+// unless err, before the command prints its results.
+func endSteps(err error) {
+	if err != nil {
+		status.Stop()
+	} else {
+		status.Done()
+	}
+}
+
 func logError(err error) {
 	fmt.Fprintf(os.Stderr, "[%s] ERROR: %v\n", time.Now().Format("2006-01-02 15:04:05"), err)
 }
@@ -193,6 +206,7 @@ Options:
 
 	if !*noMedia {
 		media, skipped, err := build.IdentifyMedia(source)
+		endSteps(err)
 		if err != nil {
 			return err
 		}
@@ -276,6 +290,7 @@ Options:
 	}
 
 	res, err := build.Run(opts)
+	endSteps(err)
 	if res != nil {
 		printBuildPlan(res, opts.DryRun)
 	}
@@ -362,6 +377,7 @@ Options:
 	}
 
 	warnings, err := verify.Check(fs.Arg(0))
+	endSteps(err)
 	for _, w := range warnings {
 		fmt.Fprintf(os.Stderr, "[WARN] %s\n", w)
 	}
@@ -433,6 +449,7 @@ Options:
 	}
 
 	rep, err := install.Run(opts)
+	endSteps(err)
 	if rep != nil {
 		printInstallReport(rep, opts.DryRun)
 	}
@@ -548,6 +565,7 @@ Options:
 	}
 
 	res, err := repack.Run(opts)
+	endSteps(err)
 	if res != nil {
 		printBuildPlan(res, opts.DryRun)
 	}

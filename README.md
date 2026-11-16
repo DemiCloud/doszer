@@ -45,6 +45,11 @@ have short forms (combinable, e.g. `-nf`); a long option's value may follow
 it or be attached with `=` (`--name=NAME`); options may come before or after
 arguments, and `--` ends them.
 
+On a terminal, each command shows the step it's on with a spinner (and a
+count where there is one, e.g. files written), then each finished step
+with `✓`, or `✗` for the one that failed. Piped or redirected, only
+results, warnings and errors are printed.
+
 | Command | Purpose |
 |---|---|
 | `init` | Write a commented `DOSZ.TOML` into the source. |
@@ -319,8 +324,8 @@ Every setting can be given as a flag. Precedence, highest first:
 `doszer.toml` and the user config file take the settings at top level:
 
 ```toml
-system_dir  = "/path/to/system"      # resolves and checks os/shell targets
-save_dir    = "/path/to/saves"       # where DOSBox Pure writes .pure.zip files
+system_dir  = "/path/to/system"      # DOSBox Pure's system directory (OS images, shells)
+save_dir    = "/path/to/saves"       # DOSBox Pure's save directory
 dosbox_pure = "/path/to/executable"  # standalone DOSBox Pure, used by install
 ogg_quality = 6
 
@@ -403,7 +408,12 @@ save or disk image:
 
 DOSBox Pure's system and save directories come from `DOSBoxPure.cfg` beside
 the executable (`path_system`, `path_saves`, else `system/` and `saves/`),
-unless `system_dir`/`save_dir` are set. Under WSL, a Windows
+unless `system_dir`/`save_dir` are set. Then `install` runs DOSBox Pure
+from its session folder with a copy of that `DOSBoxPure.cfg` naming those
+directories (DOSBox Pure prefers a `DOSBoxPure.cfg` in its working
+directory), so it boots OS images and shells from, and saves to, the same
+places doszer reads; your own `DOSBoxPure.cfg` is left unchanged, and
+settings changed during the session aren't kept. Under WSL, a Windows
 `DOSBoxPure.exe` is run with paths converted by `wslpath`.
 
 Limitations: a change is detected by size or modification time; the

@@ -18,6 +18,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/cue"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/status"
 )
 
 // Conversion is one disc image §6.4 converted or renamed.
@@ -283,9 +284,11 @@ func runJobs(jobs []*mediaJob, dir string, oggQuality int) error {
 		}
 	}
 
+	status.Step("Converting disc images")
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var errs []error
+	finished := 0
 	sem := make(chan struct{}, runtime.NumCPU())
 
 	for i, j := range jobs {
@@ -294,11 +297,14 @@ func runJobs(jobs []*mediaJob, dir string, oggQuality int) error {
 		sem <- struct{}{}
 		go func() {
 			defer func() { <-sem; wg.Done() }()
-			if err := j.run(oggQuality); err != nil {
-				mu.Lock()
+			err := j.run(oggQuality)
+			mu.Lock()
+			if err != nil {
 				errs = append(errs, fmt.Errorf("track %d (%s): %w", j.track.Track.Number, j.track.FilePath, err))
-				mu.Unlock()
 			}
+			finished++
+			status.Count(finished, len(jobs))
+			mu.Unlock()
 		}()
 	}
 	wg.Wait()
