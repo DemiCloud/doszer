@@ -109,6 +109,11 @@ README.md            doszer usage, configuration, install workflow
   `$XDG_CONFIG_HOME/doszer/config.toml`, defaults.
 - Tests are table-driven. Build test fixtures (disc images, ZIPs, disk images)
   programmatically in tests; do not commit binary game data.
+- Commit every big change - a fix, feature or refactor, with its spec,
+  tests and docs - as soon as it is done and `make vet` and `make test`
+  pass, without waiting to be asked. Commit to `main`, one commit per
+  change: a subject line saying what changed, then a body saying why,
+  citing the DOSBox Pure source where behaviour depends on it.
 
 ## DOSBox Pure facts
 
