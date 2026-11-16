@@ -20,9 +20,9 @@ import (
 //
 // Extracted files stay in the temporary ISO images they came from, as
 // ranges of them (rangeEntry), rather than being read into memory: the
-// images are appended to *tempFiles for the caller to remove once the
-// archive is written.
-func applyExtracts(fs *fileSet, media map[string]resolvedMedia, extracts []manifest.Extract, tempFiles *[]*os.File) error {
+// images are created in tempDir and appended to *tempFiles for the caller
+// to remove once the archive is written.
+func applyExtracts(fs *fileSet, media map[string]resolvedMedia, extracts []manifest.Extract, tempDir string, tempFiles *[]*os.File) error {
 	if len(extracts) > 0 {
 		status.Step("Extracting files from disc images")
 	}
@@ -33,7 +33,7 @@ func applyExtracts(fs *fileSet, media map[string]resolvedMedia, extracts []manif
 		img, ok := images[ex.Media]
 		if !ok {
 			var err error
-			img, err = openDataTrack(media[ex.Media], tempFiles)
+			img, err = openDataTrack(media[ex.Media], tempDir, tempFiles)
 			if err != nil {
 				return fmt.Errorf("extract: media %q: %w", ex.Media, err)
 			}
@@ -47,7 +47,7 @@ func applyExtracts(fs *fileSet, media map[string]resolvedMedia, extracts []manif
 		}
 
 		if entry.IsDir {
-			if err := extractDir(fs, img, paths[ex.Media], entry, ex.To); err != nil {
+			if err := extractDir(fs, img, paths[ex.Media], entry, ex.To, map[uint32]bool{}); err != nil {
 				return fmt.Errorf("extract: media %q: %w", ex.Media, err)
 			}
 			continue
@@ -62,15 +62,15 @@ func applyExtracts(fs *fileSet, media map[string]resolvedMedia, extracts []manif
 }
 
 // openDataTrack materializes a media's first data track as a temporary ISO
-// image and opens it. The temp file is appended to *tempFiles for the
-// caller to clean up once every extract using it is done.
-func openDataTrack(m resolvedMedia, tempFiles *[]*os.File) (*iso9660.Image, error) {
+// image in tempDir and opens it. The temp file is appended to *tempFiles
+// for the caller to clean up once every extract using it is done.
+func openDataTrack(m resolvedMedia, tempDir string, tempFiles *[]*os.File) (*iso9660.Image, error) {
 	track, err := firstDataTrack(m.Tracks)
 	if err != nil {
 		return nil, err
 	}
 
-	tmp, err := os.CreateTemp("", "doszer-media-*.iso")
+	tmp, err := os.CreateTemp(tempDir, ".doszer-media-*.iso")
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,15 @@ func extractFile(fs *fileSet, img *iso9660.Image, imgPath string, e iso9660.Entr
 }
 
 // extractDir copies dir's contents into fs, recursively, rooted at destDir.
-func extractDir(fs *fileSet, img *iso9660.Image, imgPath string, dir iso9660.Entry, destDir string) error {
+// visited holds the extents of the directories being extracted, so a
+// damaged image whose directory points back at an ancestor fails instead
+// of recursing forever.
+func extractDir(fs *fileSet, img *iso9660.Image, imgPath string, dir iso9660.Entry, destDir string, visited map[uint32]bool) error {
+	if visited[dir.LBA] {
+		return fmt.Errorf("%s: directory loop at sector %d", destDir, dir.LBA)
+	}
+	visited[dir.LBA] = true
+	defer delete(visited, dir.LBA)
 	entries, err := img.ReadDir(dir)
 	if err != nil {
 		return err
@@ -133,7 +141,7 @@ func extractDir(fs *fileSet, img *iso9660.Image, imgPath string, dir iso9660.Ent
 	for _, e := range entries {
 		dest := path.Join(destDir, e.Name)
 		if e.IsDir {
-			if err := extractDir(fs, img, imgPath, e, dest); err != nil {
+			if err := extractDir(fs, img, imgPath, e, dest, visited); err != nil {
 				return err
 			}
 			continue

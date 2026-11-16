@@ -16,7 +16,7 @@ func newTestSet(paths ...string) *fileSet {
 
 func TestFlattenDisabled(t *testing.T) {
 	fs := newTestSet("A/B/file.txt")
-	moved, dropped := flatten(fs, false)
+	moved, dropped, _ := flatten(fs, false)
 	if moved != nil || dropped != nil {
 		t.Fatalf("flatten(disabled) = %v, %v, want nil, nil", moved, dropped)
 	}
@@ -35,7 +35,10 @@ func TestFlattenCollapsesWrapperDirs(t *testing.T) {
 		"GAMENAME/DATA/RESOURCE/b.txt",
 	)
 
-	moved, dropped := flatten(fs, true)
+	moved, dropped, err := flatten(fs, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	wantPaths := []string{"RESOURCE/a.txt", "RESOURCE/b.txt"}
 	gotPaths := fs.paths()
@@ -59,7 +62,7 @@ func TestFlattenStopsAtLoneFile(t *testing.T) {
 	// collapse, and the file must not be moved to the build root.
 	fs := newTestSet("A/only.txt")
 
-	_, dropped := flatten(fs, true)
+	_, dropped, _ := flatten(fs, true)
 
 	if len(dropped) != 0 {
 		t.Errorf("dropped = %v, want none", dropped)
@@ -77,7 +80,7 @@ func TestFlattenIndependentBranches(t *testing.T) {
 		"KEEP/two.txt",
 	)
 
-	_, _ = flatten(fs, true)
+	_, _, _ = flatten(fs, true)
 
 	for _, want := range []string{"X/a.txt", "Z/b.txt", "KEEP/one.txt", "KEEP/two.txt"} {
 		if _, ok := fs.get(want); !ok {
@@ -92,9 +95,42 @@ func TestFlattenRootNeverRemoved(t *testing.T) {
 	// build root itself is never populated directly by flattening).
 	fs := newTestSet("A/B/one.txt", "A/B/two.txt")
 
-	_, _ = flatten(fs, true)
+	_, _, _ = flatten(fs, true)
 
 	if _, ok := fs.get("B/one.txt"); !ok {
 		t.Fatalf("expected B/one.txt, got %v", fs.paths())
+	}
+}
+
+func TestFlattenRejectsCollision(t *testing.T) {
+	tests := []struct {
+		name  string
+		paths []string
+	}{
+		{"collapsed dir onto dir", []string{"A/WRAP/DATA/x.dat", "A/DATA/y.dat", "A/readme.txt"}},
+		{"collapsed dir onto dir, other case", []string{"A/WRAP/data/x.dat", "A/DATA/y.dat", "A/readme.txt"}},
+		{"collapsed dir onto file", []string{"A/WRAP/DATA/x.dat", "A/data", "A/readme.txt"}},
+		{"two collapsed dirs", []string{"W1/DATA/x.dat", "W2/DATA/y.dat"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := newTestSet(tt.paths...)
+			before := fs.paths()
+			if _, _, err := flatten(fs, true); err == nil {
+				t.Fatalf("flatten succeeded, paths now %v", fs.paths())
+			}
+			if got := fs.paths(); !reflect.DeepEqual(got, before) {
+				t.Errorf("paths after failed flatten = %v, want unchanged %v", got, before)
+			}
+		})
+	}
+}
+
+func TestFlattenKeepsCaseVariantSiblings(t *testing.T) {
+	// Two directories differing only in case, neither collapsed, are not a
+	// collision flatten caused.
+	fs := newTestSet("Data/a.txt", "DATA/b.txt")
+	if _, _, err := flatten(fs, true); err != nil {
+		t.Fatal(err)
 	}
 }

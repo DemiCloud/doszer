@@ -19,7 +19,7 @@ const sectorSize = 2048
 
 // Entry is one file or directory in the filesystem.
 type Entry struct {
-	Name     string // without any ";N" version suffix
+	Name     string // a file's without its ";N" version or an empty extension's "."
 	IsDir    bool
 	LBA      uint32
 	Size     uint32
@@ -162,21 +162,28 @@ func parseDirRecord(b []byte) (Entry, error) {
 	flags := b[25]
 	id := string(b[33 : 33+idLen])
 
+	isDir := flags&dirFlag != 0
 	return Entry{
-		Name:     stripVersion(id),
-		IsDir:    flags&dirFlag != 0,
+		Name:     fileName(id, isDir),
+		IsDir:    isDir,
 		LBA:      lba,
 		Size:     size,
 		Modified: parseRecordingTime(b[18:25]),
 	}, nil
 }
 
-// stripVersion removes a file identifier's ";N" version suffix.
-func stripVersion(id string) string {
-	if i := strings.LastIndexByte(id, ';'); i != -1 {
-		return id[:i]
+// fileName is the name an identifier gives its file (spec §5.7): a file
+// identifier is always "name.ext;version" (ECMA-119 §7.5.1), so a file
+// without an extension is recorded as "NAME.;1". A directory identifier
+// has neither part.
+func fileName(id string, isDir bool) string {
+	if isDir {
+		return id
 	}
-	return id
+	if i := strings.LastIndexByte(id, ';'); i != -1 {
+		id = id[:i]
+	}
+	return strings.TrimSuffix(id, ".")
 }
 
 // parseRecordingTime parses a Directory Record's 7-byte recording

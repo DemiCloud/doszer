@@ -303,3 +303,49 @@ func TestUnconvertedMedia(t *testing.T) {
 		})
 	}
 }
+
+func TestConvertMediaUnsupportedModeWarns(t *testing.T) {
+	for _, dryRun := range []bool{false, true} {
+		fs := newFileSet()
+		fs.set("Game.cue", dataEntry([]byte("FILE \"G.BIN\" BINARY\n  TRACK 01 MODE2/2336\n    INDEX 01 00:00:00\n"), Epoch))
+		fs.set("G.BIN", dataEntry(make([]byte, 2*2336), Epoch))
+
+		conv, warnings, err := convertMedia(fs, manifest.AudioOgg, 6, dryRun, tempDirFunc(t))
+		if err != nil {
+			t.Fatalf("dryRun=%v: %v", dryRun, err)
+		}
+		if len(conv) != 0 || len(warnings) != 1 || !strings.Contains(warnings[0], "MODE2/2336") {
+			t.Errorf("dryRun=%v: conversions %v, warnings %v; want none and one naming MODE2/2336", dryRun, conv, warnings)
+		}
+		if got := strings.Join(fs.paths(), ","); got != "G.BIN,Game.cue" {
+			t.Errorf("dryRun=%v: paths = %s, want the sheet left as it was", dryRun, got)
+		}
+	}
+}
+
+func TestConvertMediaDropsPartialSector(t *testing.T) {
+	tests := []struct {
+		name string
+		mode string
+		bin  []byte
+	}{
+		{"raw", "MODE1/2352", cat(mode1Sector(1), mode1Sector(2), []byte("trailing"))},
+		// Not reused as is: the ISO must hold whole sectors only.
+		{"cooked", "MODE1/2048", cat(bytes.Repeat([]byte{1}, 2048), bytes.Repeat([]byte{2}, 2048), []byte("trailing"))},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := newFileSet()
+			fs.set("Game.cue", dataEntry([]byte("FILE \"G.BIN\" BINARY\n  TRACK 01 "+tt.mode+"\n    INDEX 01 00:00:00\n"), Epoch))
+			fs.set("G.BIN", dataEntry(tt.bin, Epoch))
+
+			if _, _, err := convertMedia(fs, manifest.AudioOgg, 6, false, tempDirFunc(t)); err != nil {
+				t.Fatal(err)
+			}
+			want := cat(bytes.Repeat([]byte{1}, 2048), bytes.Repeat([]byte{2}, 2048))
+			if got := content(t, fs, "Game.iso"); !bytes.Equal(got, want) {
+				t.Errorf("Game.iso is %d bytes, want the %d bytes of two whole sectors", len(got), len(want))
+			}
+		})
+	}
+}

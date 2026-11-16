@@ -184,3 +184,13 @@ func TestResolveWith(t *testing.T) {
 		}
 	}
 }
+
+func TestParseSkipsBOM(t *testing.T) {
+	sheet, err := Parse([]byte("\xEF\xBB\xBFFILE \"game.bin\" BINARY\r\n  TRACK 01 MODE1/2352\r\n    INDEX 01 00:00:00\r\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(sheet.Files) != 1 || sheet.Files[0].Name != "game.bin" {
+		t.Errorf("Parse() = %+v, want one FILE game.bin", sheet)
+	}
+}

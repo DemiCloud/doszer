@@ -294,3 +294,24 @@ func TestResolveWaveHashesPCMOnly(t *testing.T) {
 		t.Fatal("mono WAV accepted")
 	}
 }
+
+func TestWAVDataRejects(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+	}{
+		{"not RIFF", "RIFX\x00\x00\x00\x00WAVE"},
+		{"no data chunk", "RIFF\x04\x00\x00\x00WAVE"},
+		// A 4-byte fmt chunk whose following bytes happen to read as
+		// valid 16-bit stereo PCM fields.
+		{"short fmt chunk", "RIFF\x30\x00\x00\x00WAVEfmt \x04\x00\x00\x00\x01\x00\x02\x00data\x04\x00\x00\x00\x00\x00\x10\x00data\x04\x00\x00\x00\x00\x00\x00\x00"},
+		{"mono", "RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00" + strings.Repeat("\x00", 12)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, _, err := WAVDataFrom(strings.NewReader(tt.data)); err == nil {
+				t.Error("accepted")
+			}
+		})
+	}
+}

@@ -5,6 +5,7 @@ package cue
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
@@ -99,12 +100,13 @@ func (t Track) TotalPregap() (int, error) {
 	return n, nil
 }
 
-// Parse parses CUE sheet data.
+// Parse parses CUE sheet data. A leading UTF-8 byte order mark, which
+// some tools write, is skipped.
 func Parse(data []byte) (*Sheet, error) {
 	sheet := &Sheet{}
 
 	line := 0
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	scanner := bufio.NewScanner(bytes.NewReader(bytes.TrimPrefix(data, []byte("\xEF\xBB\xBF"))))
 	for scanner.Scan() {
 		line++
 		fields, err := tokenize(scanner.Text())

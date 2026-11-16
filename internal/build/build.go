@@ -62,7 +62,7 @@ type Result struct {
 	Trimmed      []string // Paths removed by layout.trim.
 	TrimWarnings []string // layout.trim patterns that matched nothing.
 
-	Moved []Move // Paths renamed by flatten, oldest first.
+	Moved []Move // Paths renamed by flatten, sorted by old path.
 
 	RewriteHits     []RewriteHit // Files each layout.rewrite rule changed.
 	RewriteWarnings []string     // layout.rewrite rules that matched nothing.
@@ -107,7 +107,9 @@ func Run(opts Options) (*Result, error) {
 			os.Remove(f.Name())
 		}
 	}()
-	fs, mediaWarnings, err := collect(opts.SourceDir, m, &tempFiles)
+	// Beside the output, like runPipeline's temporary files: an extracted
+	// data track can be hundreds of megabytes, and /tmp may be RAM-backed.
+	fs, mediaWarnings, err := collect(opts.SourceDir, m, filepath.Dir(opts.OutputPath), &tempFiles)
 	if err != nil {
 		return nil, err
 	}
@@ -172,9 +174,12 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, mediaWarnings 
 	status.Step("Applying the manifest")
 	res.Trimmed, res.TrimWarnings = trim(fs, m.Layout.Trim)
 
-	moved, dropped := flatten(fs, m.Layout.Flatten)
-	for from, to := range moved {
-		res.Moved = append(res.Moved, Move{From: from, To: to})
+	moved, dropped, err := flatten(fs, m.Layout.Flatten)
+	if err != nil {
+		return nil, err
+	}
+	for _, from := range sortedKeys(moved) {
+		res.Moved = append(res.Moved, Move{From: from, To: moved[from]})
 	}
 
 	if err := renameMediaCue(fs, m.Source.Media, &m.Boot, effectiveName); err != nil {
@@ -331,6 +336,13 @@ func writeArchive(fs *fileSet, m *manifest.Manifest, w io.Writer, spoolDir, comm
 				j.raw = src
 				jobs <- j
 				continue
+			}
+			// Checked on its own first: once stop is closed, a select over
+			// both would still pick a free slot half the time.
+			select {
+			case <-stop:
+				return
+			default:
 			}
 			select {
 			case slots <- struct{}{}:

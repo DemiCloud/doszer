@@ -207,6 +207,9 @@ func planSheet(fs *fileSet, cuePath, audio string) (*sheetPlan, []*mediaJob, err
 				name = trackFileName(base, t.Number, ext)
 				o.job = &mediaJob{kind: ext, src: srcEntry, track: rt}
 			} else {
+				if _, _, err := t.DataLayout(); err != nil {
+					return nil, nil, err
+				}
 				nt.Mode = "MODE1/2048"
 				fileType = "BINARY"
 				name = trackFileName(base, t.Number, "iso")
@@ -215,7 +218,7 @@ func planSheet(fs *fileSet, cuePath, audio string) (*sheetPlan, []*mediaJob, err
 					firstData = false
 				}
 				size, _ := srcEntry.size()
-				if rt.FrameSize == 2048 && len(f.Tracks) == 1 && rt.Start == 0 && rt.End == size {
+				if rt.FrameSize == 2048 && len(f.Tracks) == 1 && rt.Start == 0 && rt.End == size && size%2048 == 0 {
 					o.entry = srcEntry // already exactly the track's user data
 				} else {
 					o.job = &mediaJob{kind: "iso", src: srcEntry, track: rt}

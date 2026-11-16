@@ -112,6 +112,9 @@ func WAVDataFrom(r io.Reader) (offset, size int64, err error) {
 		}
 		skip := (n + 1) &^ 1
 		if id == "fmt " {
+			if n < 16 {
+				return 0, 0, errors.New("short fmt chunk")
+			}
 			fmtc := make([]byte, 16)
 			if _, err := io.ReadFull(r, fmtc); err != nil {
 				return 0, 0, errors.New("short fmt chunk")
@@ -217,7 +220,7 @@ func (rt ResolvedTrack) Normalize(r io.Reader) (io.Reader, error) {
 	if rt.Track.IsAudio() {
 		return r, nil
 	}
-	offset, length, err := userDataLayout(rt.Track.Mode)
+	offset, length, err := rt.Track.DataLayout()
 	if err != nil {
 		return nil, err
 	}
@@ -255,10 +258,12 @@ func (rt ResolvedTrack) Hash() (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// userDataLayout returns a data track's user-data offset and length within
+// DataLayout returns a data track's user-data offset and length within
 // each raw frame (§7.2): the whole frame if it's already 2048 bytes,
-// otherwise Mode 1's or Mode 2 Form 1's header offset.
-func userDataLayout(mode string) (offset, length int, err error) {
+// otherwise Mode 1's or Mode 2 Form 1's header offset. It fails for a
+// mode Normalize can't read.
+func (t Track) DataLayout() (offset, length int, err error) {
+	mode := t.Mode
 	kind, size, ok := strings.Cut(mode, "/")
 	if !ok {
 		return 0, 0, fmt.Errorf("unrecognized mode %q", mode)
@@ -276,7 +281,8 @@ func userDataLayout(mode string) (offset, length int, err error) {
 }
 
 // stripReader reads frameSize-byte frames from r, yielding only each
-// frame's [offset:offset+length) user-data slice.
+// frame's [offset:offset+length) user-data slice. A partial frame at the
+// end is not a sector and is dropped (§7.2: "each sector").
 type stripReader struct {
 	r              io.Reader
 	frame          []byte
@@ -291,6 +297,9 @@ func newStripReader(r io.Reader, frameSize, offset, length int) *stripReader {
 func (s *stripReader) Read(p []byte) (int, error) {
 	if len(s.buf) == 0 {
 		if _, err := io.ReadFull(s.r, s.frame); err != nil {
+			if err == io.ErrUnexpectedEOF {
+				err = io.EOF
+			}
 			return 0, err
 		}
 		s.buf = s.frame[s.offset : s.offset+s.length]

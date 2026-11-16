@@ -17,9 +17,10 @@ import (
 // verifies [[source.media]] against the collected disc images (§7.3) and
 // returns that step's warnings.
 //
-// Files extracted from media stay in temporary images appended to
-// *tempFiles, which the caller removes once the archive is written.
-func collect(sourceDir string, m *manifest.Manifest, tempFiles *[]*os.File) (*fileSet, []string, error) {
+// Files extracted from media stay in temporary images created in tempDir
+// and appended to *tempFiles, which the caller removes once the archive is
+// written.
+func collect(sourceDir string, m *manifest.Manifest, tempDir string, tempFiles *[]*os.File) (*fileSet, []string, error) {
 	status.Step("Collecting files")
 	result := newFileSet()
 
@@ -59,7 +60,7 @@ func collect(sourceDir string, m *manifest.Manifest, tempFiles *[]*os.File) (*fi
 	if err != nil {
 		return nil, warnings, err
 	}
-	if err := applyExtracts(result, media, m.Extract, tempFiles); err != nil {
+	if err := applyExtracts(result, media, m.Extract, tempDir, tempFiles); err != nil {
 		return nil, warnings, err
 	}
 

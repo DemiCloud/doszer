@@ -272,3 +272,47 @@ func TestDirRecordIncludesModified(t *testing.T) {
 		t.Errorf("Modified = %v, want zero (fixture never sets a date)", e.Modified)
 	}
 }
+
+func TestFileName(t *testing.T) {
+	tests := []struct {
+		id    string
+		isDir bool
+		want  string
+	}{
+		{"FILE1.TXT;1", false, "FILE1.TXT"},
+		{"README.;1", false, "README"},
+		{"README.", false, "README"},
+		{"README;1", false, "README"},
+		{"A.B.C;2", false, "A.B.C"},
+		{"SUBDIR", true, "SUBDIR"},
+		{"\x00", true, "\x00"},
+	}
+	for _, tt := range tests {
+		if got := fileName(tt.id, tt.isDir); got != tt.want {
+			t.Errorf("fileName(%q, %v) = %q, want %q", tt.id, tt.isDir, got, tt.want)
+		}
+	}
+}
+
+func TestLookupFileWithoutExtension(t *testing.T) {
+	b := newISOBuilder()
+	content := []byte("no extension")
+	lba := b.addSector(content)
+	rootContent := bytes.Join([][]byte{
+		dirRecord("\x00", true, 0, 0),
+		dirRecord("\x01", true, 0, 0),
+		dirRecord("README.;1", false, lba, uint32(len(content))),
+	}, nil)
+	rootLBA := b.addSector(rootContent)
+	img, err := Open(bytes.NewReader(b.build(dirRecord("\x00", true, rootLBA, uint32(len(rootContent))))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := img.Lookup("readme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Name != "README" {
+		t.Errorf("Name = %q, want README", e.Name)
+	}
+}

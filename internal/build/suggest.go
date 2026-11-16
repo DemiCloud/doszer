@@ -1,6 +1,7 @@
 package build
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,52 +12,55 @@ const maxScanSize = 8 << 20
 
 // suggestRewrites finds references to names flatten dropped and returns
 // ready-to-paste [[layout.rewrite]] snippets, plus warnings for binary files
-// it can't rewrite (§6.5).
+// it can't rewrite (§6.5). Each file is read and lower-cased once, however
+// many names it is searched for.
 func suggestRewrites(fs *fileSet, dropped []string) (suggestions []string, binaryRefs []string) {
+	var names []string // unique case-insensitively, first casing kept
 	seen := make(map[string]bool, len(dropped))
-
 	for _, name := range dropped {
-		lower := strings.ToLower(name)
-		if seen[lower] {
+		if lower := strings.ToLower(name); !seen[lower] {
+			seen[lower] = true
+			names = append(names, name)
+		}
+	}
+	if len(names) == 0 {
+		return nil, nil
+	}
+
+	textFiles := make([][]string, len(names))
+	binary := make([][]string, len(names))
+	for _, p := range fs.paths() {
+		e, _ := fs.get(p)
+		if size, err := e.size(); err != nil || size > maxScanSize {
 			continue
 		}
-		seen[lower] = true
-
-		needle := name + `\`
-		var textFiles []string
-
-		for _, p := range fs.paths() {
-			e, _ := fs.get(p)
-			if size, err := e.size(); err != nil || size > maxScanSize {
-				continue
-			}
-			content, err := e.peek()
-			if err != nil {
-				continue
-			}
-			if !containsFold(content, []byte(needle)) && !containsFold(content, []byte(name+"/")) {
-				continue
-			}
-
-			if rewritable(content) {
-				textFiles = append(textFiles, p)
-			} else {
-				binaryRefs = append(binaryRefs, fmt.Sprintf("%s references %q but is binary (contains a NUL byte); cannot rewrite automatically", p, name))
-			}
+		content, err := e.peek()
+		if err != nil {
+			continue
 		}
-
-		if len(textFiles) > 0 {
-			suggestions = append(suggestions, fmt.Sprintf(
-				"[[layout.rewrite]]\nfrom  = %s\nto    = \"\"\nfiles = %s",
-				strconv.Quote(needle), quotePaths(textFiles)))
+		lower := bytes.ToLower(content)
+		for i, name := range names {
+			n := strings.ToLower(name)
+			if !bytes.Contains(lower, []byte(n+`\`)) && !bytes.Contains(lower, []byte(n+"/")) {
+				continue
+			}
+			if rewritable(content) {
+				textFiles[i] = append(textFiles[i], p)
+			} else {
+				binary[i] = append(binary[i], fmt.Sprintf("%s references %q but is binary (contains a NUL byte); cannot rewrite automatically", p, name))
+			}
 		}
 	}
 
+	for i, name := range names {
+		binaryRefs = append(binaryRefs, binary[i]...)
+		if len(textFiles[i]) > 0 {
+			suggestions = append(suggestions, fmt.Sprintf(
+				"[[layout.rewrite]]\nfrom  = %s\nto    = \"\"\nfiles = %s",
+				strconv.Quote(name+`\`), quotePaths(textFiles[i])))
+		}
+	}
 	return suggestions, binaryRefs
-}
-
-func containsFold(content, needle []byte) bool {
-	return strings.Contains(strings.ToLower(string(content)), strings.ToLower(string(needle)))
 }
 
 func quotePaths(paths []string) string {

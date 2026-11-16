@@ -671,3 +671,43 @@ func TestProvenanceCommentWithoutHomepage(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestRunRejectsISODirectoryLoop(t *testing.T) {
+	dir := t.TempDir()
+
+	// The root directory (sector 18) lists LOOP, which points back at the
+	// root itself.
+	const rootLBA = 18
+	entry := func(size uint32) []byte {
+		return bytes.Join([][]byte{
+			isoDirRecord("\x00", true, 0, 0),
+			isoDirRecord("\x01", true, 0, 0),
+			isoDirRecord("LOOP", true, rootLBA, size),
+		}, nil)
+	}
+	root := entry(uint32(len(entry(0))))
+	var iso bytes.Buffer
+	iso.Write(isoVolumeDescriptors(root, rootLBA, len(root)))
+	iso.Write(isoPadSector(root))
+
+	writeFile(t, dir, "DISC/game.bin", iso.String())
+	writeFile(t, dir, "DISC/game.cue", "FILE \"game.bin\" BINARY\nTRACK 01 MODE1/2048\nINDEX 01 00:00:00\n")
+	writeFile(t, dir, "DOSZ.TOML", fmt.Sprintf(`
+format = 1
+name   = "Loop Game"
+
+[[source.media]]
+id = "disc1"
+tracks = [{ type = "data", sha1 = "%x" }]
+
+[[extract]]
+media = "disc1"
+from  = "LOOP"
+to    = "GAME"
+`, sha1.Sum(iso.Bytes())))
+
+	_, err := build.Run(build.Options{SourceDir: dir, OutputPath: filepath.Join(t.TempDir(), "out.dosz")})
+	if err == nil || !strings.Contains(err.Error(), "directory loop") {
+		t.Fatalf("Run error = %v, want a directory loop", err)
+	}
+}

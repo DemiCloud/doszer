@@ -151,6 +151,10 @@ Copies content from identified media into the build.
 | `from` | string | Path within the media's data track file system. A directory copies its contents recursively. |
 | `to` | string | Destination path within the build. |
 
+In the data track's ISO 9660 file system, a file's name is its file
+identifier without the version number (`;1`) and, when its extension is
+empty, without the separator `.`: `README.;1` is the file `README`.
+
 If `[[extract]]` is absent, media files present in the source are included
 whole (§6.4).
 
@@ -231,7 +235,9 @@ removed.
 If `flatten` is `true`: any directory whose only entry is a single
 subdirectory is replaced by that subdirectory, repeatedly, until no such
 directory remains. The build root is never removed, and no file is moved to
-the build root by flattening.
+the build root by flattening. A build in which replacing a directory would
+give it the same name as another entry in its directory, compared
+case-insensitively (§2), is rejected (§11).
 
 ### 6.4 Media
 
@@ -485,6 +491,8 @@ An implementation MUST reject a manifest that violates any of the following:
 An implementation MUST reject an archive build that would contain, under the
 shell model, `WINDOWS/WIN.INI`, `WINDOWS/SYSTEM.INI`, `WINDOWS/PROGMAN.INI` or
 `WINDOWS/*.GRP`, or, under the shell or OS image model, `DOSBOX.BAT`.
+It MUST also reject a build in which flattening (§6.3) would give two entries
+the same path.
 
 A `trim` pattern or `rewrite` rule that matches nothing SHOULD produce a
 warning, as SHOULD a media that is not found or a track that is not verified

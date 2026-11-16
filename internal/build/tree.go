@@ -2,9 +2,12 @@ package build
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -293,29 +296,65 @@ func buildTree(fs *fileSet) *dirNode {
 }
 
 // flattenNode collapses single-subdirectory-only directories bottom-up
-// (§6.3), recording each collapsed name into dropped.
-func flattenNode(n *dirNode, dropped *[]string) {
-	for _, child := range n.dirs {
-		flattenNode(child, dropped)
+// (§6.3), recording each collapsed name into dropped, in path order, and
+// each collision a collapse would cause into errs. prefix is n's path.
+func flattenNode(n *dirNode, prefix string, dropped *[]string, errs *[]error) {
+	for _, name := range sortedKeys(n.dirs) {
+		flattenNode(n.dirs[name], path.Join(prefix, name), dropped, errs)
 	}
-	n.dirs = collapseChildren(n.dirs, dropped)
+	n.dirs = collapseChildren(n, prefix, dropped, errs)
 }
 
-// collapseChildren walks each entry's chain of single-subdirectory-only
-// directories down to where it bottoms out, and keeps that node instead.
-func collapseChildren(dirs map[string]*dirNode, dropped *[]string) map[string]*dirNode {
-	result := make(map[string]*dirNode, len(dirs))
-	for name, child := range dirs {
-		curName, curNode := name, child
+// collapseChildren walks each of n's subdirectories' chain of
+// single-subdirectory-only directories down to where it bottoms out, and
+// keeps that node instead. A collapsed directory whose new name matches
+// another of n's entries case-insensitively is a collision (§6.3, §11):
+// one would replace the other.
+func collapseChildren(n *dirNode, prefix string, dropped *[]string, errs *[]error) map[string]*dirNode {
+	type kept struct {
+		from, to  string // the entry's name before and after collapsing
+		collapsed bool
+	}
+	byLower := map[string][]kept{} // lower-case new name -> entries taking it
+	for name := range n.files {
+		byLower[strings.ToLower(name)] = append(byLower[strings.ToLower(name)], kept{from: name, to: name})
+	}
+	result := make(map[string]*dirNode, len(n.dirs))
+	for _, name := range sortedKeys(n.dirs) {
+		curName, curNode := name, n.dirs[name]
 		for len(curNode.files) == 0 && len(curNode.dirs) == 1 {
 			*dropped = append(*dropped, curName)
 			for subName, subNode := range curNode.dirs {
 				curName, curNode = subName, subNode
 			}
 		}
+		lower := strings.ToLower(curName)
+		byLower[lower] = append(byLower[lower], kept{from: name, to: curName, collapsed: curName != name})
 		result[curName] = curNode
 	}
+	for _, lower := range sortedKeys(byLower) {
+		ks := byLower[lower]
+		// Case variants already in the build (neither collapsed) are left
+		// as they were; only a collapse can cause a collision.
+		if len(ks) < 2 || !slices.ContainsFunc(ks, func(k kept) bool { return k.collapsed }) {
+			continue
+		}
+		var from []string
+		for _, k := range ks {
+			from = append(from, path.Join(prefix, k.from))
+		}
+		*errs = append(*errs, fmt.Errorf("layout.flatten: %s would collide at %s (§6.3)", strings.Join(from, " and "), path.Join(prefix, ks[0].to)))
+	}
 	return result
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func collectPaths(n *dirNode, prefix string, out *fileSet) {
@@ -328,10 +367,11 @@ func collectPaths(n *dirNode, prefix string, out *fileSet) {
 }
 
 // flatten applies §6.3 to fs in place, returning changed paths (old -> new)
-// and the directory names collapsed away.
-func flatten(fs *fileSet, enabled bool) (moved map[string]string, dropped []string) {
+// and the directory names collapsed away. A collision leaves fs unchanged
+// and returns an error naming every one.
+func flatten(fs *fileSet, enabled bool) (moved map[string]string, dropped []string, err error) {
 	if !enabled {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	byEntry := make(map[*fileEntry]string, len(fs.files))
@@ -340,7 +380,11 @@ func flatten(fs *fileSet, enabled bool) (moved map[string]string, dropped []stri
 	}
 
 	root := buildTree(fs)
-	flattenNode(root, &dropped)
+	var errs []error
+	flattenNode(root, "", &dropped, &errs)
+	if len(errs) > 0 {
+		return nil, nil, errors.Join(errs...)
+	}
 
 	newFS := newFileSet()
 	collectPaths(root, "", newFS)
@@ -354,5 +398,5 @@ func flatten(fs *fileSet, enabled bool) (moved map[string]string, dropped []stri
 
 	fs.files = newFS.files
 	fs.index = newFS.index
-	return moved, dropped
+	return moved, dropped, nil
 }

@@ -98,7 +98,8 @@ details:
   WAV files are written directly.
 - Tracks are encoded in parallel, one per CPU, and written to a temporary
   `.doszer-build-*` directory next to the output archive, removed when the
-  build ends.
+  build ends. A data track `[[extract]]` reads from is likewise written to
+  a temporary `.doszer-media-*.iso` file there.
 - Disc images inside an archive being repacked are streamed, not loaded
   into memory.
 - A CUE sheet whose referenced files aren't all in the build, or that uses
