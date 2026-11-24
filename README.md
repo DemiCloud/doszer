@@ -20,6 +20,8 @@ conversion (§6.4)), `install`, `repack` and `verify`.
 - Go 1.24 or later, to build
 - `ffmpeg` with `libvorbis`, for Ogg Vorbis audio tracks (not needed with
   `audio = "wav"`)
+- For `install`: RetroArch with the DOSBox Pure core, or standalone DOSBox
+  Pure
 
 ## Building
 
@@ -35,7 +37,8 @@ make help    # every target
 doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH] [--name NAME] [--no-media] [-f]
 doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [-n] [--strict] [--ogg-quality N]
 doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FILE]] [-f] [-n] [--keep]
-               [--os PATH] [--drive c|d] [--dosbox-pure FILE] [--system-dir DIR] [--save-dir DIR]
+               [--os PATH] [--drive c|d] [--frontend retroarch|standalone] [--frontend-dir DIR]
+               [--system-dir DIR] [--save-dir DIR]
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
 doszer verify  FILE.dosz
 ```
@@ -252,11 +255,14 @@ A DOS game that installs from CD, start to finish, under the plain model
 [examples/kings-quest-vii](examples/kings-quest-vii/DOSZ.TOML) is the
 result for one.
 
-Once, point `doszer` at standalone DOSBox Pure, in
-`~/.config/doszer/config.toml`:
+`install` runs DOSBox Pure in RetroArch, which it finds on its own when
+RetroArch is installed in a usual place with the DOSBox Pure core (Online
+Updater, Core Downloader). Otherwise, or to use standalone DOSBox Pure,
+say where it is once, in `~/.config/doszer/config.toml` (see "Install"):
 
 ```toml
-dosbox_pure = "/path/to/DOSBoxPure.exe"
+frontend     = "standalone"           # or "retroarch", the default
+frontend_dir = "/path/to/DOSBoxPure"  # the folder holding its executable
 ```
 
 1. **Dump the disc** to a BIN/CUE (or ISO) with any CD ripping tool, into
@@ -292,7 +298,8 @@ dosbox_pure = "/path/to/DOSBoxPure.exe"
      mode.`) are usually harmless; the installer carries on.
    - Note how the installer says to start the game.
 
-   Start the game once if you like, then close DOSBox Pure. `doszer`
+   Start the game once if you like, then close DOSBox Pure (or RetroArch).
+   `doszer`
    copies the folder the installer created (e.g. `C:\GAME`) into
    `Example Game/GAME/`.
 
@@ -345,7 +352,8 @@ Every setting can be given as a flag. Precedence, highest first:
 ```toml
 system_dir  = "/path/to/system"      # DOSBox Pure's system directory (OS images, shells)
 save_dir    = "/path/to/saves"       # DOSBox Pure's save directory
-dosbox_pure = "/path/to/executable"  # standalone DOSBox Pure, used by install
+frontend    = "retroarch"            # DOSBox Pure for install: retroarch or standalone
+frontend_dir = "/path/to/install"    # the frontend's install directory (default: detected)
 ogg_quality = 6
 
 [templates]                          # pristine OS images used by install
@@ -369,11 +377,11 @@ directory, so it skips the `[x-doszer]` layer.
 
 ## Install
 
-`install` runs an installer under standalone DOSBox Pure and extracts what
-it wrote into the source. It packs the source (install media included,
+`install` runs an installer under DOSBox Pure (in RetroArch, or
+standalone) and extracts what it wrote into the source. It packs the source (install media included,
 `DOSZ.TOML` and `DOSBOX.BAT` left out) into a temporary archive with a
 unique name, so the session's save files are fresh, starts DOSBox Pure on
-it, and waits for DOSBox Pure to exit. Then it reads the save files:
+it, and waits for DOSBox Pure (or RetroArch) to exit. Then it reads the save files:
 
 | Boot model | Session starts | Install to | Changes read from |
 |---|---|---|---|
@@ -381,10 +389,11 @@ it, and waits for DOSBox Pure to exit. Then it reads the save files:
 | Shell | the shell (`boot.shell`) | C: | `<name>.pure.zip` |
 | Plain | DOSBox Pure's start menu | C: | `<name>.pure.zip` |
 
-An OS image session writes a `FRONTEND.DBP` setting "Save Difference Per
-Content" for itself only, so the OS image is never modified and C: changes
-land in `<name>-CDRIVE.sav`; they're listed, not extracted, since every
-archive shares C:. Nothing in your DOSBox Pure configuration changes.
+An OS image session sets "Save Difference Per Content" for itself only
+(standalone: a `FRONTEND.DBP` in the content; RetroArch: a game-specific
+core options file), so the OS image is never modified and C: changes land
+in `<name>-CDRIVE.sav`; they're listed, not extracted, since every archive
+shares C:. Nothing in your DOSBox Pure or RetroArch configuration changes.
 
 The OS image must be a raw `.img` or a fixed-size VHD, not a dynamic
 (growing) VHD: DOSBox Pure's "Save Difference" mode compares written
@@ -441,15 +450,43 @@ save or disk image:
 | `.pure.zip` | (`--content` to tell modified files from added ones) |
 | `.vhd`, `.img` | `--template` or a configured template to compare against, else `--dir` |
 
-DOSBox Pure's system and save directories come from `DOSBoxPure.cfg` beside
-the executable (`path_system`, `path_saves`, else `system/` and `saves/`),
-unless `system_dir`/`save_dir` are set. Then `install` runs DOSBox Pure
-from its session folder with a copy of that `DOSBoxPure.cfg` naming those
-directories (DOSBox Pure prefers a `DOSBoxPure.cfg` in its working
-directory), so it boots OS images and shells from, and saves to, the same
-places doszer reads; your own `DOSBoxPure.cfg` is left unchanged, and
-settings changed during the session aren't kept. Under WSL, a Windows
-`DOSBoxPure.exe` is run with paths converted by `wslpath`.
+`install` runs DOSBox Pure under `frontend`: `retroarch` (the default),
+the DOSBox Pure core in RetroArch, where archives are meant to run, or
+`standalone`. `frontend_dir` is the folder holding that frontend's
+executable (`retroarch`/`retroarch.exe`, `DOSBoxPure`/`DOSBoxPure.exe`).
+Unset, `install` looks for RetroArch with the DOSBox Pure core on `PATH`,
+in `RetroArch-Win64`, `RetroArch`, `Program Files\RetroArch` and Steam's
+`steamapps\common\RetroArch` on every drive (under Windows and WSL), in
+`/Applications` (macOS), and as a Flatpak (`org.libretro.RetroArch`, then
+RetroDECK's `net.retrodeck.retrodeck`); standalone DOSBox Pure, on `PATH`.
+
+RetroArch's settings come from the `retroarch.cfg` beside it, else its
+platform's default (`%APPDATA%\RetroArch`, `~/.config/retroarch`, a
+Flatpak's `~/.var/app/<id>/config/retroarch`): the core from
+`libretro_directory`, the system and save directories from
+`system_directory` and `savefile_directory` (in its `DOSBox-pure`
+subfolder with "Sort Saves into Folders by Core Name"), unless
+`system_dir`/`save_dir` are set. RetroArch runs with that configuration
+plus a session file (`--appendconfig`) that names those directories, turns
+off saving the configuration on exit, the content history and save-state
+autoload, and quits RetroArch when the content closes. Its config
+directory points at the session folder, which holds the content's
+game-specific core options: your DOSBox Pure core options, with the
+session's over them. Your configuration, core options and overrides are
+left unchanged, and not used for the session apart from those options.
+
+Standalone DOSBox Pure's system and save directories come from
+`DOSBoxPure.cfg` beside the executable (`path_system`, `path_saves`, else
+`system/` and `saves/`), unless `system_dir`/`save_dir` are set. Then
+`install` runs DOSBox Pure from its session folder with a copy of that
+`DOSBoxPure.cfg` naming those directories (DOSBox Pure prefers a
+`DOSBoxPure.cfg` in its working directory), so it boots OS images and
+shells from, and saves to, the same places doszer reads; your own
+`DOSBoxPure.cfg` is left unchanged, and settings changed during the
+session aren't kept.
+
+Under WSL, a Windows `retroarch.exe` or `DOSBoxPure.exe` is run with paths
+converted by `wslpath`.
 
 Limitations: a change is detected by size or modification time; the
 content must not have a `<content>.pure.zip` of its own layered over it,

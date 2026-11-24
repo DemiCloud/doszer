@@ -3,6 +3,7 @@ package install
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -27,15 +28,23 @@ type Session struct {
 	Model   manifest.Model
 	OS      string // OS image path for the OS image model (boot.os)
 	Skipped []string
+
+	// CoreOptions are the DOSBox Pure core options the session needs over
+	// the frontend's own: osCoreOptions for an OS image, else none.
+	CoreOptions map[string]string
 }
 
-// frontendOverrides are the per-content option overrides an OS image
-// session writes to FRONTEND.DBP, which standalone DOSBox Pure applies
-// over its own configuration (dosbox_pure_libretro.cpp, init_dosbox,
-// DBPS_ApplyConfigOverrides). "Save Difference Per Content" keeps the OS
-// image untouched and puts C: changes in <name>-CDRIVE.sav; the D: free
-// space is pinned because it seeds the D: save's hash.
-const frontendOverrides = `{"dosbox_pure_bootos_ramdisk":"diff","dosbox_pure_bootos_dfreespace":"1024"}`
+// osCoreOptions are the core options an OS image session needs. "Save
+// Difference Per Content" keeps the OS image untouched and puts C: changes
+// in <name>-CDRIVE.sav; the D: free space is pinned because it seeds the
+// D: save's hash. Standalone DOSBox Pure takes them from FRONTEND.DBP,
+// which it applies over its own configuration (dosbox_pure_libretro.cpp,
+// init_dosbox, DBPS_ApplyConfigOverrides - DBP_STANDALONE only); the core
+// in RetroArch from a game-specific options file (runRetroArch).
+var osCoreOptions = map[string]string{
+	"dosbox_pure_bootos_ramdisk":    "diff",
+	"dosbox_pure_bootos_dfreespace": "1024",
+}
 
 // sessionExcluded are source files left out of the session's content:
 // the manifest, and files that would change how the session starts
@@ -66,6 +75,9 @@ func Prepare(source string, m *manifest.Manifest) (*Session, error) {
 		Dir:        dir,
 		Model:      m.Model(),
 		OS:         m.Boot.OS,
+	}
+	if s.Model == manifest.ModelOS {
+		s.CoreOptions = osCoreOptions
 	}
 	s.Content = filepath.Join(dir, s.Name+".dosz")
 	if err := s.writeContent(abs, m); err != nil {
@@ -115,7 +127,10 @@ func (s *Session) writeContent(source string, m *manifest.Manifest) error {
 		case manifest.ModelOS:
 			err = addData(zw, "AUTOBOOT.DBP", build.BuildAutoboot(&manifest.Boot{OS: m.Boot.OS}))
 			if err == nil {
-				err = addData(zw, "FRONTEND.DBP", []byte(frontendOverrides))
+				var data []byte
+				if data, err = json.Marshal(s.CoreOptions); err == nil {
+					err = addData(zw, "FRONTEND.DBP", data)
+				}
 			}
 		case manifest.ModelShell:
 			err = addData(zw, "AUTOBOOT.DBP", build.BuildAutoboot(&manifest.Boot{Shell: m.Boot.Shell}))

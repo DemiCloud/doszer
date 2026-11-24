@@ -211,7 +211,7 @@ func TestPrepare(t *testing.T) {
 			t.Errorf("%s not stored", f.Name)
 		}
 	}
-	if got["AUTOBOOT.DBP"] != "O*dosbox_pure/Win98" || got["FRONTEND.DBP"] != frontendOverrides || got["SETUP/SETUP.EXE"] != "MZ" {
+	if got["AUTOBOOT.DBP"] != "O*dosbox_pure/Win98" || got["FRONTEND.DBP"] != `{"dosbox_pure_bootos_dfreespace":"1024","dosbox_pure_bootos_ramdisk":"diff"}` || got["SETUP/SETUP.EXE"] != "MZ" {
 		t.Fatalf("content %v", got)
 	}
 	if _, ok := got["DOSBOX.BAT"]; ok || len(s.Skipped) != 1 {
@@ -229,11 +229,14 @@ func TestDiscover(t *testing.T) {
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "dosboxpure")
 	os.WriteFile(exe, nil, 0o755)
-	if _, err := Discover(exe, "", ""); err == nil {
+	discover := func(exe, sys, saves string) (Env, error) {
+		return Discover(Frontend{Kind: Standalone, Dir: filepath.Dir(exe), SystemDir: sys, SaveDir: saves})
+	}
+	if _, err := discover(exe, "", ""); err == nil {
 		t.Fatal("missing DOSBoxPure.cfg accepted")
 	}
 	os.WriteFile(filepath.Join(dir, "DOSBoxPure.cfg"), []byte(`{"path_saves": "mysaves", "interface_contentpath": "x"}`), 0o644)
-	e, err := Discover(exe, "", "")
+	e, err := discover(exe, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,14 +248,14 @@ func TestDiscover(t *testing.T) {
 	}
 
 	sys, saves := t.TempDir(), t.TempDir()
-	e, err = Discover(exe, sys, saves)
+	e, err = discover(exe, sys, saves)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if e.SystemDir != sys || e.SaveDir != saves {
 		t.Fatal("explicit dirs ignored")
 	}
-	if _, err := Discover(exe, filepath.Join(sys, "missing"), ""); err == nil {
+	if _, err := discover(exe, filepath.Join(sys, "missing"), ""); err == nil {
 		t.Fatal("missing system directory accepted")
 	}
 
@@ -276,7 +279,7 @@ func TestDiscover(t *testing.T) {
 
 	// Only the system directory given: the saves still come from DOSBox
 	// Pure's configuration, and both are passed on.
-	e, err = Discover(exe, sys, "")
+	e, err = discover(exe, sys, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +301,7 @@ func fakeDOSBoxPure(t *testing.T) (exe, saveDir string) {
 	os.MkdirAll(saveDir, 0o755)
 	os.MkdirAll(filepath.Join(dir, "system"), 0o755)
 	os.WriteFile(filepath.Join(dir, "DOSBoxPure.cfg"), []byte("{}"), 0o644)
-	exe = filepath.Join(dir, "fakepure")
+	exe = filepath.Join(dir, "DOSBoxPure")
 	script := "#!/bin/sh\nname=$(basename \"$1\" .dosz)\ncp \"$FAKE_SAVE\" \"" + saveDir + "/$name$FAKE_SUFFIX\"\n"
 	os.WriteFile(exe, []byte(script), 0o755)
 	return exe, saveDir
@@ -312,7 +315,7 @@ func TestRunPlainSession(t *testing.T) {
 	t.Setenv("FAKE_SUFFIX", ".pure.zip")
 
 	src := writeSource(t, "format = 1\nname = \"Example Game\"\n", map[string]string{"INSTALL/SETUP.EXE": "MZ"})
-	rep, err := Run(Options{Source: src, Exe: exe})
+	rep, err := Run(Options{Source: src, Frontend: Standalone, FrontendDir: exe})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +362,7 @@ func TestRunOSSession(t *testing.T) {
 	t.Setenv("FAKE_SAVE", savePath)
 	t.Setenv("FAKE_SUFFIX", fmt.Sprintf("-%08X.sav", disk.Hash))
 
-	rep, err := Run(Options{Source: src, Exe: exe, Force: true})
+	rep, err := Run(Options{Source: src, Frontend: Standalone, FrontendDir: exe, Force: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -443,7 +446,7 @@ func TestRunOSSessionDriveC(t *testing.T) {
 	t.Setenv("FAKE_SUFFIX", "-CDRIVE.sav")
 
 	src := writeSource(t, "format = 1\nname = \"Example Game\"\n\n[boot]\nos = \"dosbox_pure/Win98\"\n", map[string]string{"SETUP.EXE": "MZ"})
-	opts := Options{Source: src, Exe: exe, SystemDir: systemDir, SaveDir: saveDir, Drive: "c", OS: "dosbox_pure/Install"}
+	opts := Options{Source: src, Frontend: Standalone, FrontendDir: exe, SystemDir: systemDir, SaveDir: saveDir, Drive: "c", OS: "dosbox_pure/Install"}
 	rep, err := Run(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -462,7 +465,7 @@ func TestRunOSSessionDriveC(t *testing.T) {
 		t.Fatalf("install_os: %v", err)
 	}
 	plain := writeSource(t, "format = 1\nname = \"Example Game\"\n", map[string]string{"SETUP.EXE": "MZ"})
-	if _, err := Run(Options{Source: plain, Exe: exe, Drive: "c"}); err == nil {
+	if _, err := Run(Options{Source: plain, Frontend: Standalone, FrontendDir: exe, Drive: "c"}); err == nil {
 		t.Fatal("--drive c accepted for a plain session")
 	}
 }

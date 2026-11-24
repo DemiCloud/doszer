@@ -22,7 +22,7 @@ import (
 type Options struct {
 	Source string // source directory (with DOSZ.TOML) to extract into
 
-	Exe, SystemDir, SaveDir string // DOSBox Pure; see Discover
+	Frontend, FrontendDir, SystemDir, SaveDir string // DOSBox Pure; see Discover
 
 	Dir    string // folder to extract, relative to the drive root; chosen automatically if empty
 	Drive  string // OS image model: "C" to extract from C: changes instead of D:
@@ -37,6 +37,10 @@ type Options struct {
 
 	OS        string            // OS image an OS image session boots instead of boot.os (e.g. a plain install image)
 	InstallOS map[string]string // configured install images by boot.os, the fallback for OS
+}
+
+func (o Options) frontend() Frontend {
+	return Frontend{Kind: o.Frontend, Dir: o.FrontendDir, SystemDir: o.SystemDir, SaveDir: o.SaveDir}
 }
 
 // sessionOS is the OS image an OS image session boots, and a -CDRIVE.sav
@@ -176,7 +180,7 @@ func setStartProgram(rep *Report, m *manifest.Manifest, opts Options) error {
 // runSession runs an install session under DOSBox Pure and extracts what
 // it wrote.
 func runSession(opts Options, m *manifest.Manifest) (*Report, error) {
-	env, err := Discover(opts.Exe, opts.SystemDir, opts.SaveDir)
+	env, err := Discover(opts.frontend())
 	if err != nil {
 		return nil, err
 	}
@@ -190,8 +194,8 @@ func runSession(opts Options, m *manifest.Manifest) (*Report, error) {
 		return nil, err
 	}
 	defer s.Close()
-	status.Step("DOSBox Pure is running: install the game, then close DOSBox Pure")
-	if err := env.Run(s.Content, s.Dir); err != nil {
+	status.Step("DOSBox Pure is running: install the game, then close %s", env.Name())
+	if err := env.Run(s); err != nil {
 		return nil, err
 	}
 
@@ -418,7 +422,9 @@ func runFrom(opts Options, m *manifest.Manifest) (*Report, error) {
 		systemDir := opts.SystemDir
 		if systemDir == "" {
 			// Only the system directory is needed; any save directory will do.
-			env, err := Discover(opts.Exe, "", os.TempDir())
+			f := opts.frontend()
+			f.SaveDir = os.TempDir()
+			env, err := Discover(f)
 			if err != nil {
 				return nil, err
 			}

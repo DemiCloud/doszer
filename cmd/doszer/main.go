@@ -394,7 +394,8 @@ func runInstall(args []string) error {
 	fs := newFlags("install")
 	content := fs.String("content", "", "")
 	dir := fs.String("dir", "", "")
-	exe := fs.String("dosbox-pure", "", "")
+	frontend := fs.String("frontend", "", "")
+	frontendDir := fs.String("frontend-dir", "", "")
 	drive := fs.String("drive", "", "")
 	dryRun := fs.BoolP("dry-run", "n", false, "")
 	force := fs.BoolP("force", "f", false, "")
@@ -411,15 +412,16 @@ Usage: doszer install [options] SOURCE
 Options:
       --content FILE      archive a --from save was made over
       --dir PATH          folder to extract, relative to the drive root
-      --dosbox-pure FILE  DOSBox Pure executable (default: dosbox_pure)
       --drive LETTER      OS image session: drive to extract from, c or d (default: d)
   -n, --dry-run           report without writing
   -f, --force             overwrite differing files in the source
       --from FILE         extract from this .sav, .pure.zip, .vhd or .img instead
+      --frontend NAME     retroarch or standalone (default: frontend, else retroarch)
+      --frontend-dir DIR  frontend's install directory (default: frontend_dir, else detected)
       --keep              keep the session's save files
       --os PATH           OS image to boot instead of boot.os (default: install_os, else boot.os)
-      --save-dir DIR      DOSBox Pure save directory (default: save_dir, else DOSBoxPure.cfg)
-      --system-dir DIR    DOSBox Pure system directory (default: system_dir, else DOSBoxPure.cfg)
+      --save-dir DIR      DOSBox Pure save directory (default: save_dir, else the frontend's)
+      --system-dir DIR    DOSBox Pure system directory (default: system_dir, else the frontend's)
       --template FILE     pristine image to compare a --from image against
 ` + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
@@ -431,21 +433,22 @@ Options:
 		return err
 	}
 	opts := install.Options{
-		Source:    fs.Arg(0),
-		Exe:       stringOr(*exe, cfg.DosboxPure),
-		SystemDir: stringOr(*systemDir, cfg.SystemDir),
-		SaveDir:   stringOr(*saveDir, cfg.SaveDir),
-		Dir:       *dir,
-		Drive:     *drive,
-		OS:        *osImage,
-		InstallOS: cfg.InstallOS,
-		Force:     *force,
-		DryRun:    *dryRun,
-		Keep:      *keep,
-		From:      *from,
-		Content:   *content,
-		Template:  *template,
-		Templates: cfg.Templates,
+		Source:      fs.Arg(0),
+		Frontend:    stringOr(*frontend, cfg.Frontend),
+		FrontendDir: stringOr(*frontendDir, cfg.FrontendDir),
+		SystemDir:   stringOr(*systemDir, cfg.SystemDir),
+		SaveDir:     stringOr(*saveDir, cfg.SaveDir),
+		Dir:         *dir,
+		Drive:       *drive,
+		OS:          *osImage,
+		InstallOS:   cfg.InstallOS,
+		Force:       *force,
+		DryRun:      *dryRun,
+		Keep:        *keep,
+		From:        *from,
+		Content:     *content,
+		Template:    *template,
+		Templates:   cfg.Templates,
 	}
 
 	rep, err := install.Run(opts)

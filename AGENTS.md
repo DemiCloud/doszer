@@ -40,7 +40,7 @@ internal/vhd/        VHD reader (fixed, dynamic), for install
 internal/w9xreg/     Windows 9x registry (SYSTEM.DAT/USER.DAT) reader, diff, REGEDIT4 writer, for install
 internal/fat/        FAT12/16/32 reader with long names, as an io/fs.FS, for install
 internal/vdisk/      DOSBox Pure's synthesized D: disk + .sav diffs (D: and -CDRIVE), for install
-internal/install/    doszer install: session content, launching DOSBox Pure, diffing, extraction
+internal/install/    doszer install: session content, launching DOSBox Pure (RetroArch or standalone), diffing, extraction
 internal/interrupt/  removes registered temporary paths on SIGINT/SIGTERM
 internal/status/     terminal progress: current step with a spinner, finished steps
 examples/            complete example manifests (checked by internal/manifest's TestExamples)
@@ -142,7 +142,8 @@ pointer to it).
 | Synthesized D: disk | `fatFromDOSDrive` builds a FAT disk from the content's DOS view: directory order is `zipDrive`'s hash map slot order (`BaseHashMap`, FNV-1 over sign-extended chars), short names come from `DBP_Make8dot3FileName`/`IncrementName` and are then regenerated Windows-style (`~N`) for long-named entries. Root holds the volume label (`Set_Label` form of `<name, ≤7 chars>-<ext>`). Hidden from D: `AUTOBOOT.DBP`, `PADMAP.DBP`, `FRONTEND.DBP`, `DOSBOX.CON`, `*.SKC`, and mountable images (ISO/CHD/CUE, validated IMG/IMA/VHD/JRC) except one sharing a CUE's name | `src/ints/bios_disk.cpp`, `fatFromDOSDrive`; `src/dos/drive_zip.cpp`; `dosbox_pure_libretro.cpp`, `DBP_GetSaveFile`, `init_dosbox_parse_drives` |
 | D: save hash | The `<HASH>` in `<content>-<HASH>.sav` is a CRC32 chained over every unhidden path, size, date, time and attributes (seeded with `dfreespace`); it is also the disk serial, so the name identifies exactly which content layout the diff belongs to | `DBP_GetSaveFile(SFT_VIRTUALDISK)` |
 | Standalone launch | `DOSBoxPure.exe <content> [disc...]`: first non-`-` argument is the content. `DOSBoxPure.cfg` (JSON) is taken from the working directory if present, else `%APPDATA%\DOSBoxPure` if that exists, else beside the exe; `path_saves`/`path_system` override the `saves`/`system` directories beside it | dosbox-pure-unleashed `main.cpp`, `sDOSBoxPure::Load`, `OnLoad` |
-| Per-content options | Standalone applies a `FRONTEND.DBP` JSON object in the content root as option overrides (and reboots to apply them); it is hidden from D: | `dosbox_pure_libretro.cpp`, `init_dosbox`, `DBPS_ApplyConfigOverrides` |
+| Per-content options | Standalone only (`#ifdef DBP_STANDALONE`): applies a `FRONTEND.DBP` JSON object in the content root as option overrides (and reboots to apply them); hidden from D: in both builds. The libretro core ignores it | `dosbox_pure_libretro.cpp`, `init_dosbox`, `DBPS_ApplyConfigOverrides` |
+| libretro identity | `library_name` `DOSBox-pure` (RetroArch's per-core save/config subfolder), `need_fullpath`; saves go in the frontend's save directory (`RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY`), OS images and shells in its system directory | `dosbox_pure_libretro.cpp`, `retro_get_system_info`, `DBP_GetSaveFile` |
 | `.pure.zip` save | ZIP of changed/added files by DOS path, plus `FILEMODS.DBP` lines `DELETE|path`, `REDIRECTFILE|target|source`, `REDIRECTDIR|target|source` | `src/dos/drive_union.cpp`, `Union_Modification`, `ReadSaveFile` |
 | VHD support | Fixed and dynamic only (a parent name is rejected); a dynamic block sector whose bitmap bit is clear reads as zeros even if the file holds bytes there | `src/ints/bios_disk.cpp`, `sparseVhd::Init`, `sparseVhd::SeeBlock` |
 | CUE `FILE` type | `BINARY` reads raw sectors; any other type opens an `AudioFile`, which detects RIFF/WAVE (16-bit PCM only) or OggS from the file's own header (`C_SDL_SOUND` is undefined in `include/config.h`) | `src/dos/cdrom_image.cpp`, `LoadCueSheet`, `AudioFile::AudioFile` |
@@ -153,13 +154,27 @@ pointer to it).
 | Controller ports | 8 (`DBP_MAX_PORTS`); standalone puts all in mapper mode, RetroArch only those whose device type is "Use Gamepad Mapper" (the default) | `dosbox_pure_libretro.cpp`, `DBP_PadMapping::SetPortMode` |
 | Disc image list | Every ISO/CUE/CHD/... in the content is listed, except an image sharing a CUE's name minus extension (so `<base>.iso` beside `<base>.cue` is hidden) | `dosbox_pure_libretro.cpp`, "Filter image files that have the same name as a cue file" |
 
+## RetroArch facts
+
+`install`'s default frontend. Verified against RetroArch's source
+(`github.com/libretro/RetroArch`, master as of 2026-11-24).
+
+| Topic | Behaviour | Source |
+|---|---|---|
+| Config values | `key = "value"`, literal (Windows paths keep single backslashes); only backslashes directly before a `"` are escapes (recent master), so at worst doszer reads a path's trailing `\` doubled, which is harmless. `default` or empty means unset for directories | `libretro-common/file/config_file.c`, `config_file_extract_value`, `config_file_literal_end`; `configuration.c` |
+| `:` and `~` in paths | A leading `:` is RetroArch's own directory, `~` the home directory | `libretro-common/file/file_path.c`, `fill_pathname_expand_special` |
+| `--appendconfig` | Applied over `-c`'s config; core overrides (`<config>/<core>/<core>.cfg`) stack after it | `configuration.c` |
+| Core options file | Game-specific `<config dir>/<library_name>/<content basename, no extension>.opt` wins, then folder-specific, then per-core `<library_name>.opt` (unless `global_core_options`), then `core_options_path` / `retroarch-core-options.cfg`. A game file's missing keys take the core's defaults | `runloop.c`, `runloop_init_core_options_path`, `validate_per_core_options` |
+| Config directory | `rgui_config_directory`, else the directory of the loaded config | `file_path_special.c`, `APPLICATION_SPECIAL_DIRECTORY_CONFIG` |
+| Saves | `savefile_directory`; `sort_savefiles_enable` adds a `<library_name>` subfolder | `runloop.c` |
+
 ## Status
 
 | Command | State |
 |---|---|
 | `init` | Implemented |
 | `build` | Implemented |
-| `install` | Implemented; live plain and OS image (`--drive c`) sessions passed; `--from` checked on a real D: save (Next steps) |
+| `install` | Implemented; live plain and OS image (`--drive c`) sessions passed under standalone; RetroArch sessions tested with a fake RetroArch only; `--from` checked on a real D: save (Next steps) |
 | `repack` | Implemented |
 | `verify` | Implemented |
 
@@ -278,7 +293,16 @@ reads one byte past the end, since `archive/zip` checks only at
 
 ## Next steps
 
-1. Finish the live `install` test against real DOSBox Pure. Passed
+1. Run a live `install` session under RetroArch (the default frontend):
+   on Windows/WSL (`D:\RetroArch-Win64`, found by autodetection), a plain
+   session and an OS image session - check the game-specific `.opt`
+   takes effect (C: changes land in `-CDRIVE.sav`, the image untouched),
+   that RetroArch quits when the content closes, and that
+   `retroarch.cfg` is unchanged afterwards. RetroDECK's
+   `flatpak run --command=retroarch net.retrodeck.retrodeck` is a guess:
+   confirm the command, and that its sandbox sees the session folder and
+   its cores (sandbox paths under `/app/` aren't checked from outside).
+2. Finish the live `install` test against real DOSBox Pure. Passed
    (2026-11-13): a plain session (Descent II, 32 files from the
    `.pure.zip`), and an OS image session with `--drive c` on a fixed
    Win98 VHD (Betrayal in Antara: 1233 of 1234 files identical to a
@@ -289,7 +313,7 @@ reads one byte past the end, since `archive/zip` checks only at
    with a second image, and that `FRONTEND.DBP`'s override takes effect
    on its own (that machine's `DOSBoxPure.cfg` already sets
    `bootos_ramdisk` to `diff`).
-2. Specification §12's OS image startup (README "Windows 9x OS image").
+3. Specification §12's OS image startup (README "Windows 9x OS image").
    Passed (2026-11-14) with the Betrayal in Antara example on the Win98
    image, under `diff`: `WINDOWS.BAT`'s `QUICKRES_RUNDLLENTRY 640x480x8`
    switched modes without a restart prompt (no 256-colour warning), the
@@ -298,7 +322,7 @@ reads one byte past the end, since `archive/zip` checks only at
    under RetroDECK. Without Explorer as the shell, opening Control Panel
    shows a harmless "Cannot find the file" error with a garbled name;
    open the applets directly (`control desk.cpl`).
-3. Gamepad mappings (`[[input.pad]]`, spec §5.9, §6.8.2-3): implemented
+4. Gamepad mappings (`[[input.pad]]`, spec §5.9, §6.8.2-3): implemented
    and tested against byte layouts derived from the source, not yet live.
    Check in DOSBox Pure (standalone and RetroArch, ideally on a Steam
    Deck): that a generated `PADMAP.DBP` loads without "Corrupt gamepad

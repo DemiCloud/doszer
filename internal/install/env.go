@@ -1,7 +1,7 @@
 // Package install implements `doszer install`: it runs an installer under
-// standalone DOSBox Pure against a temporary copy of a source, then
-// extracts what the installer wrote from DOSBox Pure's save files (README
-// "Install").
+// DOSBox Pure (standalone, or the libretro core in RetroArch) against a
+// temporary copy of a source, then extracts what the installer wrote from
+// DOSBox Pure's save files (README "Install").
 package install
 
 import (
@@ -15,9 +15,24 @@ import (
 	"strings"
 )
 
-// Env locates standalone DOSBox Pure and its system and save directories.
+// Frontend kinds.
+const (
+	RetroArch  = "retroarch"  // the DOSBox Pure libretro core in RetroArch (the default)
+	Standalone = "standalone" // standalone DOSBox Pure
+)
+
+// Frontend says which DOSBox Pure install runs. Every field may be empty:
+// Kind defaults to RetroArch, Dir is looked for (Discover).
+type Frontend struct {
+	Kind      string // RetroArch or Standalone
+	Dir       string // the install's directory, holding its executable
+	SystemDir string // overrides the frontend's system directory
+	SaveDir   string // overrides the frontend's save directory
+}
+
+// Env locates DOSBox Pure and its system and save directories.
 type Env struct {
-	Exe       string // DOSBox Pure executable
+	Exe       string // DOSBox Pure executable, or RetroArch's
 	SystemDir string
 	SaveDir   string
 	wsl       bool // Exe is a Windows program run from WSL
@@ -26,19 +41,89 @@ type Env struct {
 	// read from DOSBox Pure's configuration: that configuration (empty if
 	// there is none), which Run passes on with both directories set.
 	settings map[string]any
+
+	ra *retroArch // set when DOSBox Pure runs as a core in RetroArch
 }
 
-// Discover fills in Env for exe. systemDir and saveDir override what
-// DOSBox Pure's own configuration says, for doszer and for the DOSBox Pure
-// it runs (Run). Otherwise they are read the way
-// standalone DOSBox Pure resolves them (dosbox-pure-unleashed main.cpp,
+// Discover settles which DOSBox Pure install runs: f.Kind's, in f.Dir, or
+// else the first one found (findRetroArch, findStandalone). SystemDir and
+// SaveDir override what that install's own configuration says, for doszer
+// and for the DOSBox Pure it runs (Run).
+func Discover(f Frontend) (Env, error) {
+	for _, d := range []string{f.SystemDir, f.SaveDir} {
+		if d == "" {
+			continue
+		}
+		if fi, err := os.Stat(d); err != nil || !fi.IsDir() {
+			return Env{}, fmt.Errorf("%s: not a directory", d)
+		}
+	}
+	// A path to the executable itself names its directory.
+	if fi, err := os.Stat(f.Dir); err == nil && !fi.IsDir() {
+		f.Dir = filepath.Dir(f.Dir)
+	}
+	switch strings.ToLower(f.Kind) {
+	case "", RetroArch:
+		if f.Dir == "" {
+			return findRetroArch(f)
+		}
+		exe, err := executableIn(f.Dir, "retroarch.exe", "retroarch", "RetroArch")
+		if err != nil {
+			return Env{}, fmt.Errorf("RetroArch: %w", err)
+		}
+		return discoverRetroArch(f, []string{exe}, "")
+	case Standalone:
+		if f.Dir == "" {
+			return findStandalone(f)
+		}
+		exe, err := executableIn(f.Dir, standaloneNames...)
+		if err != nil {
+			return Env{}, fmt.Errorf("DOSBox Pure: %w", err)
+		}
+		return discoverStandalone(exe, f.SystemDir, f.SaveDir)
+	}
+	return Env{}, fmt.Errorf("frontend %q: must be %s or %s", f.Kind, RetroArch, Standalone)
+}
+
+// standaloneNames are standalone DOSBox Pure's executable names.
+var standaloneNames = []string{"DOSBoxPure.exe", "DOSBoxPure", "dosboxpure"}
+
+// findStandalone looks for standalone DOSBox Pure on PATH.
+func findStandalone(f Frontend) (Env, error) {
+	for _, name := range standaloneNames {
+		if p, err := exec.LookPath(name); err == nil {
+			return discoverStandalone(p, f.SystemDir, f.SaveDir)
+		}
+	}
+	return Env{}, errors.New("no standalone DOSBox Pure found on PATH (set frontend_dir or pass --frontend-dir)")
+}
+
+// executableIn returns the first of names that is a file in dir.
+func executableIn(dir string, names ...string) (string, error) {
+	for _, n := range names {
+		p := filepath.Join(dir, n)
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("no %s in %s", strings.Join(names, " or "), dir)
+}
+
+// Name is the program the user closes to end a session.
+func (e Env) Name() string {
+	if e.ra != nil {
+		return "RetroArch"
+	}
+	return "DOSBox Pure"
+}
+
+// discoverStandalone fills in Env for standalone DOSBox Pure's exe. Unless
+// given, the system and save directories are read the way standalone
+// DOSBox Pure resolves them (dosbox-pure-unleashed main.cpp,
 // sDOSBoxPure::Load) when started from its own directory, as install does:
 // DOSBoxPure.cfg in that directory, its path_system/path_saves settings,
 // else the system/ and saves/ directories beside it.
-func Discover(exe, systemDir, saveDir string) (Env, error) {
-	if exe == "" {
-		return Env{}, errors.New("no DOSBox Pure executable configured (set dosbox_pure or pass --dosbox-pure)")
-	}
+func discoverStandalone(exe, systemDir, saveDir string) (Env, error) {
 	exe, err := filepath.Abs(exe)
 	if err != nil {
 		return Env{}, err
@@ -49,14 +134,6 @@ func Discover(exe, systemDir, saveDir string) (Env, error) {
 	e := Env{Exe: exe, wsl: runningWSLWindowsExe(exe)}
 
 	given := systemDir != "" || saveDir != ""
-	for _, d := range []string{systemDir, saveDir} {
-		if d == "" {
-			continue
-		}
-		if fi, err := os.Stat(d); err != nil || !fi.IsDir() {
-			return Env{}, fmt.Errorf("%s: not a directory", d)
-		}
-	}
 	dir := filepath.Dir(exe)
 	cfg := map[string]any{}
 	data, err := os.ReadFile(filepath.Join(dir, "DOSBoxPure.cfg"))
@@ -129,14 +206,18 @@ func (e Env) exePath(p string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// Run starts DOSBox Pure on content and waits for it to exit. Standalone
-// DOSBox Pure uses the DOSBoxPure.cfg in its working directory if there is
+// Run starts DOSBox Pure on the session's content and waits for it to
+// exit. Standalone DOSBox Pure uses the DOSBoxPure.cfg in its working directory if there is
 // one (dosbox-pure-unleashed main.cpp, sDOSBoxPure::Load), and takes its
 // system and save directories from that file's path_system/path_saves. So
 // it runs in its own directory, using its own configuration, unless
 // Discover was given a directory: then it runs in workDir, with a copy of
-// that configuration naming both directories.
-func (e Env) Run(content, workDir string) error {
+// that configuration naming both directories. RetroArch: see runRetroArch.
+func (e Env) Run(s *Session) error {
+	if e.ra != nil {
+		return e.runRetroArch(s)
+	}
+	content, workDir := s.Content, s.Dir
 	arg, err := e.exePath(content)
 	if err != nil {
 		return err
