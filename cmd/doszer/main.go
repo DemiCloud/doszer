@@ -473,6 +473,9 @@ func printInstallReport(rep *install.Report, dryRun bool) {
 	}
 	if len(rep.Changes) > 0 {
 		fmt.Printf("%s %d file(s) changed\n", rep.Drive, len(rep.Changes))
+	} else if rep.Drive != "" {
+		fmt.Printf("No files changed on %s (a file saved with the same content doesn't count): nothing to extract.\n", rep.Drive)
+		fmt.Println("A game that comes installed needs no install: build it as it is.")
 	}
 	if x := rep.Extracted; x != nil {
 		verb := "Extracted"

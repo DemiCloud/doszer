@@ -410,7 +410,12 @@ then name C:, which the manifest's `[[layout.rewrite]]` rules can fix
 (`build --dry-run` suggests rules for paths that move).
 
 The folder to extract is `--dir`, or the one top-level folder every
-change is under. Other changes are listed. A file already in the source
+change is under, or the root when every change is a file there (`--dir /`
+asks for the root). A session that changed nothing extracts nothing:
+DOSBox Pure doesn't save a file rewritten with the same content, so
+running a setup program and keeping its settings leaves no change. A
+game that comes installed doesn't need `install`; `init` and `build` it
+as it is. Other changes are listed. A file already in the source
 with different content stops the extraction unless `--force` is given.
 Save files are removed after a successful extraction unless `--keep` is
 given.

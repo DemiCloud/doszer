@@ -543,3 +543,26 @@ func TestCheckDiffSafe(t *testing.T) {
 		})
 	}
 }
+
+// A session that changes nothing - setup run on a game that comes
+// installed, settings saved unchanged - extracts nothing, without error,
+// and still cleans up its save.
+func TestRunSessionNoChanges(t *testing.T) {
+	exe, saveDir := fakeDOSBoxPure(t)
+	save := filepath.Join(t.TempDir(), "empty.pure.zip")
+	os.WriteFile(save, zipBytes(t, map[string]string{}), 0o644)
+	t.Setenv("FAKE_SAVE", save)
+	t.Setenv("FAKE_SUFFIX", ".pure.zip")
+
+	src := writeSource(t, "format = 1\nname = \"Example Game\"\n", map[string]string{"GAME.EXE": "MZ", "SETUP.EXE": "MZ"})
+	rep, err := Run(Options{Source: src, Frontend: Standalone, FrontendDir: exe})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Changes) != 0 || rep.Extracted != nil || rep.Drive != "C:" {
+		t.Fatalf("report %+v", rep)
+	}
+	if entries, _ := os.ReadDir(saveDir); len(entries) != 0 {
+		t.Fatal("save file not cleaned up")
+	}
+}

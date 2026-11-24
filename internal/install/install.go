@@ -346,6 +346,13 @@ func extractPureZip(rep *Report, p, content string, opts Options) error {
 }
 
 func extract(rep *Report, src fs.FS, opts Options) error {
+	if !anyWritten(rep.Changes) {
+		// Nothing to extract - not an error: a game that comes installed
+		// may only have had its setup run, and DOSBox Pure doesn't save a
+		// file rewritten with the same content (src/dos/drive_union.cpp,
+		// "If content matches, don't store in save file").
+		return nil
+	}
 	rep.Dir = strings.Trim(filepath.ToSlash(opts.Dir), "/.")
 	if opts.Dir == "" { // "/" asks for the root
 		var err error
@@ -356,6 +363,16 @@ func extract(rep *Report, src fs.FS, opts Options) error {
 	var err error
 	rep.Extracted, err = Extract(src, rep.Changes, rep.Dir, opts.Source, opts.Force, opts.session, opts.DryRun)
 	return err
+}
+
+// anyWritten reports whether changes added or modified any file.
+func anyWritten(changes []Change) bool {
+	for _, c := range changes {
+		if c.Kind != Deleted {
+			return true
+		}
+	}
+	return false
 }
 
 // openOverlay opens a disk image's file system as it is (before) and
