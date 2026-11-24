@@ -184,6 +184,9 @@ func runSession(opts Options, m *manifest.Manifest) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	if m.Model() != manifest.ModelPlain && env.SystemDir == "" {
+		return nil, errors.New("no system directory to find the OS image or shell in (set system_dir or pass --system-dir)")
+	}
 	if m.Model() == manifest.ModelOS {
 		if err := checkDiffSafe(env.SystemDir, m.Boot.OS); err != nil {
 			return nil, err

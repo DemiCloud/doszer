@@ -40,7 +40,11 @@ internal/vhd/        VHD reader (fixed, dynamic), for install
 internal/w9xreg/     Windows 9x registry (SYSTEM.DAT/USER.DAT) reader, diff, REGEDIT4 writer, for install
 internal/fat/        FAT12/16/32 reader with long names, as an io/fs.FS, for install
 internal/vdisk/      DOSBox Pure's synthesized D: disk + .sav diffs (D: and -CDRIVE), for install
-internal/install/    doszer install: session content, launching DOSBox Pure (RetroArch or standalone), diffing, extraction
+internal/install/    doszer install: session content, launching DOSBox Pure (built-in, RetroArch or standalone), diffing, extraction
+internal/libretro/   built-in frontend: hosts a libretro core in-process (environment, directory-only VFS, SDL window/input/audio)
+internal/sdl/        the few SDL2 functions internal/libretro uses, loaded at run time through purego
+internal/dl/         dlopen/LoadLibrary without cgo
+internal/builtin/    the DOSBox Pure core (and SDL DLLs on Windows) embedded by `make core`, extracted to the user cache
 internal/interrupt/  removes registered temporary paths on SIGINT/SIGTERM
 internal/status/     terminal progress: current step with a spinner, finished steps
 examples/            complete example manifests (checked by internal/manifest's TestExamples)
@@ -55,10 +59,22 @@ README.md            doszer usage, configuration, install workflow
 - Go 1.24+. Code MUST pass `gofmt`, `go vet` and `go test ./...` (`make vet`,
   `make test`); `make build` for a local binary, `make help` for every
   target.
-- Standard library first. Add a dependency only when reimplementing it would
-  be substantial; current dependencies: `github.com/pelletier/go-toml/v2`,
+- Standard library first. Add a dependency when it's needed and the
+  simplest good solution, not to save a little code; no unneeded
+  dependencies. Current: `github.com/pelletier/go-toml/v2`,
   `github.com/spf13/pflag` (GNU-style options, the same library the
-  sibling `romctl` uses through cobra - five commands don't need cobra).
+  sibling `romctl` uses through cobra - five commands don't need cobra),
+  `github.com/ebitengine/purego` (loading the DOSBox Pure core and SDL2
+  without cgo, so every release target still cross-compiles with
+  `CGO_ENABLED=0`; v0.10.0, the last needing only Go 1.18 - v0.11 needs
+  Go 1.25).
+- The built-in frontend embeds DOSBox Pure, built from a pinned release
+  (`make core`, `DBP_REF` in the Makefile; `internal/builtin`'s
+  `DOSBoxPureVersion` must match), for linux/amd64 and windows/amd64
+  (MinGW-w64, plus sdl2-compat's `SDL2.dll` and `SDL3.dll`). The staged
+  binaries are gitignored; each platform's `MANIFEST` placeholder stays
+  tracked so `go:embed` always has a directory. Upgrading DOSBox Pure
+  means re-checking the DOSBox Pure facts below against the new source.
 - External programs: only `ffmpeg`, for Ogg Vorbis encoding (no maintained
   pure-Go encoder). Invoke it with `-fflags +bitexact` (fixed Ogg stream
   serial numbers) and `-flags +bitexact` (no encoder version string):
@@ -154,6 +170,23 @@ pointer to it).
 | Controller ports | 8 (`DBP_MAX_PORTS`); standalone puts all in mapper mode, RetroArch only those whose device type is "Use Gamepad Mapper" (the default) | `dosbox_pure_libretro.cpp`, `DBP_PadMapping::SetPortMode` |
 | Disc image list | Every ISO/CUE/CHD/... in the content is listed, except an image sharing a CUE's name minus extension (so `<base>.iso` beside `<base>.cue` is hidden) | `dosbox_pure_libretro.cpp`, "Filter image files that have the same name as a cue file" |
 
+## libretro hosting facts
+
+What the built-in frontend (`internal/libretro`) must provide, verified
+against DOSBox Pure 1.0 Preview 8 (`dosbox_pure_libretro.cpp`) and its
+`libretro-common/include/libretro.h`.
+
+| Topic | Behaviour | Source |
+|---|---|---|
+| VFS | Needed (version 3) only to list directories: OS image/shell discovery (`DBP_ScanSystem`) and case-insensitive path matching; also `remove`. Files are opened natively unless the path is a `scheme://` URI (`VFSIO::Use`) | `DBP_ScanSystem`, `VFSIO`, `fpath_nocase` |
+| Core options | `DBP_Option::Get` falls back to the option's default when `GET_VARIABLE` returns no value, so a frontend only answers the options it sets | `retro_get_variable`, `DBP_Option::Get` |
+| Keyboard | Key events through `SET_KEYBOARD_CALLBACK`'s callback (RETROK codes; repeats ignored by the core); `input_state(RETRO_DEVICE_KEYBOARD)` must report keys held | `CallBacks::keyboard_event`, `DBP_ReleaseKeyEvents` |
+| Mouse | `input_state(RETRO_DEVICE_MOUSE)` X/Y as per-poll deltas, buttons through its input binds | `retro_run` |
+| Time | Without `GET_PERF_INTERFACE` the core uses its own clock | `time_cb = dbp_cpu_features_get_time_usec` |
+| Logging | Without `GET_LOG_INTERFACE` the core `vfprintf`s to stderr | `retro_fallback_log` |
+| Pixel format | XRGB8888 (SDL's `RGB888`), software rendered | `retro_load_game`, `SET_PIXEL_FORMAT` |
+| `FRONTEND.DBP` | Ignored by the core (standalone only), so the built-in frontend passes core options itself | `init_dosbox`, `#ifdef DBP_STANDALONE` |
+
 ## RetroArch facts
 
 `install`'s default frontend. Verified against RetroArch's source
@@ -174,7 +207,7 @@ pointer to it).
 |---|---|
 | `init` | Implemented |
 | `build` | Implemented |
-| `install` | Implemented; live plain and OS image (`--drive c`) sessions passed under standalone; RetroArch sessions tested with a fake RetroArch only; `--from` checked on a real D: save (Next steps) |
+| `install` | Implemented; live plain and OS image (`--drive c`) sessions passed under standalone; built-in frontend checked with the real core (headless test on Linux and on Windows via WSL interop, and a window under WSLg), no full live install yet; RetroArch tested with a fake RetroArch only; `--from` checked on a real D: save (Next steps) |
 | `repack` | Implemented |
 | `verify` | Implemented |
 
@@ -293,7 +326,14 @@ reads one byte past the end, since `archive/zip` checks only at
 
 ## Next steps
 
-1. Run a live `install` session under RetroArch (the default frontend):
+1. Run a live `install` with the built-in frontend (the default): a
+   plain CD install, and an OS image session (`bootos_ramdisk = diff`
+   comes from `Config.Options`; check the image is untouched and C: lands
+   in `-CDRIVE.sav`), on Linux/WSLg and as `doszer.exe` on Windows.
+   Check keyboard (scancode table in `internal/libretro/keys.go`), mouse
+   capture in Windows 9x, and audio. Not done yet: gamepads, fullscreen,
+   fast-forward.
+2. Run a live `install` session under RetroArch:
    on Windows/WSL (`D:\RetroArch-Win64`, found by autodetection), a plain
    session and an OS image session - check the game-specific `.opt`
    takes effect (C: changes land in `-CDRIVE.sav`, the image untouched),
@@ -302,7 +342,7 @@ reads one byte past the end, since `archive/zip` checks only at
    `flatpak run --command=retroarch net.retrodeck.retrodeck` is a guess:
    confirm the command, and that its sandbox sees the session folder and
    its cores (sandbox paths under `/app/` aren't checked from outside).
-2. Finish the live `install` test against real DOSBox Pure. Passed
+3. Finish the live `install` test against real DOSBox Pure. Passed
    (2026-11-13): a plain session (Descent II, 32 files from the
    `.pure.zip`), and an OS image session with `--drive c` on a fixed
    Win98 VHD (Betrayal in Antara: 1233 of 1234 files identical to a
@@ -313,7 +353,7 @@ reads one byte past the end, since `archive/zip` checks only at
    with a second image, and that `FRONTEND.DBP`'s override takes effect
    on its own (that machine's `DOSBoxPure.cfg` already sets
    `bootos_ramdisk` to `diff`).
-3. Specification §12's OS image startup (README "Windows 9x OS image").
+4. Specification §12's OS image startup (README "Windows 9x OS image").
    Passed (2026-11-14) with the Betrayal in Antara example on the Win98
    image, under `diff`: `WINDOWS.BAT`'s `QUICKRES_RUNDLLENTRY 640x480x8`
    switched modes without a restart prompt (no 256-colour warning), the
@@ -322,7 +362,7 @@ reads one byte past the end, since `archive/zip` checks only at
    under RetroDECK. Without Explorer as the shell, opening Control Panel
    shows a harmless "Cannot find the file" error with a garbled name;
    open the applets directly (`control desk.cpl`).
-4. Gamepad mappings (`[[input.pad]]`, spec §5.9, §6.8.2-3): implemented
+5. Gamepad mappings (`[[input.pad]]`, spec §5.9, §6.8.2-3): implemented
    and tested against byte layouts derived from the source, not yet live.
    Check in DOSBox Pure (standalone and RetroArch, ideally on a Steam
    Deck): that a generated `PADMAP.DBP` loads without "Corrupt gamepad

@@ -1,4 +1,9 @@
 # Build output
+/thirdparty/
+# The DOSBox Pure core and SDL staged for embedding by `make core`; the
+# MANIFEST placeholders in these directories stay tracked.
+internal/builtin/data/*/*.so
+internal/builtin/data/*/*.dll
 /doszer
 /doszer.exe
 /build/

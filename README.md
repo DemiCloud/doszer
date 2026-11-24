@@ -20,8 +20,12 @@ conversion (§6.4)), `install`, `repack` and `verify`.
 - Go 1.24 or later, to build
 - `ffmpeg` with `libvorbis`, for Ogg Vorbis audio tracks (not needed with
   `audio = "wav"`)
-- For `install`: RetroArch with the DOSBox Pure core, or standalone DOSBox
-  Pure
+- For `install`: nothing on Windows; SDL2 (`libSDL2-2.0.so.0`, installed
+  on most desktops and SteamOS) on Linux. doszer carries its own copy of
+  the DOSBox Pure core (built by `make core`) and runs it in its own
+  window. RetroArch or standalone DOSBox Pure can be used instead.
+- To build the embedded core: a C++ compiler (`make core`), and MinGW-w64
+  for the Windows one (`make core-all`, which `make release` runs)
 
 ## Building
 
@@ -37,7 +41,7 @@ make help    # every target
 doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH] [--name NAME] [--no-media] [-f]
 doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [-n] [--strict] [--ogg-quality N]
 doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FILE]] [-f] [-n] [--keep]
-               [--os PATH] [--drive c|d] [--frontend retroarch|standalone] [--frontend-dir DIR]
+               [--os PATH] [--drive c|d] [--frontend builtin|retroarch|standalone] [--frontend-dir DIR]
                [--system-dir DIR] [--save-dir DIR]
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
 doszer verify  FILE.dosz
@@ -255,15 +259,8 @@ A DOS game that installs from CD, start to finish, under the plain model
 [examples/kings-quest-vii](examples/kings-quest-vii/DOSZ.TOML) is the
 result for one.
 
-`install` runs DOSBox Pure in RetroArch, which it finds on its own when
-RetroArch is installed in a usual place with the DOSBox Pure core (Online
-Updater, Core Downloader). Otherwise, or to use standalone DOSBox Pure,
-say where it is once, in `~/.config/doszer/config.toml` (see "Install"):
-
-```toml
-frontend     = "standalone"           # or "retroarch", the default
-frontend_dir = "/path/to/DOSBoxPure"  # the folder holding its executable
-```
+`install` needs no setup: it runs DOSBox Pure in a window of its own.
+To use RetroArch or standalone DOSBox Pure instead, see "Install".
 
 1. **Dump the disc** to a BIN/CUE (or ISO) with any CD ripping tool, into
    a new directory, e.g. `Example Game/`. The file names don't matter:
@@ -352,8 +349,8 @@ Every setting can be given as a flag. Precedence, highest first:
 ```toml
 system_dir  = "/path/to/system"      # DOSBox Pure's system directory (OS images, shells)
 save_dir    = "/path/to/saves"       # DOSBox Pure's save directory
-frontend    = "retroarch"            # DOSBox Pure for install: retroarch or standalone
-frontend_dir = "/path/to/install"    # the frontend's install directory (default: detected)
+frontend    = "builtin"              # DOSBox Pure for install: builtin, retroarch or standalone
+frontend_dir = "/path/to/install"    # retroarch or standalone install directory (default: detected)
 ogg_quality = 6
 
 [templates]                          # pristine OS images used by install
@@ -450,11 +447,29 @@ save or disk image:
 | `.pure.zip` | (`--content` to tell modified files from added ones) |
 | `.vhd`, `.img` | `--template` or a configured template to compare against, else `--dir` |
 
-`install` runs DOSBox Pure under `frontend`: `retroarch` (the default),
-the DOSBox Pure core in RetroArch, where archives are meant to run, or
-`standalone`. `frontend_dir` is the folder holding that frontend's
-executable (`retroarch`/`retroarch.exe`, `DOSBoxPure`/`DOSBoxPure.exe`).
-Unset, `install` looks for RetroArch with the DOSBox Pure core on `PATH`,
+`install` runs DOSBox Pure under `frontend`:
+
+| `frontend` | Runs |
+|---|---|
+| `builtin` (default) | The DOSBox Pure libretro core doszer embeds (`make core`), in doszer's own window |
+| `retroarch` | The DOSBox Pure core in RetroArch, where archives are meant to run (the default in a build without the embedded core) |
+| `standalone` | Standalone DOSBox Pure |
+
+`builtin` is the same core RetroArch runs, built from DOSBox Pure
+1.0 Preview 8, which doszer's save-file handling was checked against. The
+core is unpacked to the user cache directory on first use. doszer answers
+its questions itself: the session's core options go straight to the core,
+saves go to `save_dir` (default: `doszer/saves` in the user cache
+directory), and OS images and shells come from `system_dir`, else
+RetroArch's system directory if RetroArch is installed. Click the window
+to capture the mouse; Ctrl+F10 releases it. Close the window when the
+install is done. It's built for linux/amd64 (it uses the system's SDL2,
+and WSLg under WSL) and windows/amd64 (it carries SDL2); elsewhere use
+`retroarch` or `standalone`.
+
+For `retroarch` and `standalone`, `frontend_dir` is the folder holding
+that frontend's executable (`retroarch`/`retroarch.exe`,
+`DOSBoxPure`/`DOSBoxPure.exe`). Unset, `install` looks for RetroArch with the DOSBox Pure core on `PATH`,
 in `RetroArch-Win64`, `RetroArch`, `Program Files\RetroArch` and Steam's
 `steamapps\common\RetroArch` on every drive (under Windows and WSL), in
 `/Applications` (macOS), and as a Flatpak (`org.libretro.RetroArch`, then
@@ -536,3 +551,18 @@ with Explorer never running as the shell, discs are not AutoRun.
 
 Use a fixed VHD or raw image: DOSBox Pure loses writes to a dynamic VHD
 under `diff` (see "Install" above to convert one).
+
+## Credits
+
+doszer exists for [DOSBox Pure](https://codeberg.org/schelling/dosbox-pure),
+the DOSBox-based libretro core and standalone emulator its archives run
+in, and embeds a build of it for `install`. DOSBox Pure is built on
+[DOSBox](https://www.dosbox.com/). Both are licensed under the GNU General
+Public License, version 2 or later; their source is at those links, and
+`make core` builds the embedded core from DOSBox Pure's 1.0 Preview 8
+release tag. Thanks to their authors.
+
+The built-in frontend also uses [SDL](https://www.libsdl.org/) (zlib
+license; its Windows DLLs are embedded) and
+[purego](https://github.com/ebitengine/purego) (Apache 2.0), and follows
+the [libretro](https://www.libretro.com/) API.

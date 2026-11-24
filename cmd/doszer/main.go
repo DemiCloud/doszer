@@ -416,8 +416,8 @@ Options:
   -n, --dry-run           report without writing
   -f, --force             overwrite differing files in the source
       --from FILE         extract from this .sav, .pure.zip, .vhd or .img instead
-      --frontend NAME     retroarch or standalone (default: frontend, else retroarch)
-      --frontend-dir DIR  frontend's install directory (default: frontend_dir, else detected)
+      --frontend NAME     builtin, retroarch or standalone (default: frontend, else builtin)
+      --frontend-dir DIR  retroarch or standalone install directory (default: frontend_dir, else detected)
       --keep              keep the session's save files
       --os PATH           OS image to boot instead of boot.os (default: install_os, else boot.os)
       --save-dir DIR      DOSBox Pure save directory (default: save_dir, else the frontend's)

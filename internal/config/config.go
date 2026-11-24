@@ -23,7 +23,7 @@ const FileName = "doszer.toml"
 type Config struct {
 	SystemDir   string            `toml:"system_dir"`
 	SaveDir     string            `toml:"save_dir"`
-	Frontend    string            `toml:"frontend"`     // "retroarch" (default) or "standalone"
+	Frontend    string            `toml:"frontend"`     // "builtin" (default), "retroarch" or "standalone"
 	FrontendDir string            `toml:"frontend_dir"` // the frontend's install directory
 	OggQuality  int               `toml:"ogg_quality"`
 	Templates   map[string]string `toml:"templates"`

@@ -1,0 +1,2 @@
+Files embedded into doszer for windows_amd64 by `make core` (see internal/builtin).
+This placeholder stays tracked so go:embed always has a directory.

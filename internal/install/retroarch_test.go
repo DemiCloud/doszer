@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/DemiCloud/doszer/internal/builtin"
 )
 
 // fakeRetroArch writes a RetroArch install: a script that stands in for
@@ -50,7 +52,11 @@ name=$(basename "$1" .dosz)
 
 func TestDiscoverRetroArch(t *testing.T) {
 	dir := fakeRetroArch(t)
-	for _, kind := range []string{"", RetroArch} {
+	kinds := []string{RetroArch}
+	if !builtin.Available() {
+		kinds = append(kinds, "") // RetroArch is the default without the embedded core
+	}
+	for _, kind := range kinds {
 		e, err := Discover(Frontend{Kind: kind, Dir: dir})
 		if err != nil {
 			t.Fatal(err)
@@ -67,12 +73,12 @@ func TestDiscoverRetroArch(t *testing.T) {
 	}
 
 	// The executable's own path names its directory.
-	if _, err := Discover(Frontend{Dir: filepath.Join(dir, "retroarch")}); err != nil {
+	if _, err := Discover(Frontend{Kind: RetroArch, Dir: filepath.Join(dir, "retroarch")}); err != nil {
 		t.Fatal(err)
 	}
 
 	sys, saves := t.TempDir(), t.TempDir()
-	e, err := Discover(Frontend{Dir: dir, SystemDir: sys, SaveDir: saves})
+	e, err := Discover(Frontend{Kind: RetroArch, Dir: dir, SystemDir: sys, SaveDir: saves})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +90,7 @@ func TestDiscoverRetroArch(t *testing.T) {
 		t.Fatal("unknown frontend accepted")
 	}
 	os.Remove(filepath.Join(dir, "cores", coreFile("retroarch")))
-	if _, err := Discover(Frontend{Dir: dir}); err == nil || !strings.Contains(err.Error(), "Core Downloader") {
+	if _, err := Discover(Frontend{Kind: RetroArch, Dir: dir}); err == nil || !strings.Contains(err.Error(), "Core Downloader") {
 		t.Fatalf("missing core: %v", err)
 	}
 }
@@ -117,7 +123,7 @@ func TestRunRetroArchSession(t *testing.T) {
 	before, _ := os.ReadFile(filepath.Join(dir, "retroarch.cfg"))
 
 	src := writeSource(t, "format = 1\nname = \"Example Game\"\n", map[string]string{"INSTALL/SETUP.EXE": "MZ"})
-	rep, err := Run(Options{Source: src, FrontendDir: dir})
+	rep, err := Run(Options{Source: src, Frontend: RetroArch, FrontendDir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +140,7 @@ func TestRunRetroArchSession(t *testing.T) {
 
 func TestRetroArchCoreOptions(t *testing.T) {
 	dir := fakeRetroArch(t)
-	e, err := Discover(Frontend{Dir: dir})
+	e, err := Discover(Frontend{Kind: RetroArch, Dir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,5 +159,24 @@ func TestRetroArchCoreOptions(t *testing.T) {
 	want := "dosbox_pure_bootos_dfreespace = \"1024\"\ndosbox_pure_bootos_ramdisk = \"diff\"\ndosbox_pure_cycles = \"max\"\n"
 	if string(got) != want {
 		t.Fatalf("game options:\n%s", got)
+	}
+}
+
+func TestDiscoverBuiltin(t *testing.T) {
+	if !builtin.Available() {
+		if _, err := Discover(Frontend{Kind: Builtin}); err == nil {
+			t.Fatal("builtin frontend without an embedded core")
+		}
+		t.Skip("no embedded core")
+	}
+	sys, saves := t.TempDir(), t.TempDir()
+	for _, kind := range []string{"", Builtin} {
+		e, err := Discover(Frontend{Kind: kind, SystemDir: sys, SaveDir: saves})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !e.builtin || e.ra != nil || e.SystemDir != sys || e.SaveDir != saves {
+			t.Fatalf("env %+v", e)
+		}
 	}
 }

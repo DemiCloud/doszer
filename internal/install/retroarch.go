@@ -189,12 +189,6 @@ func discoverRetroArch(f Frontend, cmd []string, config string) (Env, error) {
 		return Env{}, err
 	}
 	ra.core = filepath.Join(cores, coreFile(exe))
-	// A Flatpak's own files (/app/...) aren't visible from outside it.
-	if !strings.HasPrefix(ra.core, "/app/") {
-		if _, err := os.Stat(ra.core); err != nil {
-			return Env{}, fmt.Errorf("RetroArch at %s has no DOSBox Pure core (%s): install it from Online Updater, Core Downloader", exe, ra.core)
-		}
-	}
 
 	if e.SystemDir = f.SystemDir; e.SystemDir == "" {
 		if e.SystemDir, err = path("system_directory", filepath.Join(cfgDir, "system")); err != nil {
@@ -233,7 +227,35 @@ func discoverRetroArch(f Frontend, cmd []string, config string) (Env, error) {
 			ra.options[k] = v
 		}
 	}
+	// A Flatpak's own files (/app/...) aren't visible from outside it.
+	if !strings.HasPrefix(ra.core, "/app/") {
+		if _, err := os.Stat(ra.core); err != nil {
+			return e, &noCoreError{exe: exe, core: ra.core}
+		}
+	}
 	return e, nil
+}
+
+// noCoreError is a RetroArch install without the DOSBox Pure core;
+// discoverRetroArch still returns the rest of its Env with it.
+type noCoreError struct{ exe, core string }
+
+func (e *noCoreError) Error() string {
+	return fmt.Sprintf("RetroArch at %s has no DOSBox Pure core (%s): install it from Online Updater, Core Downloader", e.exe, e.core)
+}
+
+// retroArchSystemDir is the system directory of the first RetroArch
+// install found, with or without the DOSBox Pure core: where a user's OS
+// images and shells are, for the runtime archives target. "" if none.
+func retroArchSystemDir() string {
+	for _, c := range retroArchInstalls() {
+		e, err := discoverRetroArch(Frontend{}, c.cmd, c.config)
+		var nc *noCoreError
+		if err == nil || errors.As(err, &nc) {
+			return e.SystemDir
+		}
+	}
+	return ""
 }
 
 // findRetroArchConfig finds the retroarch.cfg exe uses: beside it (a

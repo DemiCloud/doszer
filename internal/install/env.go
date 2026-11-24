@@ -13,19 +13,24 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/DemiCloud/doszer/internal/builtin"
+	"github.com/DemiCloud/doszer/internal/libretro"
 )
 
 // Frontend kinds.
 const (
-	RetroArch  = "retroarch"  // the DOSBox Pure libretro core in RetroArch (the default)
+	Builtin    = "builtin"    // the DOSBox Pure core embedded in doszer, run in doszer's own window (the default where embedded)
+	RetroArch  = "retroarch"  // the DOSBox Pure libretro core in RetroArch (the default otherwise)
 	Standalone = "standalone" // standalone DOSBox Pure
 )
 
-// Frontend says which DOSBox Pure install runs. Every field may be empty:
-// Kind defaults to RetroArch, Dir is looked for (Discover).
+// Frontend says which DOSBox Pure runs. Every field may be empty: Kind
+// defaults to Builtin where this build embeds the core, else RetroArch;
+// Dir is looked for (Discover).
 type Frontend struct {
 	Kind      string // RetroArch or Standalone
-	Dir       string // the install's directory, holding its executable
+	Dir       string // the install's directory, holding its executable (not for Builtin)
 	SystemDir string // overrides the frontend's system directory
 	SaveDir   string // overrides the frontend's save directory
 }
@@ -42,11 +47,13 @@ type Env struct {
 	// there is none), which Run passes on with both directories set.
 	settings map[string]any
 
-	ra *retroArch // set when DOSBox Pure runs as a core in RetroArch
+	ra      *retroArch // set when DOSBox Pure runs as a core in RetroArch
+	builtin bool       // DOSBox Pure runs embedded (internal/libretro)
 }
 
-// Discover settles which DOSBox Pure install runs: f.Kind's, in f.Dir, or
-// else the first one found (findRetroArch, findStandalone). SystemDir and
+// Discover settles which DOSBox Pure runs: f.Kind's, in f.Dir, or else the
+// first one found (findRetroArch, findStandalone); the embedded core needs
+// no install (discoverBuiltin). SystemDir and
 // SaveDir override what that install's own configuration says, for doszer
 // and for the DOSBox Pure it runs (Run).
 func Discover(f Frontend) (Env, error) {
@@ -62,7 +69,13 @@ func Discover(f Frontend) (Env, error) {
 	if fi, err := os.Stat(f.Dir); err == nil && !fi.IsDir() {
 		f.Dir = filepath.Dir(f.Dir)
 	}
-	switch strings.ToLower(f.Kind) {
+	kind := strings.ToLower(f.Kind)
+	if kind == "" && builtin.Available() {
+		kind = Builtin
+	}
+	switch kind {
+	case Builtin:
+		return discoverBuiltin(f)
 	case "", RetroArch:
 		if f.Dir == "" {
 			return findRetroArch(f)
@@ -82,7 +95,56 @@ func Discover(f Frontend) (Env, error) {
 		}
 		return discoverStandalone(exe, f.SystemDir, f.SaveDir)
 	}
-	return Env{}, fmt.Errorf("frontend %q: must be %s or %s", f.Kind, RetroArch, Standalone)
+	return Env{}, fmt.Errorf("frontend %q: must be %s, %s or %s", f.Kind, Builtin, RetroArch, Standalone)
+}
+
+// discoverBuiltin fills in Env for the embedded core. Unless given, the
+// system directory is RetroArch's, if one is installed - where OS images
+// and shells are kept for the runtime archives target - and the save
+// directory is doszer's own, in the user cache directory.
+func discoverBuiltin(f Frontend) (Env, error) {
+	if !builtin.Available() {
+		_, _, err := builtin.Extract()
+		return Env{}, err
+	}
+	e := Env{Exe: "doszer", builtin: true, SystemDir: f.SystemDir, SaveDir: f.SaveDir}
+	if e.SystemDir == "" {
+		e.SystemDir = retroArchSystemDir()
+	}
+	if e.SaveDir == "" {
+		cache, err := os.UserCacheDir()
+		if err != nil {
+			return Env{}, err
+		}
+		e.SaveDir = filepath.Join(cache, "doszer", "saves")
+		if err := os.MkdirAll(e.SaveDir, 0o755); err != nil {
+			return Env{}, err
+		}
+	}
+	return e, nil
+}
+
+// runBuiltin runs the session in doszer's own window with the embedded
+// core, which reads its directories and the session's core options from
+// doszer directly (internal/libretro).
+func (e Env) runBuiltin(s *Session) error {
+	core, sdlLibs, err := builtin.Extract()
+	if err != nil {
+		return err
+	}
+	systemDir := e.SystemDir
+	if systemDir == "" {
+		systemDir = s.Dir // nothing to boot from: any directory will do
+	}
+	return libretro.Run(libretro.Config{
+		Core:      core,
+		SDL:       sdlLibs,
+		Content:   s.Content,
+		SystemDir: systemDir,
+		SaveDir:   e.SaveDir,
+		Options:   s.CoreOptions,
+		Title:     "doszer install - click to capture the mouse, Ctrl+F10 releases it; close this window when done",
+	})
 }
 
 // standaloneNames are standalone DOSBox Pure's executable names.
@@ -216,6 +278,9 @@ func (e Env) exePath(p string) (string, error) {
 func (e Env) Run(s *Session) error {
 	if e.ra != nil {
 		return e.runRetroArch(s)
+	}
+	if e.builtin {
+		return e.runBuiltin(s)
 	}
 	content, workDir := s.Content, s.Dir
 	arg, err := e.exePath(content)
