@@ -1,4 +1,4 @@
-//go:build !((linux && amd64) || (windows && amd64))
+//go:build !((linux && (amd64 || arm64)) || (windows && amd64))
 
 // No DOSBox Pure core is built for this platform: Available reports false.
 package builtin

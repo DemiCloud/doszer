@@ -13,24 +13,33 @@ RELEASE_LDFLAGS := $(LDFLAGS) -s -w
 # Target platforms for `make release`
 PLATFORMS := linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64
 
-# The DOSBox Pure core embedded for the built-in frontend (internal/builtin):
-# built from this release, for linux/amd64 natively and windows/amd64 with
-# MinGW-w64 (Fedora: mingw64-gcc-c++; SDL2.dll/SDL3.dll from
-# mingw64-sdl2-compat and mingw64-SDL3). The C++ runtime is linked
-# statically where its static library is installed (always for Windows;
-# on Linux with Fedora's libstdc++-static), so the core needs only the C
-# library; otherwise the Linux core also needs libstdc++.so.6.
+# The DOSBox Pure core embedded for the built-in frontend (internal/builtin),
+# built from this release tag. Linux cores are cross-built with zig, which
+# brings its own C++ runtime (linked statically) and glibc headers: they
+# need only glibc $(CORE_GLIBC)+, on any host architecture. The Windows
+# core is built with MinGW-w64 (Fedora: mingw64-gcc-c++), beside
+# sdl2-compat's SDL2.dll and the SDL3.dll it loads (mingw64-sdl2-compat,
+# mingw64-SDL3).
 DBP_URL     := https://codeberg.org/schelling/dosbox-pure.git
 DBP_REF     := 1.0-preview8
 DBP_SRC     := thirdparty/dosbox-pure
 BUILTIN     := internal/builtin/data
+ZIG         ?= zig
+CORE_GLIBC  := 2.28
 MINGW64     := x86_64-w64-mingw32-
 MINGW64_BIN := /usr/x86_64-w64-mingw32/sys-root/mingw/bin
 JOBS        ?= $(shell nproc 2>/dev/null || echo 4)
 
-CORE_LINUX_CXX := g++$(if $(filter /%,$(shell g++ -print-file-name=libstdc++.a 2>/dev/null)), -static-libstdc++ -static-libgcc)
-CORE_LINUX   := $(BUILTIN)/linux_amd64/dosbox_pure_libretro.so
+ZIG_ARCH_amd64 := x86_64
+ZIG_ARCH_arm64 := aarch64
+HOST_ARCH      := $(shell go env GOARCH)
+
+CORE_LINUX   = $(BUILTIN)/linux_$(1)/dosbox_pure_libretro.so
 CORE_WINDOWS := $(BUILTIN)/windows_amd64/dosbox_pure_libretro.dll
+CORES        := $(call CORE_LINUX,amd64) $(call CORE_LINUX,arm64) $(CORE_WINDOWS)
+
+# Every core build writes the same output file in $(DBP_SRC).
+.NOTPARALLEL:
 
 .PHONY: build test vet install release clean help core core-all
 
@@ -67,9 +76,9 @@ release: clean core-all ## Stripped, trimpath, multi-arch release archives → d
 clean: ## Remove build/ and dist/
 	rm -rf build dist
 
-core: $(CORE_LINUX) ## Build and stage the DOSBox Pure core for the host (linux/amd64)
+core: $(call CORE_LINUX,$(HOST_ARCH)) ## Build and stage the DOSBox Pure core for this host (linux)
 
-core-all: $(CORE_LINUX) $(CORE_WINDOWS) ## Build and stage the DOSBox Pure core for every embedded platform
+core-all: $(CORES) ## Build and stage the DOSBox Pure core for every embedded platform
 
 $(DBP_SRC)/.fetched:
 	rm -rf $(DBP_SRC)
@@ -79,9 +88,9 @@ $(DBP_SRC)/.fetched:
 	git -C $(DBP_SRC) -c advice.detachedHead=false checkout -q FETCH_HEAD
 	touch $@
 
-$(CORE_LINUX): $(DBP_SRC)/.fetched
-	$(MAKE) -C $(DBP_SRC) -j$(JOBS) BUILDDIR=linux \
-		CXX="$(CORE_LINUX_CXX)"
+$(BUILTIN)/linux_%/dosbox_pure_libretro.so: $(DBP_SRC)/.fetched
+	$(MAKE) -C $(DBP_SRC) -j$(JOBS) BUILDDIR=linux-$* CPUFLAGS= STRIP=true \
+		CXX="$(ZIG) c++ -target $(ZIG_ARCH_$*)-linux-gnu.$(CORE_GLIBC) -s"
 	install -D -m 0644 $(DBP_SRC)/dosbox_pure_libretro.so $@
 
 $(CORE_WINDOWS): $(DBP_SRC)/.fetched

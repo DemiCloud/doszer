@@ -24,8 +24,9 @@ conversion (§6.4)), `install`, `repack` and `verify`.
   on most desktops and SteamOS) on Linux. doszer carries its own copy of
   the DOSBox Pure core (built by `make core`) and runs it in its own
   window. RetroArch or standalone DOSBox Pure can be used instead.
-- To build the embedded core: a C++ compiler (`make core`), and MinGW-w64
-  for the Windows one (`make core-all`, which `make release` runs)
+- To build the embedded core: [zig](https://ziglang.org/) for the Linux
+  ones (`make core`), and MinGW-w64 for the Windows one (`make core-all`,
+  which `make release` runs)
 
 ## Building
 
@@ -463,9 +464,9 @@ saves go to `save_dir` (default: `doszer/saves` in the user cache
 directory), and OS images and shells come from `system_dir`, else
 RetroArch's system directory if RetroArch is installed. Click the window
 to capture the mouse; Ctrl+F10 releases it. Close the window when the
-install is done. It's built for linux/amd64 (it uses the system's SDL2,
-and WSLg under WSL) and windows/amd64 (it carries SDL2); elsewhere use
-`retroarch` or `standalone`.
+install is done. It's built for linux/amd64 and linux/arm64 (glibc 2.28
+or later and the system's SDL2; WSLg under WSL) and windows/amd64 (it
+carries SDL2); elsewhere use `retroarch` or `standalone`.
 
 For `retroarch` and `standalone`, `frontend_dir` is the folder holding
 that frontend's executable (`retroarch`/`retroarch.exe`,
@@ -554,13 +555,13 @@ under `diff` (see "Install" above to convert one).
 
 ## Credits
 
-doszer exists for [DOSBox Pure](https://codeberg.org/schelling/dosbox-pure),
-the DOSBox-based libretro core and standalone emulator its archives run
-in, and embeds a build of it for `install`. DOSBox Pure is built on
+doszer exists for [DOSBox Pure](https://codeberg.org/schelling/dosbox-pure)
+by Bernhard Schelling, the DOSBox-based libretro core and standalone
+emulator its archives run in, and embeds a build of it for `install`. DOSBox Pure is built on
 [DOSBox](https://www.dosbox.com/). Both are licensed under the GNU General
 Public License, version 2 or later; their source is at those links, and
 `make core` builds the embedded core from DOSBox Pure's 1.0 Preview 8
-release tag. Thanks to their authors.
+release tag. Thank you to Bernhard Schelling and the DOSBox team.
 
 The built-in frontend also uses [SDL](https://www.libsdl.org/) (zlib
 license; its Windows DLLs are embedded) and

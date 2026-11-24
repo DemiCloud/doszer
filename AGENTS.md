@@ -70,8 +70,11 @@ README.md            doszer usage, configuration, install workflow
   Go 1.25).
 - The built-in frontend embeds DOSBox Pure, built from a pinned release
   (`make core`, `DBP_REF` in the Makefile; `internal/builtin`'s
-  `DOSBoxPureVersion` must match), for linux/amd64 and windows/amd64
-  (MinGW-w64, plus sdl2-compat's `SDL2.dll` and `SDL3.dll`). The staged
+  `DOSBoxPureVersion` must match), for linux/amd64 and linux/arm64 (zig
+  `c++ -target <arch>-linux-gnu.2.28`: static C++ runtime, glibc 2.27+
+  as measured, any host) and windows/amd64 (MinGW-w64, plus
+  sdl2-compat's `SDL2.dll` and `SDL3.dll`). No macOS core: building one
+  needs Apple's SDK. The arm64 core is untested on hardware. The staged
   binaries are gitignored; each platform's `MANIFEST` placeholder stays
   tracked so `go:embed` always has a directory. Upgrading DOSBox Pure
   means re-checking the DOSBox Pure facts below against the new source.
