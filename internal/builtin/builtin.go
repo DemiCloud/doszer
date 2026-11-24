@@ -1,7 +1,8 @@
-// Package builtin holds the DOSBox Pure libretro core (and, on Windows,
-// SDL2) embedded into doszer at build time by `make core`, for the
-// built-in frontend (internal/libretro). They're extracted to a cache
-// directory named after their content on first use.
+// Package builtin holds the programs embedded into doszer at build time:
+// the DOSBox Pure libretro core (and, on Windows, SDL2) for the built-in
+// frontend (internal/libretro, `make core`), and redumper for `doszer
+// dump` (`make redumper`). They're extracted to a cache directory named
+// after their content on first use.
 package builtin
 
 import (
@@ -59,23 +60,63 @@ func Available() bool {
 	return err == nil
 }
 
-// Extract writes the embedded files to the cache directory, if not already
-// there, and returns the core's path and the SDL libraries to load (empty:
-// the system's).
+// Extract writes the embedded core and SDL to the cache directory, if not
+// already there, and returns the core's path and the SDL libraries to load
+// (empty: the system's).
 func Extract() (core string, sdl []string, err error) {
 	if !Available() {
 		return "", nil, errors.New("this doszer was built without the DOSBox Pure core (make core), use --frontend retroarch or standalone")
 	}
-	f, _ := files()
-	names := []string{coreName()}
-	names = append(names, sdlLibs()...)
+	dir, err := extract("dosbox-pure-"+DOSBoxPureVersion, append([]string{coreName()}, sdlLibs()...))
+	if err != nil {
+		return "", nil, err
+	}
+	for _, n := range sdlLibs() {
+		sdl = append(sdl, filepath.Join(dir, n))
+	}
+	return filepath.Join(dir, coreName()), sdl, nil
+}
+
+// RedumperVersion is the redumper release `make redumper` embeds.
+const RedumperVersion = "b773"
+
+// Redumper extracts the embedded redumper and returns its path: the
+// Windows build when windows is set (on linux/amd64, for WSL, which can't
+// reach optical drives itself), else this platform's.
+func Redumper(windows bool) (string, error) {
+	name := "redumper"
+	if windows || runtime.GOOS == "windows" {
+		name = "redumper.exe"
+	}
+	f, err := files()
+	if err == nil {
+		_, err = fs.Stat(f, name)
+	}
+	if err != nil {
+		return "", errors.New("this doszer was built without redumper (make redumper)")
+	}
+	dir, err := extract("redumper-"+RedumperVersion, []string{name})
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name), nil
+}
+
+// extract writes the named embedded files to a cache directory named after
+// prefix and their content, unless already there, and returns it.
+func extract(prefix string, names []string) (string, error) {
+	f, err := files()
+	if err != nil {
+		return "", err
+	}
+	names = append([]string(nil), names...)
 	sort.Strings(names)
 	sum := sha256.New()
 	data := map[string][]byte{}
 	for _, n := range names {
 		b, err := fs.ReadFile(f, n)
 		if err != nil {
-			return "", nil, fmt.Errorf("embedded %s: %w", n, err)
+			return "", fmt.Errorf("embedded %s: %w", n, err)
 		}
 		data[n] = b
 		sum.Write([]byte(n))
@@ -83,11 +124,11 @@ func Extract() (core string, sdl []string, err error) {
 	}
 	cache, err := os.UserCacheDir()
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
-	dir := filepath.Join(cache, "doszer", "dosbox-pure-"+DOSBoxPureVersion+"-"+hex.EncodeToString(sum.Sum(nil))[:12])
+	dir := filepath.Join(cache, "doszer", prefix+"-"+hex.EncodeToString(sum.Sum(nil))[:12])
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", nil, err
+		return "", err
 	}
 	for _, n := range names {
 		p := filepath.Join(dir, path.Base(n))
@@ -96,7 +137,7 @@ func Extract() (core string, sdl []string, err error) {
 		}
 		tmp, err := os.CreateTemp(dir, ".extract-*")
 		if err != nil {
-			return "", nil, err
+			return "", err
 		}
 		_, werr := tmp.Write(data[n])
 		cerr := tmp.Close()
@@ -111,12 +152,8 @@ func Extract() (core string, sdl []string, err error) {
 		}
 		if werr != nil {
 			os.Remove(tmp.Name())
-			return "", nil, fmt.Errorf("extracting %s: %w", n, werr)
+			return "", fmt.Errorf("extracting %s: %w", n, werr)
 		}
 	}
-	core = filepath.Join(dir, coreName())
-	for _, n := range sdlLibs() {
-		sdl = append(sdl, filepath.Join(dir, n))
-	}
-	return core, sdl, nil
+	return dir, nil
 }

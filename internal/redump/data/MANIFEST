@@ -1,0 +1,2 @@
+Redump datfile snapshot staged by `make dat` (see internal/redump).
+This placeholder stays tracked so go:embed always has a directory.

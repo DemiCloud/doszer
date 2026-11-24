@@ -39,6 +39,8 @@ make help    # every target
 ## Commands
 
 ```
+doszer dump    DIR [--drive DRIVE] [--dat FILE]
+doszer redump  [SHA1|FILE...] [--update] [--dat FILE]
 doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH] [--name NAME] [--no-media] [-f]
 doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [-n] [--strict] [--ogg-quality N]
 doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FILE]] [-f] [-n] [--keep]
@@ -108,6 +110,26 @@ files up to 8 MB for references, suggests `[[layout.rewrite]]` rules, and
 reports references in binary files (containing a NUL byte) that cannot be
 rewritten. A rewrite rule applies to any file without a NUL byte that its
 `files` patterns name, e.g. an INI-style `RESOURCE.CFG` (spec §6.5).
+
+## Dumping and verifying discs
+
+`dump` reads a CD with redumper into `DIR`, as `disc<N>.cue` and its
+track files. redumper's work files (an image of the raw disc and its
+state) are kept beside `DIR`, in `.<DIR>.doszer-dump`, until the dump is
+done, so a failed or interrupted dump resumes, re-reading only what's
+missing; its log is kept in `doszer/dumps` in the user cache directory.
+A drive that can't read the lead-out can't read the last few samples a
+positive read offset shifts into it: the dump is finished with them left
+as zeros, as they almost always are on the disc, and reported.
+
+The dump is then checked against Redump's IBM PC datfile, matching every
+track's size and SHA-1: `Verified`, or the closest disc and the tracks
+that differ, or no match (a bad dump, or a disc not in Redump yet). The
+datfile is, in order: `--dat`/`redump_dat` (any Logiqx datfile); a copy
+fetched from redump.org at most weekly and cached in the user cache
+directory; the snapshot built into doszer (`make dat`). `doszer redump`
+shows which is in use, `--update` fetches the current one, and given
+SHA-1s or track files (or a CUE sheet) it looks them up.
 
 ## Media conversion
 
@@ -263,9 +285,24 @@ result for one.
 `install` needs no setup: it runs DOSBox Pure in a window of its own.
 To use RetroArch or standalone DOSBox Pure instead, see "Install".
 
-1. **Dump the disc** to a BIN/CUE (or ISO) with any CD ripping tool, into
-   a new directory, e.g. `Example Game/`. The file names don't matter:
-   `build` renames the disc after the game.
+1. **Dump the disc** with the CD in the drive:
+
+   ```bash
+   doszer dump "Example Game"
+   ```
+
+   This writes `disc1.cue` and its tracks to `Example Game/`; run it again
+   with the next disc of a multi-disc game. doszer carries
+   [redumper](https://github.com/superg/redumper), which corrects the
+   drive's read offset, so the dump matches anyone else's of the same disc,
+   and then checks it against [Redump](http://redump.org)'s database:
+   `Verified` means every track matches a disc others have dumped and
+   cross-checked, so the dump is exact. Under WSL it runs the Windows
+   redumper, since WSL can't reach optical drives; `--drive E:` picks a
+   drive. An interrupted or failed dump resumes where it stopped when run
+   again. A BIN/CUE or ISO from any other ripping tool works too
+   (`doszer redump disc.cue` checks it). File names don't matter: `build`
+   renames the disc after the game.
 
 2. **Write a manifest:**
 
@@ -567,6 +604,10 @@ emulator its archives run in, and embeds a build of it for `install`. DOSBox Pur
 Public License, version 2 or later; their source is at those links, and
 `make core` builds the embedded core from DOSBox Pure's 1.0 Preview 8
 release tag. Thank you to Bernhard Schelling and the DOSBox team.
+
+`dump` runs [redumper](https://github.com/superg/redumper) (GNU General
+Public License, version 3), embedded from its official release binaries;
+its source is at that link.
 
 The built-in frontend also uses [SDL](https://www.libsdl.org/) (zlib
 license; its Windows DLLs are embedded) and

@@ -4,6 +4,9 @@
 # MANIFEST placeholders in these directories stay tracked.
 internal/builtin/data/*/*.so
 internal/builtin/data/*/*.dll
+internal/builtin/data/*/redumper
+internal/builtin/data/*/redumper.exe
+internal/redump/data/pc.dat.gz
 /doszer
 /doszer.exe
 /build/

@@ -17,9 +17,12 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/config"
+	"github.com/DemiCloud/doszer/internal/cue"
+	"github.com/DemiCloud/doszer/internal/dump"
 	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/redump"
 	"github.com/DemiCloud/doszer/internal/repack"
 	"github.com/DemiCloud/doszer/internal/status"
 	"github.com/DemiCloud/doszer/internal/verify"
@@ -59,6 +62,8 @@ var commands []command
 
 func init() {
 	commands = []command{
+		{"dump", "dump a CD to BIN/CUE into a source directory", runDump},
+		{"redump", "show the Redump datfile in use, or check tracks against it", runRedump},
 		{"init", "write a commented DOSZ.TOML into a source directory", runInit},
 		{"build", "build an archive from a source directory", runBuild},
 		{"install", "run an installer and extract the result into a source", runInstall},
@@ -68,6 +73,7 @@ func init() {
 }
 
 func main() {
+	redump.UserAgent = "doszer/" + version
 	interrupt.Handle()
 	status.Enable(os.Stderr)
 	if err := run(os.Args[1:]); err != nil {
@@ -387,6 +393,213 @@ Options:
 
 	fmt.Printf("%s conforms to the specification\n", fs.Arg(0))
 	return nil
+}
+
+// runDump implements `doszer dump <dir>`.
+func runDump(args []string) error {
+	fs := newFlags("dump")
+	drive := fs.String("drive", "", "")
+	dat := fs.String("dat", "", "")
+	const help = `doszer dump - dump a CD to BIN/CUE into a source directory
+
+Usage: doszer dump [options] DIR
+
+Options:
+      --dat FILE          datfile to verify against (default: redump_dat, else Redump's)
+      --drive DRIVE       drive to read, e.g. E: or /dev/sg1 (default: first drive with a disc)
+` + flagHelp
+	if ok, err := parse(fs, args, help, 1, 1); !ok {
+		return err
+	}
+	cfg, err := config.Load("")
+	if err != nil {
+		return err
+	}
+	res, err := dump.Run(dump.Options{Dir: fs.Arg(0), Drive: *drive})
+	if res != nil && res.Log != "" {
+		fmt.Fprintf(os.Stderr, "redumper log: %s\n", res.Log)
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Dumped %s (%d track file(s))\n", res.Cue, len(res.Tracks))
+	for _, e := range res.Errors {
+		fmt.Fprintf(os.Stderr, "[WARN] redumper: %s (left as read: zeros)\n", e)
+	}
+	return verifyTracks(res.Tracks, stringOr(*dat, cfg.RedumpDAT), len(res.Errors) > 0)
+}
+
+// verifyTracks reports whether a dump's tracks match a Redump disc. A
+// dump that doesn't is reported, not an error: it may be a disc nobody
+// has submitted yet.
+func verifyTracks(paths []string, dat string, readErrors bool) error {
+	status.Step("Checking the dump against Redump")
+	sel, err := redump.Select(dat)
+	if err != nil {
+		endSteps(err)
+		return err
+	}
+	tracks, err := redump.HashTracks(paths)
+	endSteps(err)
+	if err != nil {
+		return err
+	}
+	if sel.Note != "" {
+		fmt.Fprintf(os.Stderr, "[WARN] %s\n", sel.Note)
+	}
+	src := fmt.Sprintf("%s datfile %s", sel.Source, sel.DB.Version)
+	m, err := sel.DB.Match(tracks)
+	switch {
+	case errors.Is(err, redump.ErrNoMatch):
+		fmt.Printf("Not verified: no track matches a Redump disc (%s): a bad dump, or a disc not in Redump yet\n", src)
+	case err != nil:
+		return err
+	case m.Verified:
+		fmt.Printf("Verified: every track matches Redump's %q (%s)\n  %s\n", m.Disc.Name, src, m.Link)
+	default:
+		var differ []string
+		for _, i := range m.Differ {
+			differ = append(differ, filepath.Base(paths[i]))
+		}
+		fmt.Printf("Not verified: closest Redump disc %q matches %d of its %d track(s) (%s)\n  %s\n", m.Disc.Name, m.Matching, len(m.Disc.Tracks), src, m.Link)
+		if len(differ) > 0 {
+			fmt.Printf("  differing: %s\n", strings.Join(differ, ", "))
+		}
+		if readErrors {
+			fmt.Println("  the drive couldn't read some samples (see the warnings above), which likely explains it")
+		}
+	}
+	return nil
+}
+
+// runRedump implements `doszer redump [SHA1|FILE...]`.
+func runRedump(args []string) error {
+	fs := newFlags("redump")
+	dat := fs.String("dat", "", "")
+	update := fs.Bool("update", false, "")
+	const help = `doszer redump - show the Redump datfile in use, or check tracks against it
+
+Usage: doszer redump [options] [SHA1|FILE...]
+
+Options:
+      --dat FILE          datfile to use (default: redump_dat, else Redump's)
+      --update            fetch Redump's current datfile now
+` + flagHelp
+	if ok, err := parse(fs, args, help, 0, 1<<20); !ok {
+		return err
+	}
+	cfg, err := config.Load("")
+	if err != nil {
+		return err
+	}
+	external := stringOr(*dat, cfg.RedumpDAT)
+	if *update {
+		status.Step("Fetching Redump's datfile")
+		db, err := redump.Update()
+		endSteps(err)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Cached Redump datfile %s (%d discs)\n", db.Version, len(db.Discs))
+	}
+	if fs.NArg() == 0 {
+		return redumpStatus(external)
+	}
+
+	var shas, files []string
+	for _, a := range fs.Args() {
+		switch {
+		case len(a) == 40 && isHex(a):
+			shas = append(shas, a)
+		case strings.EqualFold(filepath.Ext(a), ".cue"):
+			tracks, err := cueTracks(a)
+			if err != nil {
+				return err
+			}
+			files = append(files, tracks...)
+		default:
+			files = append(files, a)
+		}
+	}
+	if len(shas) > 0 {
+		sel, err := redump.Select(external)
+		if err != nil {
+			return err
+		}
+		for _, s := range shas {
+			hits := sel.DB.Lookup(s)
+			if len(hits) == 0 {
+				fmt.Printf("%s: not in Redump\n", s)
+			}
+			for _, h := range hits {
+				fmt.Printf("%s: %s, track %d (%d bytes)\n", s, h.Disc, h.Track, h.Size)
+			}
+		}
+	}
+	if len(files) > 0 {
+		return verifyTracks(files, external, false)
+	}
+	return nil
+}
+
+func redumpStatus(external string) error {
+	emb, err := redump.Embedded()
+	if err != nil {
+		return err
+	}
+	if emb != nil {
+		fmt.Printf("Embedded: Redump datfile %s (%d discs)\n", emb.Version, len(emb.Discs))
+	} else {
+		fmt.Println("Embedded: none (built without one: make dat)")
+	}
+	cached, checked, err := redump.Cached()
+	switch {
+	case err != nil:
+		fmt.Printf("Cached:   unreadable (%v)\n", err)
+	case cached != nil:
+		fmt.Printf("Cached:   Redump datfile %s (%d discs), last fetched or checked %s\n", cached.Version, len(cached.Discs), checked.Format("2006-01-02 15:04"))
+	default:
+		fmt.Println("Cached:   none yet (fetched on the first dump, or with --update)")
+	}
+	if external != "" {
+		fmt.Printf("External: %s\n", external)
+	}
+	cur, err := redump.Current(external)
+	if err != nil {
+		return err
+	}
+	if cur == nil {
+		fmt.Println("In use:   none")
+	} else {
+		fmt.Printf("In use:   %s (Redump datfile %s)\n", cur.Source, cur.DB.Version)
+	}
+	return nil
+}
+
+func isHex(s string) bool {
+	for _, c := range s {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
+			return false
+		}
+	}
+	return true
+}
+
+// cueTracks lists the track files a CUE sheet names.
+func cueTracks(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	sheet, err := cue.Parse(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	var out []string
+	for _, f := range sheet.Files {
+		out = append(out, filepath.Join(filepath.Dir(path), filepath.FromSlash(f.Name)))
+	}
+	return out, nil
 }
 
 // runInstall implements `doszer install <source>`.

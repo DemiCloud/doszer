@@ -38,12 +38,34 @@ CORE_LINUX   = $(BUILTIN)/linux_$(1)/dosbox_pure_libretro.so
 CORE_WINDOWS := $(BUILTIN)/windows_amd64/dosbox_pure_libretro.dll
 CORES        := $(call CORE_LINUX,amd64) $(call CORE_LINUX,arm64) $(CORE_WINDOWS)
 
+# redumper (github.com/superg/redumper, GPL-3.0), embedded for `doszer dump`:
+# its official release binaries, checked against these SHA-256 sums. The
+# linux/amd64 build also carries the Windows one, run through WSL interop
+# (WSL can't reach optical drives itself).
+REDUMPER_REF := b773
+REDUMPER_URL := https://github.com/superg/redumper/releases/download/$(REDUMPER_REF)
+REDUMPER_SHA256_linux-x64   := d9b543f1ef85c53998fb8b6d8820e909cb291c2cc914b4d2ee73604742940fc1
+REDUMPER_SHA256_linux-arm64 := 13271218ec182399c29a36d9373febfec0de2beda2a6519a7108aade81c0a19f
+REDUMPER_SHA256_windows-x64 := 9c12c1eb6d576176c451a5de1b0b7611057b076374a446af7f3c9f99f9f3256f
+REDUMPER_DL  := thirdparty/redumper
+
+REDUMPER_HOST := $(BUILTIN)/linux_$(HOST_ARCH)/redumper $(if $(filter amd64,$(HOST_ARCH)),$(BUILTIN)/linux_amd64/redumper.exe)
+REDUMPER_ALL  := $(BUILTIN)/linux_amd64/redumper $(BUILTIN)/linux_amd64/redumper.exe \
+                 $(BUILTIN)/linux_arm64/redumper $(BUILTIN)/windows_amd64/redumper.exe
+
+# Redump's IBM PC datfile, snapshotted at build time for `doszer dump`'s
+# verification (internal/redump; doszer fetches newer ones at run time).
+# Not pinned: it's a snapshot of a database that grows. `make dat` again
+# to refresh it.
+REDUMP_DAT_URL := http://redump.org/datfile/pc/
+REDUMP_DAT     := internal/redump/data/pc.dat.gz
+
 # Every core build writes the same output file in $(DBP_SRC).
 .NOTPARALLEL:
 
-.PHONY: build test vet install release clean help core core-all
+.PHONY: build test vet install release clean help core core-all redumper redumper-all dat
 
-build: core ## Development build → build/doszer (debug symbols; version = "dev" if no tags)
+build: core redumper $(REDUMP_DAT) ## Development build → build/doszer (debug symbols; version = "dev" if no tags)
 	mkdir -p build
 	go mod tidy
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o build/$(NAME) ./cmd/doszer
@@ -58,7 +80,7 @@ install: build ## Copy the built binary to $(DESTDIR)$(BINDIR) (default: /usr/lo
 	install -D -m 0755 build/$(NAME) $(DESTDIR)$(BINDIR)/$(NAME)
 	@echo "Binary installed to $(DESTDIR)$(BINDIR)/$(NAME)."
 
-release: clean core-all ## Stripped, trimpath, multi-arch release archives → dist/ + checksums.txt
+release: clean core-all redumper-all dat ## Stripped, trimpath, multi-arch release archives → dist/ + checksums.txt
 	mkdir -p dist
 	go mod tidy
 	@set -e; for platform in $(PLATFORMS); do \
@@ -79,6 +101,37 @@ clean: ## Remove build/ and dist/
 core: $(call CORE_LINUX,$(HOST_ARCH)) ## Build and stage the DOSBox Pure core for this host (linux)
 
 core-all: $(CORES) ## Build and stage the DOSBox Pure core for every embedded platform
+
+dat: ## Download Redump's current PC datfile and stage it for embedding
+	mkdir -p thirdparty
+	curl -fsSL -A doszer -o thirdparty/redump-pc.zip $(REDUMP_DAT_URL)
+	go run ./internal/redump/gen thirdparty/redump-pc.zip $(REDUMP_DAT)
+
+$(REDUMP_DAT):
+	$(MAKE) dat
+
+redumper: $(REDUMPER_HOST) ## Fetch and stage redumper for this host (linux)
+
+redumper-all: $(REDUMPER_ALL) ## Fetch and stage redumper for every embedded platform
+
+$(REDUMPER_DL)/%.zip:
+	mkdir -p $(@D)
+	curl -fsSL -o $@.tmp $(REDUMPER_URL)/redumper-$(REDUMPER_REF)-$*.zip
+	echo "$(REDUMPER_SHA256_$*)  $@.tmp" | sha256sum -c --quiet
+	mv $@.tmp $@
+
+$(BUILTIN)/linux_amd64/redumper: $(REDUMPER_DL)/linux-x64.zip
+$(BUILTIN)/linux_arm64/redumper: $(REDUMPER_DL)/linux-arm64.zip
+$(BUILTIN)/linux_amd64/redumper.exe $(BUILTIN)/windows_amd64/redumper.exe: $(REDUMPER_DL)/windows-x64.zip
+$(BUILTIN)/%/redumper:
+	mkdir -p $(@D)
+	unzip -p $< '*/bin/redumper' > $@.tmp
+	mv $@.tmp $@
+
+$(BUILTIN)/%/redumper.exe:
+	mkdir -p $(@D)
+	unzip -p $< '*/bin/redumper.exe' > $@.tmp
+	mv $@.tmp $@
 
 $(DBP_SRC)/.fetched:
 	rm -rf $(DBP_SRC)
