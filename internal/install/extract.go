@@ -22,9 +22,11 @@ type Extracted struct {
 // Extract copies every added or modified file under dir from src into
 // dest, at the same relative path, keeping its modification time. A file
 // already in dest with different content is a conflict, and nothing is
-// written unless force is set. Files are streamed, never held in memory
+// written unless force is set - except, with modifiedOK, a modified one:
+// after a session, dest is where that file came from, so the installer's
+// change to it is what extracting is for. Files are streamed, never held in memory
 // whole: an installed game can be gigabytes.
-func Extract(src fs.FS, changes []Change, dir, dest string, force, dryRun bool) (*Extracted, error) {
+func Extract(src fs.FS, changes []Change, dir, dest string, force, modifiedOK, dryRun bool) (*Extracted, error) {
 	res := &Extracted{}
 	var jobs []Change
 	var conflicts []string
@@ -41,7 +43,7 @@ func Extract(src fs.FS, changes []Change, dir, dest string, force, dryRun bool) 
 			res.Unchanged = append(res.Unchanged, c.Path)
 			continue
 		}
-		if exists {
+		if exists && !(modifiedOK && c.Kind == Modified) {
 			conflicts = append(conflicts, c.Path)
 		}
 		jobs = append(jobs, c)

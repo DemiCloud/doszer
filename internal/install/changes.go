@@ -178,7 +178,9 @@ func (pz *PureZip) Changes(content fs.FS) []Change {
 }
 
 // pickDir chooses the folder to extract when none was given: the one
-// top-level directory every added or modified file is under.
+// top-level directory every added or modified file is under, or the root
+// ("") when they're all files in the root (an installer that only writes
+// its configuration beside the game it came with).
 func pickDir(changes []Change) (string, error) {
 	tops := map[string]bool{}
 	for _, c := range changes {
@@ -193,9 +195,7 @@ func pickDir(changes []Change) (string, error) {
 	}
 	if len(tops) == 1 {
 		for t := range tops {
-			if t != "" {
-				return t, nil
-			}
+			return t, nil
 		}
 	}
 	if len(tops) == 0 {

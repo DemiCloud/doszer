@@ -37,6 +37,8 @@ type Options struct {
 
 	OS        string            // OS image an OS image session boots instead of boot.os (e.g. a plain install image)
 	InstallOS map[string]string // configured install images by boot.os, the fallback for OS
+
+	session bool // extracting what a session just wrote (Extract's modifiedOK)
 }
 
 func (o Options) frontend() Frontend {
@@ -180,6 +182,7 @@ func setStartProgram(rep *Report, m *manifest.Manifest, opts Options) error {
 // runSession runs an install session under DOSBox Pure and extracts what
 // it wrote.
 func runSession(opts Options, m *manifest.Manifest) (*Report, error) {
+	opts.session = true
 	env, err := Discover(opts.frontend())
 	if err != nil {
 		return nil, err
@@ -343,15 +346,15 @@ func extractPureZip(rep *Report, p, content string, opts Options) error {
 }
 
 func extract(rep *Report, src fs.FS, opts Options) error {
-	rep.Dir = strings.Trim(filepath.ToSlash(opts.Dir), "/")
-	if rep.Dir == "" {
+	rep.Dir = strings.Trim(filepath.ToSlash(opts.Dir), "/.")
+	if opts.Dir == "" { // "/" asks for the root
 		var err error
 		if rep.Dir, err = pickDir(rep.Changes); err != nil {
 			return err
 		}
 	}
 	var err error
-	rep.Extracted, err = Extract(src, rep.Changes, rep.Dir, opts.Source, opts.Force, opts.DryRun)
+	rep.Extracted, err = Extract(src, rep.Changes, rep.Dir, opts.Source, opts.Force, opts.session, opts.DryRun)
 	return err
 }
 

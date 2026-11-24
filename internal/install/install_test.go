@@ -57,7 +57,8 @@ func TestPickDir(t *testing.T) {
 	}{
 		{[]string{"GAME/A.EXE", "GAME/SUB/B.DAT"}, "GAME", false},
 		{[]string{"GAME/A.EXE", "OTHER/B.DAT"}, "", true},
-		{[]string{"A.EXE"}, "", true}, // root files: no folder to pick
+		{[]string{"A.EXE", "B.CFG"}, "", false},     // only root files: the root
+		{[]string{"A.CFG", "GAME/B.EXE"}, "", true}, // root and a folder
 		{nil, "", true},
 	}
 	for _, tt := range tests {
@@ -87,7 +88,7 @@ func TestExtract(t *testing.T) {
 
 	t.Run("writes the folder with times", func(t *testing.T) {
 		dest := t.TempDir()
-		res, err := Extract(src, changes, "game", dest, false, false)
+		res, err := Extract(src, changes, "game", dest, false, false, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -108,13 +109,13 @@ func TestExtract(t *testing.T) {
 		os.MkdirAll(filepath.Join(dest, "GAME/SUB"), 0o755)
 		os.WriteFile(filepath.Join(dest, "GAME/A.EXE"), []byte("old a"), 0o644)
 		os.WriteFile(filepath.Join(dest, "GAME/SUB/B.DAT"), []byte("b"), 0o644)
-		if _, err := Extract(src, changes, "GAME", dest, false, false); err == nil {
+		if _, err := Extract(src, changes, "GAME", dest, false, false, false); err == nil {
 			t.Fatal("conflict not reported")
 		}
 		if b, _ := os.ReadFile(filepath.Join(dest, "GAME/A.EXE")); string(b) != "old a" {
 			t.Fatal("wrote despite the conflict")
 		}
-		res, err := Extract(src, changes, "GAME", dest, true, false)
+		res, err := Extract(src, changes, "GAME", dest, true, false, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -123,9 +124,22 @@ func TestExtract(t *testing.T) {
 		}
 	})
 
+	t.Run("after a session, a modified file is no conflict", func(t *testing.T) {
+		dest := t.TempDir()
+		os.MkdirAll(filepath.Join(dest, "GAME"), 0o755)
+		os.WriteFile(filepath.Join(dest, "GAME/A.EXE"), []byte("old a"), 0o644)
+		res, err := Extract(src, changes, "GAME", dest, false, true, false)
+		if err != nil || len(res.Written) != 2 {
+			t.Fatalf("%v, %v", res, err)
+		}
+		if b, _ := os.ReadFile(filepath.Join(dest, "GAME/A.EXE")); string(b) != "new a" {
+			t.Fatal("modified file not written")
+		}
+	})
+
 	t.Run("dry run writes nothing", func(t *testing.T) {
 		dest := t.TempDir()
-		res, err := Extract(src, changes, "GAME", dest, false, true)
+		res, err := Extract(src, changes, "GAME", dest, false, false, true)
 		if err != nil || len(res.Written) != 2 {
 			t.Fatalf("%v, %v", res, err)
 		}
