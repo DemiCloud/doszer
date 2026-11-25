@@ -282,6 +282,25 @@ func TestIdentifyMedia(t *testing.T) {
 	}
 }
 
+func TestIdentifyMediaSkipsReferencedISO(t *testing.T) {
+	// An ISO+audio rip: the ISO is the CUE sheet's data track, not a disc
+	// of its own; a bare ISO no sheet references still is one.
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "game.iso"), sectorContent("data track"), 0o644)
+	os.WriteFile(filepath.Join(dir, "track02.bin"), make([]byte, 2352), 0o644)
+	os.WriteFile(filepath.Join(dir, "game.cue"), []byte("FILE \"game.iso\" BINARY\nTRACK 01 MODE1/2048\nINDEX 01 00:00:00\n"+
+		"FILE \"track02.bin\" BINARY\nTRACK 02 AUDIO\nINDEX 01 00:00:00\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "other.iso"), sectorContent("other disc"), 0o644)
+
+	media, skipped, err := IdentifyMedia(dir)
+	if err != nil || len(skipped) != 0 {
+		t.Fatalf("IdentifyMedia: skipped %v, %v", skipped, err)
+	}
+	if len(media) != 2 || media[0].Label != "game" || len(media[0].Tracks) != 2 || media[1].Label != "other" {
+		t.Fatalf("media %+v, want game (2 tracks) and other", media)
+	}
+}
+
 func TestLocateMediaAcceptsBareISO(t *testing.T) {
 	// The same single-track disc as a BIN/CUE dump (raw Mode 1 sectors)
 	// and as a bare ISO: media declared from one verifies against the other.

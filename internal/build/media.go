@@ -405,14 +405,25 @@ func findCueSheets(sourceDir string) ([]string, error) {
 // a [[source.media]] entry (§5.6, §7.2), for `init` to write: ids disc1,
 // disc2, ... in path order, labelled with the CUE sheet's name. A CUE
 // sheet that can't be read or resolved is skipped and reported in
-// skipped; one with the same tracks as an earlier one is left out. Every
-// track of every image is hashed concurrently, one per CPU.
+// skipped; one with the same tracks as an earlier one is left out. A bare
+// ISO image counts only if no CUE sheet references it: an ISO+WAV rip's
+// data track is part of its CUE sheet's disc, not a disc of its own.
+// Every track of every image is hashed concurrently, one per CPU.
 func IdentifyMedia(sourceDir string) (media []manifest.Media, skipped []string, err error) {
 	cues, err := findCueSheets(sourceDir)
 	if err != nil {
 		return nil, nil, err
 	}
 	sort.Strings(cues)
+	referenced := map[string]bool{} // lower-case paths of the files CUE sheets use
+	for _, p := range cues {
+		if !strings.EqualFold(filepath.Ext(p), ".iso") {
+			tracks, _ := resolveCueFile(p)
+			for _, t := range tracks {
+				referenced[strings.ToLower(filepath.Clean(t.FilePath))] = true
+			}
+		}
+	}
 
 	type image struct {
 		rel    string
@@ -425,6 +436,9 @@ func IdentifyMedia(sourceDir string) (media []manifest.Media, skipped []string, 
 	for _, p := range cues {
 		rel, _ := filepath.Rel(sourceDir, p)
 		rel = filepath.ToSlash(rel)
+		if strings.EqualFold(filepath.Ext(p), ".iso") && referenced[strings.ToLower(filepath.Clean(p))] {
+			continue
+		}
 		tracks, err := resolveCueFile(p)
 		if err != nil {
 			skipped = append(skipped, fmt.Sprintf("%s: %v", rel, err))
