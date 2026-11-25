@@ -11,7 +11,7 @@ type TemplateOptions struct {
 	Exec  string
 	Shell string
 	OS    string
-	Audio string // [pack] audio, "" to leave it commented out
+	Audio string  // [pack] audio, "" to leave it commented out
 	Media []Media // [[source.media]] entries to write, from build.IdentifyMedia;
 	// a single disc is labelled with Name rather than its file name
 }

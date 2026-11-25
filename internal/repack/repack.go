@@ -33,11 +33,11 @@ import (
 // Options configures a repack.
 type Options struct {
 	InputPath    string
-	OutputPath   string  // defaults to "<effective name>.dosz" in the working directory
-	ManifestPath string  // use this manifest instead of the archive's embedded one
-	OggQuality   int     // libvorbis quality for Ogg audio tracks (build.Options.OggQuality)
-	DryRun       bool    // compute and report the plan without writing an archive
-	Strict       bool    // fail if any §11 warning condition occurs
+	OutputPath   string // defaults to "<effective name>.dosz" in the working directory
+	ManifestPath string // use this manifest instead of the archive's embedded one
+	OggQuality   int    // libvorbis quality for Ogg audio tracks (build.Options.OggQuality)
+	DryRun       bool   // compute and report the plan without writing an archive
+	Strict       bool   // fail if any §11 warning condition occurs
 
 	Provenance *build.Provenance // recorded in the archive comment, if set (§8.4)
 }

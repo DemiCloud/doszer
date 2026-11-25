@@ -45,7 +45,7 @@ func TestStart(t *testing.T) {
 	write("SIERRA/KQ/KQ.BAT", "sierra -o resource.cfg\r\n")
 	write("SIERRA/KQ/README.BAT", "type readme.txt | more\r\n")
 	write("SIERRA/KQ/SETUP.BAT", "sierra -config\r\n") // a helper's name
-	write("SIERRA/KQ/OTHER.BAT", "sierrax\r\n")       // another program
+	write("SIERRA/KQ/OTHER.BAT", "sierrax\r\n")        // another program
 	if got := Launcher(dir, "SIERRA/KQ/SIERRA.EXE"); got != "SIERRA/KQ.BAT" {
 		t.Errorf("Launcher = %q, want the shallowest batch file running it", got)
 	}

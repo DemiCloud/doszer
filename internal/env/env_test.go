@@ -30,7 +30,7 @@ func TestRead(t *testing.T) {
 	}
 	write("dosbox_pure/Win31.dosz", 1000)
 	write("dosbox_pure/Win98.img", 8<<20)
-	write("dosbox_pure/small.img", 1<<20)  // under 7 MB: DOSBox Pure skips it
+	write("dosbox_pure/small.img", 1<<20) // under 7 MB: DOSBox Pure skips it
 	write("dosbox_pure/odd.img", 8<<20+1) // not whole sectors: skipped too
 
 	cfg := config.Default()

@@ -90,7 +90,8 @@ build: core redumper guest $(REDUMP_DAT) ## Development build → build/doszer (
 test: ## Run the test suite
 	go test -count=1 ./...
 
-vet: ## Run go vet static analysis
+vet: ## Check gofmt and run go vet
+	@test -z "$$(gofmt -l cmd internal)" || { gofmt -l cmd internal; echo "gofmt needed"; exit 1; }
 	go vet ./...
 
 install: build ## Copy the built binary to $(DESTDIR)$(BINDIR) (default: /usr/local/bin)
