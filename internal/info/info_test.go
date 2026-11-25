@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/DemiCloud/doszer/internal/build"
+	"github.com/DemiCloud/doszer/internal/manifest"
 )
 
 // exe builds an executable's first bytes: an MZ header, and at 0x80 a
@@ -158,6 +159,22 @@ parent = "Base.dosz"
 	var out bytes.Buffer
 	Print(&out, r)
 	for _, want := range []string{"Name:      Child Game", "Boot:      DOS\nStarts:    C:\\GAME.EXE", "Parent:    Base.dosz (found)", "             Shared.dosz (not found beside it)", "Programs:  3\nOS:        DOS or Windows 95", "  First line.\n  Second line.", "Built by doszer test (DOSZ manifest format 1)"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, out.String())
+		}
+	}
+}
+
+// TestPrintRedump: a disc's Redump name and track hashes, recorded by
+// init, are shown with the normalized ones.
+func TestPrintRedump(t *testing.T) {
+	m := &manifest.Manifest{Name: "X"}
+	m.Source.Media = []manifest.Media{{ID: "disc1", Label: "X", RedumpName: "X (USA)", Redump: "http://redump.org/discs/quicksearch/aa/",
+		Tracks: []manifest.Track{{Type: "data", SHA1: strings.Repeat("1", 40), RedumpSHA1: strings.Repeat("2", 40)}}}}
+	r := &Report{Path: "x.dosz", Manifest: m, Discs: []Disc{{Path: "X.cue", Data: 1, Media: &m.Source.Media[0]}}}
+	var out bytes.Buffer
+	Print(&out, r)
+	for _, want := range []string{"Redump: X (USA) (matched when the manifest was written)", "Redump link: http://redump.org/", strings.Repeat("1", 40) + "\n                        Redump " + strings.Repeat("2", 40)} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, out.String())
 		}

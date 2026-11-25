@@ -133,14 +133,21 @@ Zero or more entries identifying disc images.
 | `id` | string | yes | Identifier referenced by `[[extract]]`. Unique within the manifest. |
 | `label` | string | no | Human-readable name, e.g. the original file name. |
 | `redump` | string | no | Reference to the disc's [Redump](http://redump.org) entry, e.g. a disc page URL. Informational only; Redump hashes are not normalized track hashes (§7.2). |
+| `redump_name` | string | no | The disc's name in Redump's datfile, recorded when the dump's tracks matched that entry. Informational only. |
 | `tracks` | array of tables | yes | One entry per track, in track order. |
 
 Each `tracks` entry:
 
-| Key | Type | Meaning |
-|---|---|---|
-| `type` | string | `"data"` or `"audio"`. |
-| `sha1` | string | Normalized track hash (§7.2), 40 lowercase hexadecimal characters. |
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `type` | string | yes | `"data"` or `"audio"`. |
+| `sha1` | string | yes | Normalized track hash (§7.2), 40 lowercase hexadecimal characters. |
+| `redump_sha1` | string | no | The track's SHA-1 as Redump records it (the dumped track file: raw sectors, pregap included), 40 lowercase hexadecimal characters. Informational only. |
+
+> A converted disc image (§6.4) cannot reproduce Redump's hashes, so they
+> cannot be checked against an archive. Recorded beside the normalized
+> hashes, which can, they say which Redump dump the archive's disc came
+> from.
 
 ### 5.7 `[[extract]]`
 
@@ -499,7 +506,7 @@ An implementation MUST reject a manifest that violates any of the following:
 | Paths are relative and have no empty, `.` or `..` component and no `\` (§2). |
 | `[[source.media]]` `id` values are unique. |
 | `[[extract]]` `media` refers to an existing `id`. |
-| `sha1` values are 40 lowercase hexadecimal characters. |
+| `sha1` and `redump_sha1` values are 40 lowercase hexadecimal characters. |
 | `audio` is `"ogg"` or `"wav"`. |
 | `[[input.pad]]` has at most eight entries, and `wheel` at most 100 items. |
 | Every `[[input.pad]]` binding string has one to four action names defined in §5.9, and a label as §5.9 allows. |

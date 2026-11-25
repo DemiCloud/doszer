@@ -5,12 +5,15 @@ import (
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	iofs "io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/redump"
 )
 
 func writeMediaFixture(t *testing.T, dir, cueName, binName string, content []byte) string {
@@ -256,7 +259,7 @@ func TestIdentifyMedia(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "d1.ogg"), []byte("OggS"), 0o644)
 	os.WriteFile(filepath.Join(dir, "lossy.cue"), []byte("FILE \"CD1/d1.bin\" BINARY\nTRACK 01 MODE1/2048\nINDEX 01 00:00:00\nFILE \"d1.ogg\" OGG\nTRACK 02 AUDIO\nINDEX 01 00:00:00\n"), 0o644)
 
-	media, skipped, err := IdentifyMedia(dir)
+	media, skipped, err := IdentifyMedia(dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +295,7 @@ func TestIdentifyMediaSkipsReferencedISO(t *testing.T) {
 		"FILE \"track02.bin\" BINARY\nTRACK 02 AUDIO\nINDEX 01 00:00:00\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "other.iso"), sectorContent("other disc"), 0o644)
 
-	media, skipped, err := IdentifyMedia(dir)
+	media, skipped, err := IdentifyMedia(dir, nil)
 	if err != nil || len(skipped) != 0 {
 		t.Fatalf("IdentifyMedia: skipped %v, %v", skipped, err)
 	}
@@ -312,7 +315,7 @@ func TestLocateMediaAcceptsBareISO(t *testing.T) {
 	writeRaw("game.bin", raw)
 	writeRaw("game.cue", []byte("FILE \"game.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\n"))
 
-	media, _, err := IdentifyMedia(dir)
+	media, _, err := IdentifyMedia(dir, nil)
 	if err != nil || len(media) != 1 {
 		t.Fatalf("IdentifyMedia = %+v, %v", media, err)
 	}
@@ -321,5 +324,53 @@ func TestLocateMediaAcceptsBareISO(t *testing.T) {
 	os.WriteFile(filepath.Join(isoDir, "Game.iso"), user, 0o644)
 	if resolved, _, err := locateMedia(dirSet(t, isoDir), media, nil, nil); err != nil || len(resolved) != 1 {
 		t.Fatalf("bare ISO not recognized as the same media: %v", err)
+	}
+}
+
+// TestIdentifyMediaRedump: a CUE image whose raw tracks match a Redump
+// disc gets its name, link and track hashes; another doesn't; and the
+// manifest init writes from them is valid.
+func TestIdentifyMediaRedump(t *testing.T) {
+	dir := t.TempDir()
+	raw := bytes.Repeat([]byte("redump track data, raw sectors.."), 2352*4/32)
+	other := bytes.Repeat([]byte("a disc nobody has submitted yet."), 2352*4/32)
+	for name, data := range map[string][]byte{"good": raw, "other": other} {
+		os.WriteFile(filepath.Join(dir, name+".bin"), data, 0o644)
+		os.WriteFile(filepath.Join(dir, name+".cue"), []byte("FILE \""+name+".bin\" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n"), 0o644)
+	}
+	sum := sha1.Sum(raw)
+	dat := fmt.Sprintf(`<?xml version="1.0"?>
+<datafile><header><name>IBM - PC compatible</name><version>2026-01-01</version></header>
+<game name="Test Disc (USA)"><rom name="Test Disc (USA).bin" size="%d" sha1="%x"/></game>
+</datafile>`, len(raw), sum)
+	db, err := redump.Parse([]byte(dat))
+	if err != nil {
+		t.Fatal(err)
+	}
+	media, _, err := IdentifyMedia(dir, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byLabel := map[string]manifest.Media{}
+	for _, m := range media {
+		byLabel[m.Label] = m
+	}
+	good := byLabel["good"]
+	if good.RedumpName != "Test Disc (USA)" || good.Tracks[0].RedumpSHA1 != fmt.Sprintf("%x", sum) || !strings.Contains(good.Redump, "redump.org") {
+		t.Errorf("good: %+v", good)
+	}
+	if o := byLabel["other"]; o.RedumpName != "" || o.Tracks[0].RedumpSHA1 != "" {
+		t.Errorf("other: %+v, want no Redump fields", o)
+	}
+
+	text := manifest.Template(manifest.TemplateOptions{Name: "Test", Media: media})
+	m, err := manifest.Parse([]byte(text), "Test")
+	if err != nil {
+		t.Fatalf("template: %v\n%s", err, text)
+	}
+	for _, md := range m.Source.Media {
+		if md.Label == "good" && (md.RedumpName != good.RedumpName || md.Tracks[0].RedumpSHA1 != good.Tracks[0].RedumpSHA1) {
+			t.Errorf("template lost the Redump fields: %+v", md)
+		}
 	}
 }

@@ -101,7 +101,8 @@ system that runs them all (from their executable headers: DOS, then the
 Windows version a Windows program asks for, e.g. Windows 3.1, Windows 95
 or Windows 98), compression (deflated and stored files, sizes, ratio),
 each disc image's tracks (data, audio as WAV or Ogg Vorbis) with the
-`[[source.media]]` entry declaring it and its track hashes (§7.2),
+`[[source.media]]` entry declaring it, its track hashes (§7.2) and any
+Redump match recorded with them,
 gamepad files, the manifest's `notes` and the archive comment. It reads;
 `verify` checks.
 
@@ -125,7 +126,12 @@ chose and why.
 `init` also hashes every disc image (CUE sheet) in the source into
 `[[source.media]]` entries (spec §7.2), labelled with the CUE sheet's name;
 A CUE sheet with tracks in lossy audio files (Ogg) can't be hashed and is
-skipped. `--no-media` skips this.
+skipped. `--no-media` skips this. A CUE image whose raw tracks match a
+disc in Redump's datfile (the one `doszer redump` uses) also gets the
+disc's Redump name (`redump_name`), link (`redump`) and each track's
+Redump hash (`redump_sha1`). A converted image can't reproduce Redump's
+hashes, so they aren't checked later: they record which Redump dump the
+archive's disc is, and `info` shows them.
 
 `build` and `repack` check each `[[source.media]]` entry against the disc
 images in the build (spec §7.3). Tracks stored as Ogg can't be checked and

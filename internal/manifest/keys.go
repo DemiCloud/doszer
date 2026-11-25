@@ -41,9 +41,9 @@ var schema = &node{
 		"source": {
 			tables: map[string]*node{
 				"media": {
-					leaves: leaves("id", "label", "redump"),
+					leaves: leaves("id", "label", "redump", "redump_name"),
 					tables: map[string]*node{
-						"tracks": {leaves: leaves("type", "sha1")},
+						"tracks": {leaves: leaves("type", "sha1", "redump_sha1")},
 					},
 				},
 			},

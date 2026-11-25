@@ -116,13 +116,24 @@ func Template(o TemplateOptions) string {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		fmt.Fprintf(&b, "[[source.media]]\nid     = %s\nlabel  = %s\ntracks = [\n", quote(m.ID), quote(m.Label))
+		fmt.Fprintf(&b, "[[source.media]]\nid     = %s\nlabel  = %s\n", quote(m.ID), quote(m.Label))
+		if m.RedumpName != "" {
+			fmt.Fprintf(&b, "# Matched Redump's datfile: redump_sha1 is each track as Redump records it.\nredump_name = %s\n", quote(m.RedumpName))
+		}
+		if m.Redump != "" {
+			fmt.Fprintf(&b, "redump = %s\n", quote(m.Redump))
+		}
+		b.WriteString("tracks = [\n")
 		for _, t := range m.Tracks {
 			pad := ""
 			if t.Type == TrackData {
 				pad = " "
 			}
-			fmt.Fprintf(&b, "  { type = %q,%s sha1 = %q },\n", t.Type, pad, t.SHA1)
+			if t.RedumpSHA1 != "" {
+				fmt.Fprintf(&b, "  { type = %q,%s sha1 = %q, redump_sha1 = %q },\n", t.Type, pad, t.SHA1, t.RedumpSHA1)
+			} else {
+				fmt.Fprintf(&b, "  { type = %q,%s sha1 = %q },\n", t.Type, pad, t.SHA1)
+			}
 		}
 		b.WriteString("]\n")
 	}

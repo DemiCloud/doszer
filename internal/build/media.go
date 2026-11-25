@@ -18,6 +18,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/cue"
 	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/redump"
 	"github.com/DemiCloud/doszer/internal/status"
 )
 
@@ -409,7 +410,11 @@ func findCueSheets(sourceDir string) ([]string, error) {
 // ISO image counts only if no CUE sheet references it: an ISO+WAV rip's
 // data track is part of its CUE sheet's disc, not a disc of its own.
 // Every track of every image is hashed concurrently, one per CPU.
-func IdentifyMedia(sourceDir string) (media []manifest.Media, skipped []string, err error) {
+//
+// With db, a CUE image whose raw tracks match a Redump disc exactly (as
+// `doszer redump` checks one) also gets that disc's name, link and track
+// hashes (redump_name, redump, redump_sha1).
+func IdentifyMedia(sourceDir string, db *redump.DB) (media []manifest.Media, skipped []string, err error) {
 	cues, err := findCueSheets(sourceDir)
 	if err != nil {
 		return nil, nil, err
@@ -499,6 +504,10 @@ func IdentifyMedia(sourceDir string) (media []manifest.Media, skipped []string, 
 			continue
 		}
 		seen[key.String()] = true
+		if db != nil && !strings.EqualFold(filepath.Ext(img.path), ".iso") {
+			status.Step("Checking %s against Redump", filepath.Base(img.path))
+			matchRedump(&m, img.path, db)
+		}
 		media = append(media, m)
 	}
 	return media, skipped, nil
@@ -512,4 +521,27 @@ func countUnverifiable(tracks []cue.ResolvedTrack) int {
 		}
 	}
 	return n
+}
+
+// matchRedump records the Redump disc a CUE image's raw tracks match
+// exactly, if any, in m. An image that can't be read as Redump does, or
+// matches no disc, is left as it is: Redump's fields are informational.
+func matchRedump(m *manifest.Media, cuePath string, db *redump.DB) {
+	img, err := redump.OpenImage(cuePath, 0)
+	if err != nil {
+		return
+	}
+	tracks, err := img.Hash()
+	img.Close()
+	if err != nil || len(tracks) != len(m.Tracks) {
+		return
+	}
+	match, err := db.Match(tracks)
+	if err != nil || !match.Verified {
+		return
+	}
+	m.RedumpName, m.Redump = match.Disc.Name, match.Link
+	for i, t := range tracks {
+		m.Tracks[i].RedumpSHA1 = t.SHA1
+	}
 }

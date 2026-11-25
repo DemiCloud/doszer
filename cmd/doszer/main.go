@@ -254,7 +254,17 @@ Options:
 	}
 
 	if !*noMedia {
-		media, skipped, err := build.IdentifyMedia(source)
+		cfg, err := config.Load(source)
+		if err != nil {
+			return err
+		}
+		// Redump's datfile, to record which Redump dump each disc is; none
+		// (not embedded or cached) just leaves those fields out.
+		var db *redump.DB
+		if sel, err := redump.Current(cfg.RedumpDAT); err == nil && sel != nil {
+			db = sel.DB
+		}
+		media, skipped, err := build.IdentifyMedia(source, db)
 		endSteps(err)
 		if err != nil {
 			return err
@@ -264,6 +274,13 @@ Options:
 		}
 		if len(media) > 0 {
 			fmt.Printf("Identified %d disc image(s)\n", len(media))
+		}
+		for _, m := range media {
+			if m.RedumpName != "" {
+				fmt.Printf("  %s: matches Redump's %q\n", m.Label, m.RedumpName)
+			} else if db != nil {
+				fmt.Printf("  %s: no Redump match\n", m.Label)
+			}
 		}
 		o.Media = media
 	}

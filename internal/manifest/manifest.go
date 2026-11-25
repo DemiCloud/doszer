@@ -85,16 +85,18 @@ type Source struct {
 
 // Media is one disc image, identified by its normalized track hashes.
 type Media struct {
-	ID     string  `toml:"id"`
-	Label  string  `toml:"label,omitempty"`
-	Redump string  `toml:"redump,omitempty"`
-	Tracks []Track `toml:"tracks"`
+	ID         string  `toml:"id"`
+	Label      string  `toml:"label,omitempty"`
+	Redump     string  `toml:"redump,omitempty"`
+	RedumpName string  `toml:"redump_name,omitempty"`
+	Tracks     []Track `toml:"tracks"`
 }
 
 // Track is one track of a disc image.
 type Track struct {
-	Type string `toml:"type"`
-	SHA1 string `toml:"sha1"`
+	Type       string `toml:"type"`
+	SHA1       string `toml:"sha1"`
+	RedumpSHA1 string `toml:"redump_sha1,omitempty"`
 }
 
 // Extract copies content from identified media into the build (spec §5.7).
@@ -366,6 +368,9 @@ func (m *Manifest) validate() []error {
 			}
 			if !sha1Pattern.MatchString(t.SHA1) {
 				add("source.media[%d].tracks[%d].sha1: must be 40 lowercase hexadecimal characters", i, j)
+			}
+			if t.RedumpSHA1 != "" && !sha1Pattern.MatchString(t.RedumpSHA1) {
+				add("source.media[%d].tracks[%d].redump_sha1: must be 40 lowercase hexadecimal characters", i, j)
 			}
 		}
 	}

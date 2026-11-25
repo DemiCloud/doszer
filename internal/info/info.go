@@ -397,11 +397,17 @@ func Print(w io.Writer, r *Report) {
 				label = md.Label + " (" + md.ID + ")"
 			}
 			line("", "  declared as %s: %s (§7.2)", label, plural(len(md.Tracks), "track hash"))
-			for n, t := range md.Tracks {
-				line("", "    %2d %-5s %s", n+1, t.Type, t.SHA1)
+			if md.RedumpName != "" {
+				line("", "  Redump: %s (matched when the manifest was written)", md.RedumpName)
 			}
 			if md.Redump != "" {
-				line("", "  Redump: %s", md.Redump)
+				line("", "  Redump link: %s", md.Redump)
+			}
+			for n, t := range md.Tracks {
+				line("", "    %2d %-5s %s", n+1, t.Type, t.SHA1)
+				if t.RedumpSHA1 != "" {
+					line("", "             Redump %s", t.RedumpSHA1)
+				}
 			}
 		}
 	}
