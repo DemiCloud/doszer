@@ -145,6 +145,49 @@ func TestExtract(t *testing.T) {
 			t.Fatal("dry run wrote files")
 		}
 	})
+
+	t.Run("replaces the source's spelling of a path", func(t *testing.T) {
+		// DOS paths are case-insensitive: GAME/A.EXE is the source's
+		// game/a.exe, replaced in place, not written beside it.
+		dest := t.TempDir()
+		os.MkdirAll(filepath.Join(dest, "game"), 0o755)
+		os.WriteFile(filepath.Join(dest, "game/a.exe"), []byte("old a"), 0o644)
+		if _, err := Extract(src, changes, "GAME", dest, false, true, false); err != nil {
+			t.Fatal(err)
+		}
+		if b, _ := os.ReadFile(filepath.Join(dest, "game/a.exe")); string(b) != "new a" {
+			t.Fatalf("game/a.exe = %q, want it replaced", b)
+		}
+		if _, err := os.Stat(filepath.Join(dest, "game/SUB/B.DAT")); err != nil {
+			t.Fatalf("new file not under the existing folder: %v", err)
+		}
+		if entries, _ := os.ReadDir(dest); len(entries) != 1 {
+			t.Fatalf("dest has %d entries, want only game/", len(entries))
+		}
+		if entries, _ := os.ReadDir(filepath.Join(dest, "game")); len(entries) != 2 {
+			t.Fatalf("game/ has %d entries, want a.exe and SUB", len(entries))
+		}
+	})
+}
+
+func TestExtractRejectsPathsOutsideDest(t *testing.T) {
+	// A crafted save's entry names mustn't reach outside the source, not
+	// even to create a directory.
+	for _, p := range []string{"../OUT/X.TXT", "GAME/../../OUT/X.TXT", "/OUT/X.TXT", `GAME\..\..\OUT\X.TXT`} {
+		t.Run(p, func(t *testing.T) {
+			base := t.TempDir()
+			dest := filepath.Join(base, "src")
+			os.MkdirAll(dest, 0o755)
+			src := fstest.MapFS{"X.TXT": {Data: []byte("x")}}
+			_, err := Extract(src, []Change{{Path: p, Kind: Added}}, "", dest, true, true, false)
+			if err == nil || !strings.Contains(err.Error(), "not a file path") {
+				t.Fatalf("Extract = %v, want a path error", err)
+			}
+			if entries, _ := os.ReadDir(base); len(entries) != 1 {
+				t.Fatalf("created something beside the source: %v", entries)
+			}
+		})
+	}
 }
 
 // zipBytes builds a ZIP from name -> content.

@@ -486,7 +486,8 @@ running a setup program and keeping its settings leaves no change. A
 game that comes installed doesn't need `install`; `init` and `build` it
 as it is. Other changes are listed. A file already in the source
 with different content stops the extraction unless `--force` is given.
-Save files are removed after a successful extraction unless `--keep` is
+Paths match the source's case-insensitively, as DOS paths do: a changed
+`GAME/SETUP.CFG` replaces the source's `game/setup.cfg`. Save files are removed after a successful extraction unless `--keep` is
 given.
 
 For a plain model install, `install` lists the `.BAT`, `.COM` and `.EXE`

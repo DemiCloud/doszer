@@ -26,15 +26,31 @@ type Extracted struct {
 // after a session, dest is where that file came from, so the installer's
 // change to it is what extracting is for. Files are streamed, never held in memory
 // whole: an installed game can be gigabytes.
+//
+// A file goes where dest already has it under any case (DOS paths are
+// case-insensitive): a save's GAME/SETUP.CFG replaces the source's
+// game/setup.cfg rather than landing beside it on a case-sensitive file
+// system. A path that isn't relative and within dest is an error.
 func Extract(src fs.FS, changes []Change, dir, dest string, force, modifiedOK, dryRun bool) (*Extracted, error) {
 	res := &Extracted{}
-	var jobs []Change
+	type job struct {
+		c      Change
+		target string
+	}
+	var jobs []job
 	var conflicts []string
+	targets := &targetResolver{dest: dest, dirs: map[string][]os.DirEntry{}}
 	for _, c := range changes {
 		if c.Kind == Deleted || !under(c.Path, dir) {
 			continue
 		}
-		target := filepath.Join(dest, filepath.FromSlash(c.Path))
+		if !fs.ValidPath(c.Path) || strings.Contains(c.Path, `\`) || c.Path == "." {
+			return nil, fmt.Errorf("%q: not a file path within the drive", c.Path)
+		}
+		target, err := targets.resolve(c.Path)
+		if err != nil {
+			return nil, err
+		}
 		same, exists, err := sameContent(src, c.Path, target)
 		if err != nil {
 			return nil, err
@@ -46,7 +62,7 @@ func Extract(src fs.FS, changes []Change, dir, dest string, force, modifiedOK, d
 		if exists && !(modifiedOK && c.Kind == Modified) {
 			conflicts = append(conflicts, c.Path)
 		}
-		jobs = append(jobs, c)
+		jobs = append(jobs, job{c, target})
 	}
 	if len(conflicts) > 0 && !force {
 		return nil, fmt.Errorf("would overwrite %d file(s) in %s that differ (use --force): %s", len(conflicts), dest, strings.Join(conflicts, ", "))
@@ -54,17 +70,57 @@ func Extract(src fs.FS, changes []Change, dir, dest string, force, modifiedOK, d
 	if !dryRun && len(jobs) > 0 {
 		status.Step("Copying %s into the source", dir)
 	}
-	for i, c := range jobs {
-		res.Written = append(res.Written, c.Path)
+	for i, j := range jobs {
+		res.Written = append(res.Written, j.c.Path)
 		if dryRun {
 			continue
 		}
 		status.Count(i+1, len(jobs))
-		if err := copyOut(src, c, filepath.Join(dest, filepath.FromSlash(c.Path))); err != nil {
+		if err := copyOut(src, j.c, j.target); err != nil {
 			return res, err
 		}
 	}
 	return res, nil
+}
+
+// targetResolver finds where a slash-separated path goes in dest: each
+// component spelled as dest already spells it, compared
+// case-insensitively (an exact match first), and as given where dest has
+// none yet. Directory listings are cached.
+type targetResolver struct {
+	dest string
+	dirs map[string][]os.DirEntry // directory -> its entries; nil if it doesn't exist
+}
+
+func (r *targetResolver) resolve(p string) (string, error) {
+	cur := r.dest
+	parts := strings.Split(p, "/")
+	for i, part := range parts {
+		entries, ok := r.dirs[cur]
+		if !ok {
+			var err error
+			entries, err = os.ReadDir(cur)
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return "", err
+			}
+			r.dirs[cur] = entries
+		}
+		if entries == nil { // the rest is new
+			return filepath.Join(append([]string{cur}, parts[i:]...)...), nil
+		}
+		name := part
+		for _, e := range entries {
+			if e.Name() == part {
+				name = part
+				break
+			}
+			if strings.EqualFold(e.Name(), part) {
+				name = e.Name()
+			}
+		}
+		cur = filepath.Join(cur, name)
+	}
+	return cur, nil
 }
 
 // sameContent reports whether target exists and holds exactly src's file
