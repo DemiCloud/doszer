@@ -315,3 +315,25 @@ func TestWAVDataRejects(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveRejectsTracksOutsideFile(t *testing.T) {
+	// A track starting after its end, or ending past its file, would
+	// otherwise be read as a negative length: a garbage WAV size.
+	for _, tc := range []struct{ name, sheet string }{
+		{"last track starts past the end", "FILE \"game.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\nTRACK 02 AUDIO\nINDEX 01 00:00:05\n"},
+		{"middle track ends past the end", "FILE \"game.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:00\nTRACK 02 AUDIO\nINDEX 01 00:00:05\nTRACK 03 AUDIO\nINDEX 01 00:00:06\n"},
+		{"next track before this one", "FILE \"game.bin\" BINARY\nTRACK 01 MODE1/2352\nINDEX 01 00:00:01\nTRACK 02 AUDIO\nINDEX 01 00:00:00\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFixture(t, dir, "game.bin", make([]byte, 2*2352))
+			sheet, err := Parse([]byte(tc.sheet))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Resolve(sheet, dir); err == nil || !strings.Contains(err.Error(), "outside the file") {
+				t.Fatalf("Resolve = %v, want an out-of-range error", err)
+			}
+		})
+	}
+}

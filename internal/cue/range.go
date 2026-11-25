@@ -175,6 +175,11 @@ func ResolveWith(sheet *Sheet, resolve FileResolver) ([]ResolvedTrack, error) {
 				}
 				end = int64(boundary.Frames) * int64(fs)
 			}
+			// Only a file that stores tracks exactly has byte ranges to
+			// check: an Ogg file's INDEX times mean nothing in its bytes.
+			if exact := strings.EqualFold(file.Type, "BINARY") || strings.EqualFold(file.Type, "WAVE"); exact && (start > end || end > size) {
+				return nil, fmt.Errorf("%s: track %d spans bytes %d to %d, outside the file's %d", file.Name, track.Number, start, end, size)
+			}
 
 			out = append(out, ResolvedTrack{
 				Track: track, FilePath: path, FileType: file.Type, FrameSize: fs, Start: start, End: end,
