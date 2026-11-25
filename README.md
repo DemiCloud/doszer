@@ -57,7 +57,8 @@ doszer verify  FILE.dosz... | --all [DIR...]
 doszer info    FILE.dosz|SOURCE...
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
-doszer env     [--system-dir DIR] [--save-dir DIR]
+doszer env     [--system-dir DIR] [--save-dir DIR] [--rom-dir DIR]
+doszer config  [get KEY | set KEY VALUE | unset KEY | init [FILE] [--current] [-f]] [--file FILE]
 doszer version
 ```
 
@@ -594,7 +595,18 @@ Unset directories have defaults, the first that exists:
 | `save_dir` | `./saves`, `saves/` beside doszer, for `run` RetroDECK's `saves_path/<folder>` for an archive under its `roms_path`, doszer's cache |
 | `rom_dir` | `./roms`, `roms/` beside doszer, RetroDECK's `roms_path` |
 
-`doszer env` shows which applies, and where it came from.
+`doszer env` and `doszer config` show which applies, and where it came
+from.
+
+`doszer config` lists every setting with its value and source (a file,
+or `default` and the default's own source). `config set KEY VALUE` and
+`config unset KEY` edit the user config file (`--file` another one),
+keeping its other lines and comments; a relative path is taken from the
+working directory and stored relative to the file when it lies under the
+file's directory. Table entries are `templates.NAME` and
+`install_os.NAME`. `config init [FILE]` writes a commented file listing
+every setting (`-` for standard output); `--current` writes the settings
+the config files set now instead of only defaults.
 
 `templates` and `install_os` merge by key across layers; every other setting is replaced
 whole by the most specific layer that sets it. `repack` has no source

@@ -280,6 +280,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `prepare` | Implemented. `shell`: a prepared real Win3.1 shell ran a program through RunExit and closed DOSBox Pure (headless probe). `os`: a prepared real Win98 image booted to Program Manager's generated Tools group (icons re-extracted) and ran a `WINDOWS.BAT` with PRESSKEY (headless probe); its shutdown didn't close the probe session, as with the hand-made reference image (Next steps) |
 | `info` | Implemented |
 | `env` | Implemented |
+| `config` | Implemented |
 | `version` | Implemented |
 
 Manifest parsing and every manifest rule in specification §11 are

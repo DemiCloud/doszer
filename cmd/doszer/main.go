@@ -77,6 +77,7 @@ func init() {
 		{"info", "show what an archive or source directory holds", runInfo},
 		{"verify", "check archives against their manifests and the specification", runVerify},
 		{"env", "show the directories, images and tools doszer finds here", runEnv},
+		{"config", "show, change or write doszer's configuration", runConfig},
 		{"version", "show the versions of doszer and the programs it embeds", runVersion},
 	}
 }
@@ -193,7 +194,7 @@ func newFlags(name string) *pflag.FlagSet {
 }
 
 // dataCommands are the commands with a result --format can encode.
-var dataCommands = map[string]bool{"info": true, "verify": true, "set": true, "version": true, "env": true}
+var dataCommands = map[string]bool{"info": true, "verify": true, "set": true, "version": true, "env": true, "config": true}
 
 // format is the resolved --format of the command running.
 var format = output.Plain
@@ -1692,4 +1693,160 @@ func chooseBoot(o *manifest.TemplateOptions, source, systemDir, boot string, cfg
 		fmt.Fprintf(os.Stderr, "[WARN] %s programs may not run under Windows 9x\n", game)
 	}
 	return nil
+}
+
+// runConfig implements `doszer config`.
+func runConfig(args []string) error {
+	fs := newFlags("config")
+	file := fs.String("file", "", "")
+	current := fs.Bool("current", false, "")
+	force := fs.BoolP("force", "f", false, "")
+	const help = `doszer config - show, change or write doszer's configuration
+
+Usage: doszer config [options]
+       doszer config get KEY
+       doszer config set KEY VALUE
+       doszer config unset KEY
+       doszer config init [FILE]
+
+Options:
+      --file FILE         config file set, unset and init write (default: the user config)
+      --current           init: write the settings in effect, not only defaults
+  -f, --force             init: overwrite FILE
+` + flagFormatData + flagHelp
+	if ok, err := parse(fs, args, help, 0, 3); !ok {
+		return err
+	}
+	a := fs.Args()
+	target := func() (string, error) {
+		if *file != "" {
+			return *file, nil
+		}
+		return config.UserConfigPath()
+	}
+	need := func(n int) error {
+		if len(a) != n {
+			fmt.Fprint(os.Stderr, help)
+			return errUsage
+		}
+		return nil
+	}
+
+	if len(a) == 0 {
+		settings, err := config.Settings("")
+		if err != nil {
+			return err
+		}
+		switch format {
+		case output.CSV:
+			var rows [][]string
+			for _, s := range settings {
+				rows = append(rows, []string{s.Key, s.Value, s.From})
+			}
+			return output.EncodeCSV(os.Stdout, []string{"key", "value", "from"}, rows)
+		case output.Fancy, output.Plain:
+			width := 0
+			for _, s := range settings {
+				width = max(width, len(s.Key))
+			}
+			for _, s := range settings {
+				v := s.Value
+				if v == "" {
+					v = "(none)"
+				}
+				fmt.Printf("%-*s  %s [%s]\n", width, s.Key, v, s.From)
+			}
+			return nil
+		}
+		return output.Encode(os.Stdout, format, struct {
+			Settings []config.Setting `json:"settings" yaml:"settings" toml:"settings"`
+		}{settings})
+	}
+
+	switch a[0] {
+	case "get":
+		if err := need(2); err != nil {
+			return err
+		}
+		settings, err := config.Settings("")
+		if err != nil {
+			return err
+		}
+		for _, s := range settings {
+			if s.Key == a[1] {
+				fmt.Println(s.Value)
+				return nil
+			}
+		}
+		if err := config.CheckKey(a[1]); err != nil {
+			return err
+		}
+		return nil // a table entry no file sets
+	case "set":
+		if err := need(3); err != nil {
+			return err
+		}
+		p, err := target()
+		if err != nil {
+			return err
+		}
+		if err := config.Set(p, a[1], a[2]); err != nil {
+			return err
+		}
+		fmt.Printf("Set %s in %s\n", a[1], p)
+		return nil
+	case "unset":
+		if err := need(2); err != nil {
+			return err
+		}
+		p, err := target()
+		if err != nil {
+			return err
+		}
+		if err := config.Unset(p, a[1]); err != nil {
+			return err
+		}
+		fmt.Printf("Unset %s in %s\n", a[1], p)
+		return nil
+	case "init":
+		if len(a) > 2 {
+			fmt.Fprint(os.Stderr, help)
+			return errUsage
+		}
+		p := *file
+		if len(a) == 2 {
+			p = a[1]
+		}
+		if p == "" {
+			var err error
+			if p, err = config.UserConfigPath(); err != nil {
+				return err
+			}
+		}
+		set, keys := config.Default(), map[string]bool{}
+		if *current {
+			var err error
+			if set, keys, err = config.Current(""); err != nil {
+				return err
+			}
+		}
+		text := config.Template(set, keys)
+		if p == "-" {
+			fmt.Print(text)
+			return nil
+		}
+		if _, err := os.Stat(p); err == nil && !*force {
+			return fmt.Errorf("%s exists (--force overwrites it)", p)
+		}
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
+			return err
+		}
+		fmt.Printf("Wrote %s\n", p)
+		return nil
+	}
+	fmt.Fprint(os.Stderr, help)
+	return fmt.Errorf("config: unknown action %q", a[0])
 }
