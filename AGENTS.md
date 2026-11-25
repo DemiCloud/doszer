@@ -213,6 +213,7 @@ against DOSBox Pure 1.0 Preview 8 (`dosbox_pure_libretro.cpp`) and its
 | Logging | Without `GET_LOG_INTERFACE` the core `vfprintf`s to stderr | `retro_fallback_log` |
 | Pixel format | XRGB8888 (SDL's `RGB888`), software rendered | `retro_load_game`, `SET_PIXEL_FORMAT` |
 | `FRONTEND.DBP` | Ignored by the core (standalone only), so the built-in frontend passes core options itself | `init_dosbox`, `#ifdef DBP_STANDALONE` |
+| Host cursor | Hidden over the window at all times (a transparent SDL cursor, `SDL_ShowCursor` as fallback), as RetroArch and standalone do. Works on Windows; under WSLg the pointer stays visible (WSLg draws it through its RDP client, which ignored both), so test mouse feel with the Windows build | live test, 2026-11-24 |
 
 `internal/libretro`'s `TestProbe` runs real content headless and saves a
 screenshot every few seconds (`DOSZER_PROBE_CONTENT`, `_SYSTEM`, `_OUT`,
