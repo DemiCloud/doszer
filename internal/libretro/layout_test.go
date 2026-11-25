@@ -44,3 +44,13 @@ func TestFit(t *testing.T) {
 		}
 	}
 }
+
+func TestFrameImage(t *testing.T) {
+	// 2x1 XRGB8888 (bytes B, G, R, X) with 4 bytes of row padding.
+	pix := []byte{0x30, 0x20, 0x10, 0x00, 0x03, 0x02, 0x01, 0xFF, 0xEE, 0xEE, 0xEE, 0xEE}
+	img := frameImage(pix, 2, 1, 12)
+	want := []byte{0x10, 0x20, 0x30, 255, 0x01, 0x02, 0x03, 255}
+	if string(img.Pix) != string(want) {
+		t.Fatalf("pixels % x, want % x", img.Pix, want)
+	}
+}

@@ -760,11 +760,12 @@ Options:
 }
 
 // windowHelp is printed when DOSBox Pure's window opens.
-const windowHelp = "Click the window to capture the mouse, Ctrl+F10 releases it, Alt+Enter toggles fullscreen."
+const windowHelp = "Click the window to capture the mouse, Ctrl+F10 releases it. Alt+Enter: fullscreen, hold Alt+F12: fast-forward, Ctrl+F5: screenshot."
 
 // runRun implements `doszer run <archive.dosz>`.
 func runRun(args []string) error {
 	fs := newFlags("run")
+	options := fs.StringArray("option", nil, "")
 	saveDir := fs.String("save-dir", "", "")
 	systemDir := fs.String("system-dir", "", "")
 	const help = `doszer run - play an archive in DOSBox Pure
@@ -772,9 +773,18 @@ func runRun(args []string) error {
 Usage: doszer run [options] ARCHIVE.dosz
 
 Options:
+      --option KEY=VALUE  DOSBox Pure core option for this session (repeatable)
 ` + flagSaveDir + flagSystemDir + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
+	}
+	opts := map[string]string{}
+	for _, o := range *options {
+		k, v, ok := strings.Cut(o, "=")
+		if !ok || k == "" {
+			return fmt.Errorf("--option %s: want KEY=VALUE", o)
+		}
+		opts[k] = v
 	}
 	cfg, err := config.Load("")
 	if err != nil {
@@ -782,7 +792,7 @@ Options:
 	}
 	fmt.Fprintln(os.Stderr, windowHelp)
 	status.Step("Playing %s", filepath.Base(fs.Arg(0)))
-	env, err := install.Play(fs.Arg(0), stringOr(*systemDir, cfg.SystemDir), stringOr(*saveDir, cfg.SaveDir))
+	env, err := install.Play(fs.Arg(0), stringOr(*systemDir, cfg.SystemDir), stringOr(*saveDir, cfg.SaveDir), opts)
 	endSteps(err)
 	if err == nil {
 		fmt.Printf("Saves: %s\n", env.SaveDir)

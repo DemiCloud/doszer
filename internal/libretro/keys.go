@@ -5,7 +5,9 @@ package libretro
 // key positions whatever the host keyboard layout.
 const (
 	retrokReturn = 13
+	retrokF5     = 286
 	retrokF10    = 291
+	retrokF12    = 293
 	retrokLast   = 324
 )
 

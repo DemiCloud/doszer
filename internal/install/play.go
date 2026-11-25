@@ -16,8 +16,14 @@ import (
 // Its saves are named after it, in the save directory Discover settles on,
 // so a later Play of the same archive continues from them. An archive that
 // boots an OS image runs it under "Discard" (playOptions): the image is
-// never written to, and C: starts from it every time.
-func Play(archive, systemDir, saveDir string) (Env, error) {
+// never written to, and C: starts from it every time. options are more
+// DOSBox Pure core options, by key with or without its dosbox_pure_
+// prefix; specification §12's (playOptions) can't be changed.
+func Play(archive, systemDir, saveDir string, options map[string]string) (Env, error) {
+	coreOpts, err := sessionOptions(options)
+	if err != nil {
+		return Env{}, err
+	}
 	abs, err := filepath.Abs(archive)
 	if err != nil {
 		return Env{}, err
@@ -52,10 +58,29 @@ func Play(archive, systemDir, saveDir string) (Env, error) {
 		Content:     abs,
 		Dir:         dir,
 		Title:       "Doszer (" + title + ")",
-		CoreOptions: playOptions,
+		CoreOptions: coreOpts,
 	}
 	defer s.Close()
 	return env, launch(env, s)
+}
+
+// sessionOptions is playOptions plus extra, whose keys may omit the
+// dosbox_pure_ prefix.
+func sessionOptions(extra map[string]string) (map[string]string, error) {
+	opts := make(map[string]string, len(playOptions)+len(extra))
+	for k, v := range playOptions {
+		opts[k] = v
+	}
+	for k, v := range extra {
+		if !strings.HasPrefix(k, "dosbox_pure_") {
+			k = "dosbox_pure_" + k
+		}
+		if _, fixed := playOptions[k]; fixed {
+			return nil, fmt.Errorf("option %s: archives run with %s = %s (specification §12)", k, k, playOptions[k])
+		}
+		opts[k] = v
+	}
+	return opts, nil
 }
 
 // readArchive returns the first line of archive's AUTOBOOT.DBP (what

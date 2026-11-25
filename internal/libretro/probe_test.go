@@ -2,8 +2,6 @@ package libretro
 
 import (
 	"fmt"
-	"image"
-	"image/png"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -48,21 +46,9 @@ func TestProbe(t *testing.T) {
 				return
 			}
 			next = frame + every
-			img := image.NewRGBA(image.Rect(0, 0, w, h))
-			for y := 0; y < h; y++ {
-				for x := 0; x < w; x++ {
-					p := pix[y*pitch+x*4:]
-					o := img.PixOffset(x, y)
-					img.Pix[o], img.Pix[o+1], img.Pix[o+2], img.Pix[o+3] = p[2], p[1], p[0], 255
-				}
-			}
-			f, err := os.Create(filepath.Join(out, fmt.Sprintf("%06d.png", frame)))
-			if err != nil {
+			if err := writePNG(filepath.Join(out, fmt.Sprintf("%06d.png", frame)), frameImage(pix, w, h, pitch)); err != nil {
 				t.Error(err)
-				return
 			}
-			png.Encode(f, img)
-			f.Close()
 		}})
 	if err != nil {
 		t.Fatal(err)

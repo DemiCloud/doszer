@@ -49,7 +49,7 @@ func TestPlay(t *testing.T) {
 			archive := filepath.Join(t.TempDir(), "Example Game.dosz")
 			os.WriteFile(archive, zipBytes(t, tt.files), 0o644)
 			os.Remove(filepath.Join(saveDir, "Example Game.pure.zip"))
-			_, err := Play(archive, tt.system, saveDir)
+			_, err := Play(archive, tt.system, saveDir, nil)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("err = %v, want %q", err, tt.wantErr)
@@ -69,7 +69,34 @@ func TestPlay(t *testing.T) {
 		})
 	}
 
-	if _, err := Play(save+".missing", "", saveDir); err == nil {
+	if _, err := Play(save+".missing", "", saveDir, nil); err == nil {
 		t.Fatal("missing archive accepted")
+	}
+}
+
+func TestSessionOptions(t *testing.T) {
+	tests := []struct {
+		name    string
+		extra   map[string]string
+		want    map[string]string // keys that must be set
+		wantErr bool
+	}{
+		{"none", nil, map[string]string{"dosbox_pure_bootos_ramdisk": "true"}, false},
+		{"full key", map[string]string{"dosbox_pure_cycles": "max"}, map[string]string{"dosbox_pure_cycles": "max"}, false},
+		{"short key", map[string]string{"midi": "mt32"}, map[string]string{"dosbox_pure_midi": "mt32"}, false},
+		{"spec option", map[string]string{"bootos_ramdisk": "diff"}, nil, true},
+		{"spec option, full key", map[string]string{"dosbox_pure_menu_time": "99"}, nil, true},
+	}
+	for _, tt := range tests {
+		got, err := sessionOptions(tt.extra)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("%s: err = %v, wantErr %v", tt.name, err, tt.wantErr)
+			continue
+		}
+		for k, v := range tt.want {
+			if got[k] != v {
+				t.Errorf("%s: %s = %q, want %q", tt.name, k, got[k], v)
+			}
+		}
 	}
 }

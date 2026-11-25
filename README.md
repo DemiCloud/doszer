@@ -49,7 +49,7 @@ doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH] [--name NAME] [--
 doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [-n] [--strict] [--ogg-quality N]
 doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FILE]] [-f] [-n] [--keep]
                [--os PATH] [--drive c|d] [--system-dir DIR] [--save-dir DIR]
-doszer run     FILE.dosz [--system-dir DIR] [--save-dir DIR]
+doszer run     FILE.dosz [--option KEY=VALUE...] [--system-dir DIR] [--save-dir DIR]
 doszer FILE.dosz
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
 doszer verify  FILE.dosz
@@ -545,6 +545,11 @@ runs under "Discard" (specification §12): the image is never written to,
 C: starts from the image every time, and only the archive's own D:
 changes are kept.
 
+`--option KEY=VALUE` sets a DOSBox Pure core option for the session, e.g.
+`--option cycles=max` or `--option midi=mt32` (the `dosbox_pure_` prefix
+is optional; keys are in DOSBox Pure's `core_options.h`). Specification
+§12's options can't be changed.
+
 `doszer FILE.dosz`, with no command, does the same, so doszer can be the
 program that opens `.dosz` files (`doszer "%1"` on Windows).
 
@@ -567,8 +572,16 @@ changed.
 - Saves go to `save_dir` (`--save-dir`), else `doszer/saves` in the user
   cache directory, never a frontend's own.
 
-Click the window to capture the mouse; Ctrl+F10 releases it. Alt+Enter
-toggles fullscreen. Under WSLg the desktop pointer stays visible over
+| Keys | |
+|---|---|
+| Click | capture the mouse |
+| Ctrl+F10 | release the mouse |
+| Alt+Enter | toggle fullscreen |
+| Alt+F12 (hold) | fast-forward, without sound |
+| Ctrl+F5 | screenshot, at the game's resolution, to `Pictures/doszer` in the home directory |
+
+Fast-forward, screenshot and mouse release use DOSBox's own keys. Under
+WSLg the desktop pointer stays visible over
 the window, as WSLg draws it on the Windows side; use the Windows build
 there. It's built
 for linux/amd64 and linux/arm64 (glibc 2.28 or later and the system's

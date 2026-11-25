@@ -16,7 +16,9 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -34,8 +36,11 @@ type Config struct {
 	SystemDir string            // RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY
 	SaveDir   string            // RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY
 	Options   map[string]string // core option values; any other option takes the core's default
-	Title     string            // window title, followed by the mouse capture state
+	Title     string            // window title
 	Frames    int               // stop after this many frames, unpaced (tests); 0 runs until closed
+	// ScreenshotDir is where Ctrl+F5 saves screenshots; empty for
+	// Pictures/doszer in the home directory.
+	ScreenshotDir string
 	// OnFrame, if set, is called with each frame the core draws: XRGB8888
 	// pixels, valid only during the call (tests: screenshots).
 	OnFrame func(frame int, pix []byte, width, height, pitch int)
@@ -143,7 +148,13 @@ type host struct {
 	prescale   uintptr
 	preW, preH int32
 	fullscreen bool
-	audio      uint32
+	lastDraw   time.Time
+
+	fast    bool   // Alt+F12 held: run unpaced, without audio
+	shot    bool   // Ctrl+F5: save the next frame
+	shotDir string // where screenshots go
+	name    string // content name, for screenshot file names
+	audio   uint32
 
 	keys                  [retrokLast]bool
 	captured              bool
@@ -190,6 +201,8 @@ func Run(cfg Config) error {
 		saveDir: cString(cfg.SaveDir),
 		options: map[string][]byte{},
 		onFrame: cfg.OnFrame,
+		shotDir: cfg.ScreenshotDir,
+		name:    strings.TrimSuffix(filepath.Base(cfg.Content), filepath.Ext(cfg.Content)),
 	}
 	defer func() { h = nil }()
 	for k, v := range cfg.Options {
@@ -271,11 +284,20 @@ func Run(cfg Config) error {
 			break
 		}
 		core.run()
-		h.draw()
+		// Fast-forward draws at most 60 frames a second: presenting
+		// every one would cap the speed.
+		if !h.fast || time.Since(h.lastDraw) >= time.Second/60 {
+			h.draw()
+			h.lastDraw = time.Now()
+		}
 		if cfg.Frames > 0 {
 			if frame >= cfg.Frames {
 				break
 			}
+			continue
+		}
+		if h.fast {
+			next = time.Now()
 			continue
 		}
 		next = h.pace(next)
@@ -553,6 +575,10 @@ func videoRefresh(data unsafe.Pointer, width, height uint32, pitch uintptr) uint
 	if h.onFrame != nil {
 		h.onFrame(h.frame, unsafe.Slice((*byte)(data), int(pitch)*int(height)), int(width), int(height), int(pitch))
 	}
+	if h.shot {
+		h.shot = false
+		h.saveScreenshot(unsafe.Slice((*byte)(data), int(pitch)*int(height)), int(width), int(height), int(pitch))
+	}
 	return 0
 }
 
@@ -566,7 +592,7 @@ func audioSample(left, right int16) uintptr {
 // 16-bit frames. Audio far ahead of the device (the core can run faster
 // than real time when the window can't keep up) is dropped.
 func audioSampleBatch(data unsafe.Pointer, frames uintptr) uintptr {
-	if h.audio != 0 && frames > 0 && sdl.GetQueuedAudioSize(h.audio) < uint32(h.av.SampleRate*4/2) {
+	if h.audio != 0 && !h.fast && frames > 0 && sdl.GetQueuedAudioSize(h.audio) < uint32(h.av.SampleRate*4/2) {
 		sdl.QueueAudio(h.audio, data, uint32(frames*4))
 	}
 	return frames
@@ -622,6 +648,7 @@ func (h *host) event(e *sdl.Event, window uintptr) {
 	case sdl.EventWindow:
 		if e.WindowEvent() == sdl.WindowEventFocusLost {
 			h.capture(false)
+			h.fast = false
 		}
 	case sdl.EventKeyDown, sdl.EventKeyUp:
 		scancode, mod, repeat := e.Key()
@@ -633,6 +660,19 @@ func (h *host) event(e *sdl.Event, window uintptr) {
 		if key == retrokReturn && mod&sdl.KmodAlt != 0 {
 			if down {
 				h.toggleFullscreen()
+			}
+			return
+		}
+		// Alt+F12 held fast-forwards (DOSBox's speed unlock key); F12's
+		// release ends it whatever the modifiers.
+		if key == retrokF12 && (mod&sdl.KmodAlt != 0 || h.fast) {
+			h.fast = down
+			return
+		}
+		// Ctrl+F5 saves a screenshot (DOSBox's key).
+		if key == retrokF5 && mod&sdl.KmodCtrl != 0 {
+			if down {
+				h.shot = true
 			}
 			return
 		}
