@@ -214,13 +214,15 @@ func TestOSRefuses(t *testing.T) {
 	tests := []struct {
 		name  string
 		edit  func(m map[string]string)
-		input bool // write over the input
+		input bool   // write over the input
+		out   string // output name, default out.img
 		want  string
 	}{
-		{"not windows", func(m map[string]string) { delete(m, "IO.SYS") }, false, "not a Windows 9x image"},
-		{"no wsh", func(m map[string]string) { delete(m, "WINDOWS/WSCRIPT.EXE") }, false, "Windows Script Host"},
-		{"pending install", func(m map[string]string) { m["WINDOWS/WININIT.INI"] = "[rename]\r\n" }, false, "WININIT.INI"},
-		{"output is input", func(map[string]string) {}, true, "the output is the input"},
+		{"not windows", func(m map[string]string) { delete(m, "IO.SYS") }, false, "", "not a Windows 9x image"},
+		{"no wsh", func(m map[string]string) { delete(m, "WINDOWS/WSCRIPT.EXE") }, false, "", "Windows Script Host"},
+		{"pending install", func(m map[string]string) { m["WINDOWS/WININIT.INI"] = "[rename]\r\n" }, false, "", "WININIT.INI"},
+		{"output is input", func(map[string]string) {}, true, "", "the output is the input"},
+		{"unlisted name", func(map[string]string) {}, false, "out.bin", "name it out.vhd"},
 	}
 	for _, tt := range tests {
 		files := win9xFiles()
@@ -228,6 +230,9 @@ func TestOSRefuses(t *testing.T) {
 		in := filepath.Join(dir, tt.name+".img")
 		os.WriteFile(in, win9xImage(t, files), 0o644)
 		out := filepath.Join(dir, "out.img")
+		if tt.out != "" {
+			out = filepath.Join(dir, tt.out)
+		}
 		if tt.input {
 			out = in
 		}

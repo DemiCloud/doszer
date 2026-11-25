@@ -95,6 +95,9 @@ func OS(opts OSOptions) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := listedName(opts.Output, ".vhd", ".img", ".ima"); err != nil {
+		return nil, err
+	}
 	if !opts.DryRun {
 		if err := checkOutput(opts.Input, opts.Output, opts.Force); err != nil {
 			return nil, err
@@ -277,6 +280,21 @@ func OS(opts OSOptions) (*Report, error) {
 
 	status.Step("Writing %s", filepath.Base(opts.Output))
 	return rep, writeImage(opts.Output, img, vol.Layout(), root)
+}
+
+// listedName refuses an output name DOSBox Pure wouldn't list in its
+// system directory: it lists OS images by extension (.img, .ima, .vhd)
+// and shells by .dosz (dosbox_pure_libretro.cpp, DBP_ScanSystem). Which
+// of the image extensions doesn't matter to it: it tells a VHD by its
+// footer (src/ints/bios_disk.cpp, imageDisk::imageDisk, sparseVhd::Init).
+func listedName(output string, exts ...string) error {
+	ext := filepath.Ext(output)
+	for _, e := range exts {
+		if strings.EqualFold(ext, e) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s: DOSBox Pure lists only %s files there; name it %s", filepath.Base(output), strings.Join(exts, ", "), strings.TrimSuffix(filepath.Base(output), ext)+exts[0])
 }
 
 // checkOutput refuses an existing output without force, and the input

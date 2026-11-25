@@ -164,15 +164,17 @@ func TestShellRejects(t *testing.T) {
 	tests := []struct {
 		name  string
 		files map[string]string
+		out   string
 		want  string
 	}{
-		{"not windows", map[string]string{"GAME.EXE": "x"}, "not a Windows 3.x shell"},
-		{"case clash", map[string]string{"WINDOWS/WIN.COM": "a", "windows/win.com": "b"}, "appears twice"},
+		{"not windows", map[string]string{"GAME.EXE": "x"}, "out.dosz", "not a Windows 3.x shell"},
+		{"case clash", map[string]string{"WINDOWS/WIN.COM": "a", "windows/win.com": "b"}, "out.dosz", "appears twice"},
+		{"unlisted name", map[string]string{"WINDOWS/WIN.COM": "a"}, "out.zip", "name it out.dosz"},
 	}
 	for _, tt := range tests {
 		in := filepath.Join(dir, tt.name+".zip")
 		writeZip(t, in, tt.files)
-		_, err := Shell(ShellOptions{Input: in, Output: filepath.Join(dir, "out.dosz"), DryRun: true})
+		_, err := Shell(ShellOptions{Input: in, Output: filepath.Join(dir, tt.out), DryRun: true})
 		if err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("%s: err = %v, want %q", tt.name, err, tt.want)
 		}

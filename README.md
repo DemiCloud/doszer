@@ -788,7 +788,10 @@ prepared image to the original in `install_os` (Configuration), and
 `install` boots the original for any game whose `boot.os` names the
 prepared one. The input is a VHD (fixed or dynamic) or a raw `.img` and is
 only read; the output is a fixed VHD (a raw image for raw input) of the
-same size, whatever the input's type, and never the input itself. Its file
+same size, whatever the input's type, and never the input itself. It must
+be named `.vhd`, `.img` or `.ima`, the extensions DOSBox Pure lists (it
+tells a VHD by its footer, not its name; `prepare shell`'s output, a
+shell, must be `.dosz`). Its file
 system is rebuilt in the same geometry, every file contiguous: the MBR and
 boot sectors are copied unchanged, and every kept file keeps its short and
 long name, attributes and dates. The changes:

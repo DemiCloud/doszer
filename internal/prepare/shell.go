@@ -126,6 +126,9 @@ func Shell(opts ShellOptions) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := listedName(opts.Output, ".dosz"); err != nil {
+		return nil, err
+	}
 	if !opts.DryRun && !opts.Force {
 		if _, err := os.Stat(opts.Output); err == nil {
 			return nil, fmt.Errorf("%s already exists (--force to overwrite)", opts.Output)
