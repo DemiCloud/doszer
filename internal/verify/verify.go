@@ -92,9 +92,9 @@ func isEpoch(t time.Time) bool {
 // every entry regardless of its source: compression method, external
 // attributes, extra fields, no directory entries and path order. A collected or extracted
 // entry's modification time is its source's own (§8.2), which verify has
-// no independent way to check; only the three generated files (checked
-// against the manifest in checkWithManifest and in Verify) must use the
-// fixed epoch.
+// no independent way to check, except a disc image file's, which must be
+// the disc's date; the three generated files (checked against the
+// manifest in checkWithManifest and in Verify) must use the fixed epoch.
 func checkDeterministic(files []*zip.File) []error {
 	var errs []error
 
@@ -120,7 +120,40 @@ func checkDeterministic(files []*zip.File) []error {
 		errs = append(errs, fmt.Errorf("entries are not ordered by path (§8.2)"))
 	}
 
+	byName := map[string]*zip.File{}
+	for _, f := range files {
+		byName[f.Name] = f
+	}
+	dates := build.MediaDates(files)
+	for _, name := range sortedKeys(dates) {
+		if want := dosTime(dates[name]); !byName[name].Modified.UTC().Equal(want) {
+			errs = append(errs, fmt.Errorf("%s: a disc image file must use the disc's date, %s (§8.2)", name, want.Format("2006-01-02 15:04:05")))
+		}
+	}
+
 	return errs
+}
+
+// dosTime is t as an MS-DOS date and time field records it: UTC, within
+// 1980-2107, to an even second.
+func dosTime(t time.Time) time.Time {
+	t = t.UTC()
+	switch {
+	case t.Before(build.Epoch):
+		return build.Epoch
+	case t.Year() > 2107:
+		return time.Date(2107, 12, 31, 23, 59, 58, 0, time.UTC)
+	}
+	return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second()&^1, 0, time.UTC)
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // checkWithManifest enforces the rules that depend on the embedded

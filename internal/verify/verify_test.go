@@ -647,3 +647,74 @@ func TestVerifyRejectsMalformedEntryNames(t *testing.T) {
 		})
 	}
 }
+
+// rawDisc is a one-track Mode 1 BIN/CUE whose primary volume descriptor
+// records date.
+func rawDisc(t *testing.T, dir, date string) {
+	t.Helper()
+	bin := make([]byte, 20*2352)
+	for i := 0; i < 20; i++ {
+		bin[i*2352+15] = 1 // Mode 1
+	}
+	pvd := bin[16*2352+16:]
+	pvd[0] = 1
+	copy(pvd[1:], "CD001")
+	copy(pvd[813:], date)
+	writeFile(t, dir, "disc.bin", string(bin))
+	writeFile(t, dir, "disc.cue", "FILE \"disc.bin\" BINARY\r\n  TRACK 01 MODE1/2352\r\n    INDEX 01 00:00:00\r\n")
+}
+
+func TestDiscImageFilesUseTheDiscsDate(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "DOSZ.TOML", plainManifest)
+	writeFile(t, dir, "GAME.EXE", "binary")
+	rawDisc(t, dir, "1996110912120000")
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := build.Run(build.Options{SourceDir: dir, OutputPath: out}); err != nil {
+		t.Fatal(err)
+	}
+	r, err := zip.OpenReader(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	want := time.Date(1996, 11, 9, 12, 12, 0, 0, time.UTC)
+	for _, f := range r.File {
+		if strings.HasPrefix(f.Name, "disc.") && !f.Modified.UTC().Equal(want) {
+			t.Errorf("%s: modified %v, want %v", f.Name, f.Modified.UTC(), want)
+		}
+	}
+	if err := verify.Verify(out); err != nil {
+		t.Errorf("Verify: %v", err)
+	}
+}
+
+func TestVerifyRejectsWrongDiscDate(t *testing.T) {
+	src := t.TempDir()
+	rawDisc(t, src, "1996110912120000")
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	f, err := os.Create(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	for _, name := range []string{"disc.bin", "disc.cue"} {
+		data, err := os.ReadFile(filepath.Join(src, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The legacy MS-DOS fields, so archive/zip adds no extra field:
+		// 2001-01-01 00:00:00.
+		w, err := zw.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Store, ModifiedDate: 21<<9 | 1<<5 | 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Write(data)
+	}
+	zw.Close()
+	f.Close()
+	err = verify.Verify(out)
+	if err == nil || !strings.Contains(err.Error(), "disc.bin: a disc image file must use the disc's date, 1996-11-09 12:12:00") {
+		t.Fatalf("Verify = %v, want a disc date error", err)
+	}
+}

@@ -228,6 +228,9 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, pathWarnings, 
 		return nil, err
 	}
 	res.MediaWarnings = append(mediaWarnings, convertWarnings...)
+	if !opts.DryRun {
+		dateMedia(fs)
+	}
 
 	hits, rewriteWarnings, err := applyRewrite(fs, m.Layout.Rewrite)
 	if err != nil {

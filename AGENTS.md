@@ -242,7 +242,9 @@ manifest implies (e.g. AUTOBOOT.DBP's bytes must match
 archive and its embedded manifest - including one not built by doszer.
 `build.ValidateArchiveContent`, `build.ShouldStore`, `build.IsTextFile`,
 `build.NormalizeCRLF`, `build.IsExcluded`, `build.NeedsAutoboot` and
-`build.BuildAutoboot`, `build.BuildPadmap` and `build.BuildDOSYML` are
+`build.BuildAutoboot`, `build.BuildPadmap`, `build.BuildDOSYML` and
+`build.MediaDates` (§8.2's disc date: a disc image's files are dated by
+its first data track's PVD volume creation date) are
 exported from `internal/build` specifically so
 `verify` (and `repack`) can reuse them rather than duplicate the rules.
 
