@@ -90,6 +90,41 @@ func registryAdded(before, after fs.FS) ([]w9xreg.Group, int, error) {
 	return groups, values, nil
 }
 
+// archiveDrive is where an OS image archive's own files appear.
+const archiveDrive = "D:"
+
+// retarget moves string values' paths into dir (e.g. C:\GAMES), whole
+// path components only, to archiveDrive: the same length, so only the
+// drive letter changes.
+func retarget(groups []w9xreg.Group, dir string) {
+	needle := []byte(strings.ToLower(dir))
+	for _, g := range groups {
+		for _, e := range g.Entries {
+			v := e.Value
+			if v == nil || (v.Type != w9xreg.TypeSZ && v.Type != w9xreg.TypeExpandSZ && v.Type != w9xreg.TypeMultiSZ) {
+				continue
+			}
+			lower := bytes.ToLower(v.Data)
+			for i := 0; i+len(needle) <= len(lower); i++ {
+				if !bytes.HasPrefix(lower[i:], needle) {
+					continue
+				}
+				if end := i + len(needle); end < len(lower) && !strings.ContainsRune("\\\x00\" ;,", rune(lower[end])) {
+					continue
+				}
+				if i > 0 && isPathByte(lower[i-1]) {
+					continue // part of a longer name, e.g. XC:\GAMES
+				}
+				v.Data[i] = archiveDrive[0]
+			}
+		}
+	}
+}
+
+func isPathByte(b byte) bool {
+	return b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b == '_'
+}
+
 func hasPrefixFold(s, prefix string) bool {
 	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
 }
@@ -97,8 +132,11 @@ func hasPrefixFold(s, prefix string) bool {
 // exportRegistry writes the registry entries the installer added
 // (registryAdded) into the extracted folder as RegistryFile, for the
 // game's WINDOWS.BAT to import at startup: the archive boots the OS image
-// as it was, without them. Like Extract, it won't replace a differing
-// file without opts.Force, and writes nothing in a dry run.
+// as it was, without them. The extracted folder is on D: in the archive
+// (the OS image model's content drive) wherever it was installed, so
+// paths into it extracted from C: are moved to D: (retarget), and the
+// report names RegistryFile's D: path. Like Extract, it won't replace a
+// differing file without opts.Force, and writes nothing in a dry run.
 func exportRegistry(rep *Report, before, after fs.FS, opts Options) error {
 	if rep.Extracted == nil || rep.Dir == "" {
 		return nil
@@ -107,6 +145,9 @@ func exportRegistry(rep *Report, before, after fs.FS, opts Options) error {
 	groups, values, err := registryAdded(before, after)
 	if err != nil || len(groups) == 0 {
 		return err
+	}
+	if !strings.EqualFold(rep.Drive, archiveDrive) {
+		retarget(groups, DOSPath(rep.Drive, rep.Dir))
 	}
 	var buf bytes.Buffer
 	if err := w9xreg.WriteReg(&buf, groups...); err != nil {
@@ -125,7 +166,7 @@ func exportRegistry(rep *Report, before, after fs.FS, opts Options) error {
 			return err
 		}
 	}
-	rep.Registry = DOSPath(rep.Drive, rep.Dir+"/"+RegistryFile)
+	rep.Registry = DOSPath(archiveDrive, rep.Dir+"/"+RegistryFile)
 	rep.RegistryValues = values
 	return nil
 }

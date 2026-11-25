@@ -113,3 +113,40 @@ func TestExportRegistry(t *testing.T) {
 		}
 	})
 }
+
+// A folder extracted from C: is on D: in the archive: the registry's
+// paths into it move there, and nothing else does.
+func TestExportRegistryRetargetsC(t *testing.T) {
+	before := regFS(&w9xreg.Key{Subkeys: []*w9xreg.Key{{Name: "Software"}}}, &w9xreg.Key{})
+	after := regFS(&w9xreg.Key{Subkeys: []*w9xreg.Key{{Name: "Software", Subkeys: []*w9xreg.Key{
+		{Name: "Zipper", Values: []w9xreg.Value{
+			sz("Program", `C:\Games\Zipper\RECOIL`),
+			sz("Exact", `c:\games`),
+			sz("Quoted", `"C:\GAMES\X.EXE" -w`),
+			sz("Other", `C:\GamesExtra\Y`),
+			sz("Windows", `C:\WINDOWS`),
+			{Name: "Bin", Type: w9xreg.TypeBinary, Data: []byte(`C:\Games`)},
+		}},
+	}}}}, &w9xreg.Key{})
+	src := t.TempDir()
+	os.MkdirAll(filepath.Join(src, "Games"), 0o755)
+	rep := &Report{Drive: "C:", Dir: "Games", Extracted: &Extracted{}}
+	if err := exportRegistry(rep, before, after, Options{Source: src}); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Registry != `D:\GAMES\INSTALL.REG` {
+		t.Errorf("report %q", rep.Registry)
+	}
+	data, _ := os.ReadFile(filepath.Join(src, "Games", RegistryFile))
+	for _, want := range []string{
+		`"Program"="D:\\Games\\Zipper\\RECOIL"`,
+		`"Exact"="D:\\games"`,
+		`"Quoted"="\"D:\\GAMES\\X.EXE\" -w"`,
+		`"Other"="C:\\GamesExtra\\Y"`,
+		`"Windows"="C:\\WINDOWS"`,
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("missing %s in:\n%s", want, data)
+		}
+	}
+}
