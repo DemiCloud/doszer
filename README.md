@@ -633,6 +633,23 @@ with Explorer never running as the shell, discs are not AutoRun.
 Use a fixed VHD or raw image: DOSBox Pure loses writes to a dynamic VHD
 under `diff` (see "Install" above to convert one).
 
+#### Getting past a launcher
+
+Windows 98 ships Windows Script Host 1.0, which has no `SendKeys`, so a
+script can't press a launcher's Start button. A small helper program in
+the game's source can, e.g. [PRESSKEY](https://github.com/DemiCloud/presskey),
+started from `WINDOWS.BAT` before the game (`%` is written `%%` there):
+
+```bat
+START D:\PRESSKEY.EXE /C 104 GAME
+START /W GAME.EXE
+```
+
+Such a helper is ordinary content, not a manifest feature: the source
+carries the file, and a comment in the manifest says which release it is
+and where to get it, with its SHA-256, so anyone can rebuild the source.
+Programs run under DOSBox Pure's emulated CPU must not use CMOV or SSE.
+
 ## Credits
 
 doszer exists for [DOSBox Pure](https://codeberg.org/schelling/dosbox-pure)
