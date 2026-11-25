@@ -1,0 +1,246 @@
+package platform
+
+import (
+	"io"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	"github.com/DemiCloud/doszer/internal/cue"
+	"github.com/DemiCloud/doszer/internal/iso9660"
+)
+
+// Program is one executable and what it runs on.
+type Program struct {
+	Path   string // slash-separated; inside a disc image: "<image>:<path>"
+	Target Target
+}
+
+// helperName matches programs that set a game up or come with it rather
+// than run it: installers, uninstallers, AutoRun menus, README viewers,
+// registration cards, DirectX setup, Acrobat Reader. A DOS game often
+// ships a Windows setup program or the reverse, and they say nothing
+// about what the game itself needs.
+var helperName = regexp.MustCompile(`(?i)^(setup|install|instal|inst|_inst|_isdel|uninst|unins\d*|uninstal|isuninst|autorun|setupw|setup32|winsetup|dxsetup\w*|directx|dsetup|ddhelp|readme|e?regcard|regist\w*|register|ar(16|32)e\d+|acrord\w*|checknt|winarj)\.(exe|com)$`)
+
+// helperDir matches directories that hold only such helpers.
+var helperDir = regexp.MustCompile(`(?i)^(directx|dx\d*|acrobat|acroread|redist)$`)
+
+// IsHelper reports whether p names an installer or another helper that
+// comes with a game (helperName), or is in a helper directory.
+func IsHelper(p string) bool {
+	if _, in, ok := strings.Cut(p, ":"); ok {
+		p = in
+	}
+	if helperName.MatchString(path.Base(p)) {
+		return true
+	}
+	for _, d := range strings.Split(path.Dir(p), "/") {
+		if helperDir.MatchString(d) {
+			return true
+		}
+	}
+	return false
+}
+
+// Need is what a game's programs need.
+type Need struct {
+	Game  Target // the oldest system that runs every program but helpers
+	DOS   bool   // Game is Windows, but there are DOS programs too: a DOS version
+	Setup Target // what helpers need, if more than Game
+}
+
+func (n Need) String() string {
+	if n.DOS {
+		return "DOS or " + n.Game.String()
+	}
+	return n.Game.String()
+}
+
+// Needs works out what a game's programs need. Programs installed in the
+// source (paths without a disc image prefix) decide when there are any:
+// a disc carries more than the game (a Windows setup branch, DirectX,
+// readers). Helpers count only if they're all there is.
+func Needs(progs []Program) Need {
+	onDisc := func(p Program) bool { return strings.Contains(p.Path, ":") }
+	installed := false
+	for _, p := range progs {
+		if !onDisc(p) && !IsHelper(p.Path) {
+			installed = true
+		}
+	}
+	var set []Program
+	for _, p := range progs {
+		if !installed || !onDisc(p) {
+			set = append(set, p)
+		}
+	}
+	others := false
+	for _, p := range set {
+		if !IsHelper(p.Path) {
+			others = true
+		}
+	}
+	var n Need
+	dos := false
+	max := func(t *Target, u Target) {
+		if t.Platform == NotProgram || t.Less(u) {
+			*t = u
+		}
+	}
+	for _, p := range set {
+		if others && IsHelper(p.Path) {
+			max(&n.Setup, p.Target)
+			continue
+		}
+		max(&n.Game, p.Target)
+		if p.Target.Platform == DOS {
+			dos = true
+		}
+	}
+	n.DOS = dos && (n.Game.Platform == Win16 || n.Game.Platform == Win32)
+	if !n.Game.Less(n.Setup) {
+		n.Setup = Target{}
+	}
+	return n
+}
+
+// Scan finds the programs in a source directory: its files, and the files
+// on every ISO 9660 disc image in it (an .iso, or a CUE sheet's first data
+// track), since a game not yet installed is only its disc.
+func Scan(dir string) ([]Program, error) {
+	var out []Program
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, _ := filepath.Rel(dir, p)
+		rel = filepath.ToSlash(rel)
+		switch ext := strings.ToLower(filepath.Ext(p)); {
+		case IsProgramName(p):
+			f, err := os.Open(p)
+			if err != nil {
+				return err
+			}
+			t := Classify(p, f)
+			f.Close()
+			if t.Platform != NotProgram {
+				out = append(out, Program{rel, t})
+			}
+		case ext == ".iso":
+			out = append(out, scanDisc(rel, p, 0, 2048, 0)...)
+		case ext == ".cue":
+			out = append(out, scanCue(rel, p)...)
+		}
+		return nil
+	})
+	return out, err
+}
+
+// scanCue scans a CUE sheet's first data track.
+func scanCue(rel, p string) []Program {
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return nil
+	}
+	sheet, err := cue.Parse(data)
+	if err != nil {
+		return nil
+	}
+	for _, f := range sheet.Files {
+		for _, t := range f.Tracks {
+			if t.Mode == "AUDIO" || len(t.Indexes) == 0 {
+				continue
+			}
+			size, off := 2048, 0
+			switch t.Mode {
+			case "MODE1/2352":
+				size, off = 2352, 16
+			case "MODE2/2352":
+				size, off = 2352, 24
+			case "MODE2/2336":
+				size, off = 2336, 8
+			}
+			start := int64(t.Indexes[len(t.Indexes)-1].Frames)
+			for _, ix := range t.Indexes {
+				if ix.Number == 1 {
+					start = int64(ix.Frames)
+				}
+			}
+			bin := filepath.Join(filepath.Dir(p), filepath.FromSlash(strings.ReplaceAll(f.Name, `\`, "/")))
+			return scanDisc(rel, bin, start*int64(size), size, off)
+		}
+	}
+	return nil
+}
+
+// scanDisc walks the ISO 9660 file system in the image file p, whose data
+// sectors are sectorSize bytes from base with 2048 user bytes at dataOff.
+func scanDisc(rel, p string, base int64, sectorSize, dataOff int) []Program {
+	f, err := os.Open(p)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	var r io.ReaderAt = f
+	if sectorSize != 2048 || base != 0 {
+		r = &sectors{f: f, base: base, size: int64(sectorSize), off: int64(dataOff)}
+	}
+	img, err := iso9660.Open(r)
+	if err != nil {
+		return nil
+	}
+	var out []Program
+	var walk func(dir iso9660.Entry, prefix string, depth int)
+	walk = func(dir iso9660.Entry, prefix string, depth int) {
+		if depth > 16 {
+			return
+		}
+		entries, err := img.ReadDir(dir)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			name := prefix + e.Name
+			if e.IsDir {
+				walk(e, name+"/", depth+1)
+				continue
+			}
+			if !IsProgramName(e.Name) {
+				continue
+			}
+			rd, err := img.OpenFile(e)
+			if err != nil {
+				continue
+			}
+			if t := Classify(e.Name, rd); t.Platform != NotProgram {
+				out = append(out, Program{rel + ":" + name, t})
+			}
+		}
+	}
+	walk(img.Root(), "", 0)
+	return out
+}
+
+// sectors reads a raw CD track's 2048-byte user data as one stream.
+type sectors struct {
+	f               io.ReaderAt
+	base, size, off int64
+}
+
+func (s *sectors) ReadAt(p []byte, off int64) (int, error) {
+	n := 0
+	for n < len(p) {
+		sec, in := (off+int64(n))/2048, (off+int64(n))%2048
+		chunk := min(int64(len(p)-n), 2048-in)
+		m, err := s.f.ReadAt(p[n:n+int(chunk)], s.base+sec*s.size+s.off+in)
+		n += m
+		if err != nil {
+			return n, err
+		}
+	}
+	return n, nil
+}

@@ -19,6 +19,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/cue"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/platform"
 )
 
 // Report is what Read found.
@@ -35,7 +36,7 @@ type Report struct {
 	Files                    int
 	Deflated, Stored         Bytes
 	Programs                 int
-	MinOS                    Target // the oldest system every program runs on; zero without programs
+	Need                     platform.Need // what the programs need (platform.Needs)
 	Discs                    []Disc
 	Padmap, DOSYML, Frontend bool // PADMAP.DBP, DOS.YML, FRONTEND.DBP present
 }
@@ -79,6 +80,7 @@ func Read(p string) (*Report, error) {
 		return nil, fmt.Errorf("%s: %w", p, err)
 	}
 	r := &Report{Path: p, Size: fi.Size(), Comment: zr.Comment}
+	var progs []platform.Program
 	h := sha256.New()
 	if _, err := io.Copy(h, io.NewSectionReader(f, 0, fi.Size())); err != nil {
 		return nil, err
@@ -102,19 +104,18 @@ func Read(p string) (*Report, error) {
 		b.Files++
 		b.Size += int64(e.UncompressedSize64)
 		b.Compressed += int64(e.CompressedSize64)
-		if isProgramName(e.Name) {
+		if platform.IsProgramName(e.Name) {
 			rc, err := e.Open()
 			if err == nil {
-				if t := classify(e.Name, rc); t.Platform != NotProgram {
-					r.Programs++
-					if r.MinOS.Platform == NotProgram || r.MinOS.less(t) {
-						r.MinOS = t
-					}
+				if t := platform.Classify(e.Name, rc); t.Platform != platform.NotProgram {
+					progs = append(progs, platform.Program{Path: e.Name, Target: t})
 				}
 				rc.Close()
 			}
 		}
 	}
+	r.Programs = len(progs)
+	r.Need = platform.Needs(progs)
 	_, r.Padmap = byName["PADMAP.DBP"]
 	_, r.DOSYML = byName["DOS.YML"]
 	_, r.Frontend = byName["FRONTEND.DBP"]
@@ -352,7 +353,10 @@ func Print(w io.Writer, r *Report) {
 	}
 	if r.Programs > 0 {
 		line("Programs", "%d", r.Programs)
-		line("OS", "%s", r.MinOS)
+		line("OS", "%s", r.Need)
+		if r.Need.Setup.Platform != platform.NotProgram {
+			line("Setup", "%s", r.Need.Setup)
+		}
 	}
 
 	total := Bytes{Files: r.Files, Size: r.Deflated.Size + r.Stored.Size, Compressed: r.Deflated.Compressed + r.Stored.Compressed}

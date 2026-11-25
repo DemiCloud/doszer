@@ -1,4 +1,7 @@
-package info
+// Package platform tells what system a DOS or Windows program needs, from
+// its executable headers, and what a game's programs need together: for
+// `doszer info`, and for `doszer init` choosing a boot model.
+package platform
 
 import (
 	"encoding/binary"
@@ -29,7 +32,8 @@ type Target struct {
 
 // less orders targets by what they need: DOS programs run on Windows,
 // Windows 3.x programs on Windows 9x, and a later version needs more.
-func (t Target) less(u Target) bool {
+// Less reports whether t needs less than u.
+func (t Target) Less(u Target) bool {
 	rank := func(p Platform) int {
 		return map[Platform]int{DOS: 1, Win16: 2, Win32: 3}[p]
 	}
@@ -76,9 +80,9 @@ func (t Target) String() string {
 // past it, the file is taken for a DOS program with an odd header field.
 const exeHeaderMax = 1 << 20
 
-// classify reads an executable's headers from r (its start) and returns
+// Classify reads an executable's headers from r (its start) and returns
 // what it runs on. name decides only between .COM and the rest.
-func classify(name string, r io.Reader) Target {
+func Classify(name string, r io.Reader) Target {
 	dos := Target{Platform: DOS}
 	ext := strings.ToUpper(path.Ext(name))
 	head := make([]byte, 64)
@@ -127,8 +131,8 @@ func classify(name string, r io.Reader) Target {
 	return dos
 }
 
-// isProgramName reports a file name an executable is looked for in.
-func isProgramName(name string) bool {
+// IsProgramName reports a file name an executable is looked for in.
+func IsProgramName(name string) bool {
 	switch strings.ToUpper(path.Ext(name)) {
 	case ".EXE", ".COM":
 		return true

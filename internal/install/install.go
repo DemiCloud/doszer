@@ -449,7 +449,7 @@ func runFrom(opts Options, m *manifest.Manifest) (*Report, error) {
 		}
 		systemDir := opts.SystemDir
 		if systemDir == "" {
-			systemDir = findSystemDir()
+			systemDir = FindSystemDir()
 		}
 		img, err := osImagePath(systemDir, m.Boot.OS)
 		if err != nil {

@@ -23,6 +23,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/platform"
 	"github.com/DemiCloud/doszer/internal/prepare"
 	"github.com/DemiCloud/doszer/internal/redump"
 	"github.com/DemiCloud/doszer/internal/repack"
@@ -218,6 +219,7 @@ func runInit(args []string) error {
 	noMedia := fs.Bool("no-media", false, "")
 	fs.StringVar(&o.OS, "os", "", "")
 	fs.StringVar(&o.Shell, "shell", "", "")
+	systemDir := fs.String("system-dir", "", "")
 	const help = `doszer init - write a commented DOSZ.TOML into a source directory
 
 Usage: doszer init [options] SOURCE
@@ -229,7 +231,7 @@ Options:
       --no-media          don't identify disc images in the source
       --os PATH           OS image model: OS image path, without extension
       --shell PATH        shell model: system shell path, without extension
-` + flagHelp
+` + flagSystemDir + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
 	}
@@ -264,6 +266,16 @@ Options:
 			fmt.Printf("Identified %d disc image(s)\n", len(media))
 		}
 		o.Media = media
+	}
+
+	if o.Exec == "" && o.Shell == "" && o.OS == "" {
+		cfg, err := config.Load(source)
+		if err != nil {
+			return err
+		}
+		if err := chooseBoot(&o, source, stringOr(*systemDir, cfg.SystemDir), cfg); err != nil {
+			return err
+		}
 	}
 
 	content := manifest.Template(o)
@@ -1025,6 +1037,70 @@ Options:
 			fmt.Println()
 		}
 		info.Print(os.Stdout, r)
+	}
+	return nil
+}
+
+// chooseBoot sets init's boot model from what the source's programs need
+// (platform.Needs): nothing for DOS, or for a game with a DOS version, a
+// shell for Windows 3.x, an OS image for Windows 9x. The shell or image is default_shell or
+// default_os if configured, else the first well-known name found in the
+// system directory. It prints one line saying what it chose and why.
+func chooseBoot(o *manifest.TemplateOptions, source, systemDir string, cfg config.Config) error {
+	status.Step("Looking at the programs")
+	progs, err := platform.Scan(source)
+	endSteps(err)
+	if err != nil {
+		return err
+	}
+	need := platform.Needs(progs)
+	game := need.Game
+	if systemDir == "" {
+		systemDir = install.FindSystemDir()
+	}
+	why := fmt.Sprintf("The game needs %s (%d programs found)", need, len(progs))
+	if need.Setup.Platform != platform.NotProgram {
+		why += fmt.Sprintf(" (setup: %s)", need.Setup)
+	}
+	if need.DOS {
+		key := "--shell"
+		if game.Platform == platform.Win32 {
+			key = "--os"
+		}
+		fmt.Printf("%s: plain DOS model (%s for the Windows version)\n", why, key)
+		return nil
+	}
+	pick := func(key, configured string, shell bool, names []string) (string, string) {
+		if configured != "" {
+			return configured, key + " = " + configured + " (configured)"
+		}
+		if p := install.FindSystemFile(systemDir, shell, names); p != "" {
+			return p, key + " = " + p + " (found in the system directory)"
+		}
+		return "", "no " + key + " found: set --" + key + " or default_" + key
+	}
+	switch game.Platform {
+	case platform.NotProgram:
+		fmt.Println("No programs found: plain DOS model")
+	case platform.DOS:
+		fmt.Printf("%s: plain DOS model\n", why)
+	case platform.Win16:
+		var msg string
+		o.Shell, msg = pick("shell", cfg.DefaultShell, true, install.ShellNames)
+		fmt.Printf("%s: %s\n", why, msg)
+	case platform.Win32:
+		names := install.Win95Names
+		if win98 := (platform.Target{Platform: platform.Win32, Major: 4, Minor: 10}); !game.Less(win98) {
+			names = install.Win98Names // a Windows 95 image won't do
+		}
+		var msg string
+		o.OS, msg = pick("os", cfg.DefaultOS, false, names)
+		fmt.Printf("%s: %s\n", why, msg)
+		if winME := (platform.Target{Platform: platform.Win32, Major: 4, Minor: 90}); winME.Less(game) {
+			fmt.Fprintf(os.Stderr, "[WARN] %s programs may not run under Windows 9x\n", game)
+		}
+	case platform.OS2:
+		fmt.Printf("%s: no boot model for OS/2\n", why)
 	}
 	return nil
 }

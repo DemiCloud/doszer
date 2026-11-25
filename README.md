@@ -45,7 +45,7 @@ make help    # every target
 ```
 doszer dump    DIR [--drive DRIVE] [--dat FILE]
 doszer redump  [SHA1|FILE...] [--update] [--dat FILE]
-doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH] [--name NAME] [--no-media] [-f]
+doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH] [--name NAME] [--no-media] [--system-dir DIR] [-f]
 doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [-n] [--strict] [--ogg-quality N]
 doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FILE]] [-f] [-n] [--keep]
                [--os PATH] [--drive c|d] [--system-dir DIR] [--save-dir DIR]
@@ -104,6 +104,23 @@ each disc image's tracks (data, audio as WAV or Ogg Vorbis) with the
 `[[source.media]]` entry declaring it and its track hashes (§7.2),
 gamepad files, the manifest's `notes` and the archive comment. It reads;
 `verify` checks.
+
+Without `--exec`, `--shell` or `--os`, `init` picks the boot model from
+what the game's programs need, read from their executable headers: the
+programs installed in the source, or, if there are none, those on its disc
+images. Installers and other helpers that come with a game (setup and
+uninstall programs, AutoRun menus, DirectX, Acrobat Reader, registration
+cards) don't count when there's anything else. DOS programs need nothing.
+A game with both DOS and Windows programs has a DOS version, so it gets
+the plain model too; `--shell` or `--os` choose the Windows version.
+Windows 3.x programs get a shell, Windows 95 and 98 programs an OS image:
+`default_shell` or `default_os` if configured, else the first of these
+found in the system directory (any folder, as DOSBox Pure finds them):
+`Windows 3.1`, `Windows 3.11`, `Win31`, `Win311`, `WFW311` for a shell;
+`Windows 98 (games)`, `Windows 98`, `Win98`, `Windows 98 SE`, `Win98SE`,
+then (if the programs don't need Windows 98) `Windows 95 (games)`,
+`Windows 95`, `Win95` for an image. It prints one line saying what it
+chose and why.
 
 `init` also hashes every disc image (CUE sheet) in the source into
 `[[source.media]]` entries (spec §7.2), labelled with the CUE sheet's name;
@@ -467,6 +484,11 @@ ogg_quality = 6
 "path/to/image" = "path/to/install-image"
 ```
 
+```toml
+default_shell = "dosbox_pure/Windows 3.1"       # init's shell for Windows 3.x games
+default_os    = "dosbox_pure/Windows 98 (games)" # init's OS image for Windows 9x games
+```
+
 A manifest overrides them the same way, under `[x-doszer]` (spec §5.10's
 extension-key namespace, so the manifest schema doesn't reject it):
 
@@ -712,9 +734,11 @@ doszer prepare os "Windows 98.vhd" "Windows 98 (games).vhd"
 ```
 
 As with a shell, the output is a new image built for running games, not
-a copy of the original: keep the original, and install games with it
-(`install --os`), since a prepared image has no Explorer desktop for
-installers. The input is a VHD (fixed or dynamic) or a raw `.img` and is
+a copy of the original: keep the original, and install games with it,
+since a prepared image has no Explorer desktop for installers. Map the
+prepared image to the original in `install_os` (Configuration), and
+`install` boots the original for any game whose `boot.os` names the
+prepared one. The input is a VHD (fixed or dynamic) or a raw `.img` and is
 only read; the output is a fixed VHD (a raw image for raw input) of the
 same size, whatever the input's type, and never the input itself. Its file
 system is rebuilt in the same geometry, every file contiguous: the MBR and

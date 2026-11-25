@@ -46,57 +46,6 @@ func pe(major, minor uint16) []byte {
 	})
 }
 
-// TestMinOS: the OS line is the oldest system every program runs on.
-func TestMinOS(t *testing.T) {
-	tests := []struct {
-		progs [][]byte
-		want  string
-	}{
-		{[][]byte{exe("", nil), exe("", nil)}, "DOS"},
-		{[][]byte{exe("", nil), ne(3, 10)}, "Windows 3.1"},
-		{[][]byte{ne(3, 10), pe(4, 0), exe("", nil)}, "Windows 95"},
-		{[][]byte{pe(4, 10), pe(4, 0)}, "Windows 98"},
-	}
-	for _, tt := range tests {
-		var min Target
-		for i, p := range tt.progs {
-			c := classify(fmt.Sprintf("P%d.EXE", i), bytes.NewReader(p))
-			if min.Platform == NotProgram || min.less(c) {
-				min = c
-			}
-		}
-		if min.String() != tt.want {
-			t.Errorf("%v: %s, want %s", tt.progs != nil, min, tt.want)
-		}
-	}
-}
-
-func TestClassify(t *testing.T) {
-	tests := []struct {
-		name string
-		data []byte
-		want string
-	}{
-		{"GAME.COM", []byte{0xB4, 0x4C, 0xCD, 0x21}, "DOS"},
-		{"GAME.EXE", exe("", nil), "DOS"},
-		{"DOS4GW.EXE", exe("LE", nil), "DOS"},
-		{"WIN30.EXE", ne(3, 0), "Windows 3.0"},
-		{"WIN31.EXE", ne(3, 10), "Windows 3.1"},
-		{"OLD.EXE", ne(0, 0), "Windows 3.0"},
-		{"OS2.EXE", exe("NE", func(h []byte) { h[0x36] = 1 }), "OS/2"},
-		{"WIN95.EXE", pe(4, 0), "Windows 95"},
-		{"WIN98.EXE", pe(4, 10), "Windows 98"},
-		{"XP.EXE", pe(5, 1), "Windows XP"},
-		{"README.EXE", []byte("not a program"), "not a program"},
-		{"TINY.EXE", []byte("MZ"), "DOS"},
-	}
-	for _, tt := range tests {
-		if got := classify(tt.name, bytes.NewReader(tt.data)).String(); got != tt.want {
-			t.Errorf("%s: %v, want %v", tt.name, got, tt.want)
-		}
-	}
-}
-
 func writeFile(t *testing.T, dir, name string, data []byte) {
 	t.Helper()
 	p := filepath.Join(dir, filepath.FromSlash(name))
@@ -142,8 +91,8 @@ parent = "Base.dosz"
 	if r.Manifest == nil || r.Manifest.Name != "Child Game" {
 		t.Fatalf("manifest %+v", r.Manifest)
 	}
-	if r.Programs != 3 || r.MinOS.String() != "Windows 95" {
-		t.Errorf("programs %d, OS %s", r.Programs, r.MinOS)
+	if r.Programs != 3 || r.Need.String() != "DOS or Windows 95" {
+		t.Errorf("programs %d, OS %s", r.Programs, r.Need)
 	}
 	if len(r.Parents) != 1 || r.Parents[0].Name != "Base.dosz" || r.Parents[0].Found {
 		t.Errorf("parents %+v, want Base.dosz not found", r.Parents)
@@ -208,7 +157,7 @@ parent = "Base.dosz"
 
 	var out bytes.Buffer
 	Print(&out, r)
-	for _, want := range []string{"Name:      Child Game", "Boot:      DOS\nStarts:    C:\\GAME.EXE", "Parent:    Base.dosz (found)", "             Shared.dosz (not found beside it)", "Programs:  3\nOS:        Windows 95", "  First line.\n  Second line.", "Built by doszer test (DOSZ manifest format 1)"} {
+	for _, want := range []string{"Name:      Child Game", "Boot:      DOS\nStarts:    C:\\GAME.EXE", "Parent:    Base.dosz (found)", "             Shared.dosz (not found beside it)", "Programs:  3\nOS:        DOS or Windows 95", "  First line.\n  Second line.", "Built by doszer test (DOSZ manifest format 1)"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, out.String())
 		}

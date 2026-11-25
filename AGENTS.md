@@ -35,6 +35,7 @@ internal/cue/        CUE parsing, track byte ranges, normalized track hash (§7.
 internal/iso9660/    ISO 9660 reader, for [[extract]] (§5.7)
 internal/padmap/     [[input.pad]] (§5.9): PADMAP.DBP and DOS.YML encoding (§6.8.2, §6.8.3)
 internal/verify/     doszer verify: an archive against its manifest and spec §8/§11
+internal/platform/   what a program needs (MZ/NE/PE headers, NE expected and PE subsystem versions), a game's programs together (installed over disc, helpers aside, DOS versions), source scanning incl. disc images; for info and init
 internal/info/       doszer info: an archive's hashes, boot, parents, programs by platform (MZ/NE/PE headers), compression, discs
 internal/repack/     doszer repack: rebuild an archive from its own embedded manifest
 internal/prepare/    doszer prepare: game-ready copy of a Windows 3.x shell (RunExit) or Windows 9x image (STARTRUN.VBS, PRESSKEY, Program Manager .GRP writer, line-preserving INI editor)
@@ -250,7 +251,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 
 | Command | State |
 |---|---|
-| `init` | Implemented |
+| `init` | Implemented; without a boot model it picks one from the programs' needs (internal/platform), which matched the hand-chosen model of all five local test sources |
 | `build` | Implemented |
 | `install` | Implemented; live plain and OS image (`--drive c`) sessions passed under standalone DOSBox Pure (before its support was removed); built-in frontend checked with the real core (headless test on Linux and on Windows via WSL interop, and a window under WSLg), no full live install yet; `--from` checked on a real D: save (Next steps) |
 | `run` | Implemented; not yet played live |

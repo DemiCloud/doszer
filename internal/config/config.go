@@ -27,6 +27,12 @@ type Config struct {
 	Templates  map[string]string `toml:"templates"`
 	InstallOS  map[string]string `toml:"install_os"` // OS image install sessions boot, by boot.os
 	RedumpDAT  string            `toml:"redump_dat"` // datfile dump verifies against instead of Redump's (internal/redump)
+
+	// init's shell and OS image for a game whose programs need Windows 3.x
+	// or Windows 9x: paths in the system directory without extension, as
+	// boot.shell and boot.os take them.
+	DefaultShell string `toml:"default_shell"`
+	DefaultOS    string `toml:"default_os"`
 }
 
 // Default returns doszer's built-in defaults.

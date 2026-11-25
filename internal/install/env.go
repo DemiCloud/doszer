@@ -7,7 +7,9 @@ package install
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -39,7 +41,7 @@ func Discover(systemDir, saveDir string) (Env, error) {
 	}
 	e := Env{SystemDir: systemDir, SaveDir: saveDir}
 	if e.SystemDir == "" {
-		e.SystemDir = findSystemDir()
+		e.SystemDir = FindSystemDir()
 	}
 	if e.SaveDir == "" {
 		cache, err := os.UserCacheDir()
@@ -54,9 +56,9 @@ func Discover(systemDir, saveDir string) (Env, error) {
 	return e, nil
 }
 
-// findSystemDir returns the system directory Discover uses when none is
+// FindSystemDir returns the system directory Discover uses when none is
 // given, or "" if there is none.
-func findSystemDir() string {
+func FindSystemDir() string {
 	candidates := []string{"system"}
 	if exe, err := os.Executable(); err == nil {
 		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "system"))
@@ -188,4 +190,59 @@ func runBuiltin(e Env, s *Session) error {
 		Options:   s.CoreOptions,
 		Title:     s.Title,
 	})
+}
+
+// Well-known names of a Windows 3.x shell and a Windows 9x image, in the
+// order FindSystemFile tries them (README "Boot models").
+var (
+	ShellNames = []string{"Windows 3.1", "Windows 3.11", "Win31", "Win311", "WFW311"}
+	Win98Names = []string{"Windows 98 (games)", "Windows 98", "Win98", "Windows 98 SE", "Win98SE"}
+	Win95Names = append(append([]string{}, Win98Names...), "Windows 95 (games)", "Windows 95", "Win95")
+)
+
+// FindSystemFile returns the first of names that names a shell (shell
+// set) or an OS image in systemDir, as a path relative to it without
+// extension (as boot.shell and boot.os take it), or "". Files count as
+// DOSBox Pure counts them (dosbox_pure_libretro.cpp, DBP_ScanSystem): a
+// shell is a .dosz, an image an .img, .ima or .vhd of at least 7 MB in
+// whole 512-byte sectors, at any depth. Names match case-insensitively,
+// the shallowest file first.
+func FindSystemFile(systemDir string, shell bool, names []string) string {
+	if systemDir == "" {
+		return ""
+	}
+	found := map[string]string{} // lower-case base name without extension -> path
+	depth := map[string]int{}
+	filepath.WalkDir(systemDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(p))
+		switch {
+		case shell && ext == ".dosz":
+		case !shell && (ext == ".img" || ext == ".ima" || ext == ".vhd"):
+			info, err := d.Info()
+			if err != nil || info.Size() < 7<<20 || info.Size()%512 != 0 {
+				return nil
+			}
+		default:
+			return nil
+		}
+		rel, err := filepath.Rel(systemDir, p)
+		if err != nil {
+			return nil
+		}
+		rel = filepath.ToSlash(strings.TrimSuffix(rel, filepath.Ext(rel)))
+		k := strings.ToLower(path.Base(rel))
+		if old, ok := depth[k]; !ok || strings.Count(rel, "/") < old {
+			found[k], depth[k] = rel, strings.Count(rel, "/")
+		}
+		return nil
+	})
+	for _, n := range names {
+		if p, ok := found[strings.ToLower(n)]; ok {
+			return p
+		}
+	}
+	return ""
 }
