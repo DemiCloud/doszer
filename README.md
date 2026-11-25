@@ -727,16 +727,23 @@ changed.
   session saves are throwaway, `save_dir` or `doszer/saves` in the user
   cache directory.
 
+#### Hotkeys
+
 | Keys | |
 |---|---|
-| Click | capture the mouse |
+| Click | capture the mouse (the desktop cursor hides) |
 | Ctrl+F10 | release the mouse |
+| Alt+Pause | pause and resume (releases the mouse; the title says "paused") |
 | Alt+Enter | toggle fullscreen |
 | Alt+F12 (hold) | fast-forward, without sound |
 | Ctrl+F5 | screenshot, at the game's resolution, to `Pictures/doszer` in the home directory |
 
-Fast-forward, screenshot and mouse release use DOSBox's own keys. Under
-WSLg the desktop pointer stays visible over
+Pause, fast-forward, screenshot and mouse release use DOSBox's own keys.
+On a Steam Deck (or any Steam Input controller), they can go on a Steam
+menu or the back buttons, as key presses. A game's own rarely used keys
+are better in the archive, as DOSBox Pure's action wheel (`[[input.pad]]`
+`wheel`, spec §5.9): it then works the same in RetroArch, `doszer run`
+and on any controller. Under WSLg the desktop pointer stays visible over
 the window, as WSLg draws it on the Windows side; use the Windows build
 there. It's built
 for linux/amd64 and linux/arm64 (glibc 2.28 or later and the system's

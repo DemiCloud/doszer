@@ -8,6 +8,7 @@ const (
 	retrokF5     = 286
 	retrokF10    = 291
 	retrokF12    = 293
+	retrokPause  = 19
 	retrokLast   = 324
 )
 

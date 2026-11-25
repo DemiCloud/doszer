@@ -152,6 +152,7 @@ type host struct {
 	lastDraw   time.Time
 
 	fast    bool   // Alt+F12 held: run unpaced, without audio
+	paused  bool   // Alt+Pause: the core doesn't run
 	shot    bool   // Ctrl+F5: save the next frame
 	shotDir string // where screenshots go
 	name    string // content name, for screenshot file names
@@ -285,6 +286,12 @@ func Run(cfg Config) error {
 		}
 		if h.quit {
 			break
+		}
+		if h.paused {
+			h.draw()
+			time.Sleep(time.Second / 60)
+			next = time.Now()
+			continue
 		}
 		core.run()
 		// Fast-forward draws at most 60 frames a second: presenting
@@ -674,6 +681,17 @@ func (h *host) event(e *sdl.Event, window uintptr) {
 			h.fast = down
 			return
 		}
+		// Alt+Pause pauses and resumes (DOSBox's key), releasing the
+		// mouse. Paused, keys go nowhere but releases, so none stick.
+		if key == retrokPause && mod&sdl.KmodAlt != 0 {
+			if down {
+				h.setPaused(!h.paused)
+			}
+			return
+		}
+		if h.paused && down {
+			return
+		}
 		// Ctrl+F5 saves a screenshot (DOSBox's key).
 		if key == retrokF5 && mod&sdl.KmodCtrl != 0 {
 			if down {
@@ -703,7 +721,9 @@ func (h *host) event(e *sdl.Event, window uintptr) {
 	case sdl.EventMouseButtonDown, sdl.EventMouseButtonUp:
 		down := e.Type() == sdl.EventMouseButtonDown
 		if down && !h.captured {
-			h.capture(true)
+			if !h.paused {
+				h.capture(true)
+			}
 			return
 		}
 		if b := e.Button(); int(b) < len(h.buttons) {
@@ -712,6 +732,22 @@ func (h *host) event(e *sdl.Event, window uintptr) {
 	case sdl.EventMouseWheel:
 		h.accWheel += e.Wheel()
 	}
+}
+
+// setPaused pauses or resumes the session: the core stops running,
+// queued audio is dropped, the mouse is released, and the title says so.
+func (h *host) setPaused(on bool) {
+	h.paused = on
+	h.fast = false
+	if on {
+		h.capture(false)
+		if h.audio != 0 {
+			sdl.ClearQueuedAudio(h.audio)
+		}
+		sdl.SetWindowTitle(h.window, h.title+" (paused)")
+		return
+	}
+	sdl.SetWindowTitle(h.window, h.title)
 }
 
 // toggleFullscreen switches between the window and borderless
