@@ -36,16 +36,16 @@ internal/iso9660/    ISO 9660 reader, for [[extract]] (§5.7)
 internal/padmap/     [[input.pad]] (§5.9): PADMAP.DBP and DOS.YML encoding (§6.8.2, §6.8.3)
 internal/verify/     doszer verify: an archive against its manifest and spec §8/§11
 internal/repack/     doszer repack: rebuild an archive from its own embedded manifest
-internal/prepare/    doszer prepare: game-ready copy of a Windows 3.x shell (RunExit, INI edits, line-preserving INI editor)
+internal/prepare/    doszer prepare: game-ready copy of a Windows 3.x shell (RunExit) or Windows 9x image (STARTRUN.VBS, PRESSKEY, Program Manager .GRP writer, line-preserving INI editor)
 internal/vhd/        VHD reader (fixed, dynamic), for install
 internal/w9xreg/     Windows 9x registry (SYSTEM.DAT/USER.DAT) reader, diff, REGEDIT4 writer, for install
-internal/fat/        FAT12/16/32 reader with long names, as an io/fs.FS, for install
+internal/fat/        FAT12/16/32 reader with long names, as an io/fs.FS, for install; Tree/Write rebuild a volume in its own geometry, for prepare os
 internal/vdisk/      DOSBox Pure's synthesized D: disk + .sav diffs (D: and -CDRIVE), for install
 internal/install/    doszer install and run: session content, launching the built-in DOSBox Pure, directory discovery, diffing, extraction
 internal/libretro/   built-in frontend: hosts a libretro core in-process (environment, directory-only VFS, SDL window/input/audio)
 internal/sdl/        the few SDL2 functions internal/libretro uses, loaded at run time through purego
 internal/dl/         dlopen/LoadLibrary without cgo
-internal/builtin/    programs embedded at build time, extracted to the user cache: the DOSBox Pure core (and SDL DLLs on Windows, `make core`), redumper (`make redumper`); guest programs, the same on every platform: RunExit (`make runexit`)
+internal/builtin/    programs embedded at build time, extracted to the user cache: the DOSBox Pure core (and SDL DLLs on Windows, `make core`), redumper (`make redumper`); guest programs, the same on every platform: RunExit, PRESSKEY (`make guest`)
 internal/dump/       doszer dump: a CD to BIN/CUE with redumper (Windows redumper through interop under WSL), resumable; or --from an existing image (Import)
 internal/redump/     Redump datfile: load (Logiqx XML/zip, compact), embedded snapshot (`make dat`), cached run-time copy, track matching; any CUE image (or zip of one) read in Redump's track layout, read-offset correction
 internal/interrupt/  removes registered temporary paths on SIGINT/SIGTERM
@@ -106,11 +106,11 @@ README.md            doszer usage, configuration, install workflow
   `drive_find_in_database`) and from its work directory with relative
   paths, so nothing needs translating for the Windows build under WSL.
 - Embedded guest programs (`internal/builtin/data/guest`, run inside
-  DOSBox Pure, not on the host): RunExit for `prepare shell`, its
-  official release binary and licence pinned by tag and SHA-256
-  (`RUNEXIT_REF`, `RunExitVersion` must match). A 16-bit Windows 3.x
-  program; PRESSKEY is 32-bit (Windows 95+) and has no place in a 3.x
-  shell.
+  DOSBox Pure, not on the host; `make guest`): RunExit for `prepare
+  shell` (16-bit, Windows 3.x) and PRESSKEY for `prepare os` (32-bit,
+  Windows 95+; no place in a 3.x shell), each official release binary
+  and licence pinned by tag and SHA-256 (`RUNEXIT_REF`/`PRESSKEY_REF`;
+  `RunExitVersion`/`PresskeyVersion` must match).
 - Redump's PC datfile is embedded as a snapshot (`make dat`, gitignored,
   converted to a compact gzipped size/SHA-1 list: 5 MB against Redump's
   14 MB zip) and refreshed at run time (weekly, cached). It isn't
@@ -204,6 +204,7 @@ pointer to it).
 | VHD support | Fixed and dynamic only (a parent name is rejected); a dynamic block sector whose bitmap bit is clear reads as zeros even if the file holds bytes there | `src/ints/bios_disk.cpp`, `sparseVhd::Init`, `sparseVhd::SeeBlock` |
 | CUE `FILE` type | `BINARY` reads raw sectors; any other type opens an `AudioFile`, which detects RIFF/WAVE (16-bit PCM only) or OggS from the file's own header (`C_SDL_SOUND` is undefined in `include/config.h`) | `src/dos/cdrom_image.cpp`, `LoadCueSheet`, `AudioFile::AudioFile` |
 | CUE `PREGAP` | Adds to the track's start without reading data; an INDEX 00 span in a track's own FILE is skipped and *not* counted toward position | `src/dos/cdrom_image.cpp`, `AddTrack` |
+| BIOS power-off | Windows' shutdown powering off (APM) calls `DBP_OnBIOSPoweroff`: the core resets and runs `PUREMENU -FINISH`, which closes it under `menu_time` `0` | `dosbox_pure_libretro.cpp`, `DBP_OnBIOSPoweroff`, `retro_run` |
 | `PADMAP.DBP` | Read from C:'s root at startup (`init_dosbox_parse_drives`), before an OS image boots, so it works under every boot model; hidden from D:. Byte `0`, then per port a binding count and bindings `id \| (n-1)<<6` + action codes (2 per action for stick axes 16-19; wheel items id 20). Applies to ports in "Gamepad Mapper" mode, ahead of every other mapping. The mapper writes it back to C: (the save) on change, and deletes it when every port is back at its default | `dosbox_pure_pad.h`, `DBP_PadMapping::Load`/`Save`/`Apply`/`SetInputDescriptors`, `BindDecoder` |
 | Action codes | 1-102 DOSBox `KBD_KEYS` (`DBP_YMLKeyCommands` names); 200-230 `DBP_SpecialMappings` (mouse, joystick, 225 menu, 226 wheel, 227-230 port N while held, which copies port N's binds onto the pad while held) | `dosbox_pure_libretro.cpp`; `dosbox_pure_osd.h`, `DBP_WheelShiftOSD` |
 | `DOS.YML` | Read from the content root (not from the save under strict mode); `input_pad_<control>: keys+... Label` and `input_wheel_<n>:` become the "Content Provided Mapping": port 1's default without `PADMAP.DBP`, replacing the built-in game database, and the source of labels, matched by a binding's exact actions on any port. Applied as a preset, so L3 stays the menu. Not hidden from D:. In releases since 1.0-preview2; undocumented upstream (`keyb2joypad.yml` uses the same keys) | `dosbox_pure_run.h`, `DOSYMLLoader`; `dosbox_pure_pad.h`, `ParseInputYML`, `FindAutoMapButtonLabel`; `src/dos/drive_patch.cpp`, `AppendYML` |
@@ -254,7 +255,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `run` | Implemented; not yet played live |
 | `repack` | Implemented |
 | `verify` | Implemented |
-| `prepare` | `shell` implemented; a prepared copy of a real Win3.1 shell ran a game through RunExit and closed DOSBox Pure (headless probe). `os` (Windows 98 image) planned |
+| `prepare` | Implemented. `shell`: a prepared real Win3.1 shell ran a program through RunExit and closed DOSBox Pure (headless probe). `os`: a prepared real Win98 image booted to Program Manager's generated Tools group (icons re-extracted) and ran a `WINDOWS.BAT` with PRESSKEY (headless probe); its shutdown didn't close the probe session, as with the hand-made reference image (Next steps) |
 | `version` | Implemented |
 
 Manifest parsing and every manifest rule in specification §11 are
@@ -408,6 +409,20 @@ reads one byte past the end, since `archive/zip` checks only at
    and resetting the mapper falls back to the `DOS.YML` mapping. The
    Betrayal in Antara example has a mapping (from `ANTARA.HLP`'s hotkey
    list) to test with, under the OS image model.
+
+5. OS image shutdown under the built-in frontend: a headless probe of a
+   prepared Win98 image, and of the hand-made one that shut down and
+   closed DOSBox Pure live, both ran `WINDOWS.BAT` to the end (`STARTRUN.VBS`
+   then calls `SHExitWindowsEx`), and Windows saved its registry, but the
+   screen never changed again and the session never closed. Check live
+   (`doszer run`, standalone, RetroArch) before suspecting the image.
+6. `prepare os` follow-ups: a black desktop needs the registry
+   (`HKCU\Control Panel\Colors`, `Background`; Windows 98 ignores
+   `WIN.INI [colors]`): apply a `.REG` by booting the new image once with
+   the built-in core (Keep). Keep a clean image for `install` beside the
+   prepared one archives name, and default `init`'s `shell`/`os` from the
+   system directory (argument, then config, then well-known names), with
+   the game's executable formats choosing between DOS, Win3.x and Win9x.
 
 `internal/config` is implemented (README "Configuration"); `build` and
 `repack` consume `ogg_quality`, `install` and `run` the rest. With the OS image

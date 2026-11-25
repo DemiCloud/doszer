@@ -198,3 +198,31 @@ func TestDamagedTrailingFooterUsesCopy(t *testing.T) {
 		t.Fatal("content differs")
 	}
 }
+
+// TestFixedFooter: a dynamic disk's contents followed by FixedFooter
+// open as the same disk, fixed.
+func TestFixedFooter(t *testing.T) {
+	data := bytes.Repeat([]byte{0xAB}, 512)
+	img := makeDynamic(2<<20, 1<<20, []*dynBlock{{data: data}, nil})
+	d, err := New(bytes.NewReader(img), int64(len(img)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := make([]byte, d.Size())
+	if _, err := d.ReadAt(raw, 0); err != nil {
+		t.Fatal(err)
+	}
+	fixed := append(raw, d.FixedFooter()...)
+	f, err := New(bytes.NewReader(fixed), int64(len(fixed)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Type() != TypeFixed || f.Size() != d.Size() {
+		t.Fatalf("type %d size %d, want fixed, %d", f.Type(), f.Size(), d.Size())
+	}
+	got := make([]byte, f.Size())
+	f.ReadAt(got, 0)
+	if !bytes.Equal(got, raw) {
+		t.Error("fixed copy reads differently")
+	}
+}

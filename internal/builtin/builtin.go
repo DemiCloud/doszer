@@ -4,7 +4,8 @@
 // dump` (`make redumper`). They're extracted to a cache directory named
 // after their content on first use. Guest programs, run inside DOSBox Pure
 // rather than on the host, are the same on every platform: RunExit for
-// `doszer prepare shell` (`make runexit`), copied into what it writes.
+// `doszer prepare shell` and PRESSKEY for `doszer prepare os` (`make
+// guest`), copied into what they write.
 package builtin
 
 import (
@@ -124,6 +125,22 @@ func RunExit() (exe, license []byte, err error) {
 	return exe, license, nil
 }
 
+// PresskeyVersion is the PRESSKEY release `make presskey` embeds.
+const PresskeyVersion = "v1.0.0"
+
+// Presskey returns the embedded PRESSKEY.EXE (a Windows 95+ program) and
+// its licence text.
+func Presskey() (exe, license []byte, err error) {
+	exe, err = guest.ReadFile("data/guest/PRESSKEY.EXE")
+	if err == nil {
+		license, err = guest.ReadFile("data/guest/PRESSKEY-LICENSE")
+	}
+	if err != nil {
+		return nil, nil, errors.New("this doszer was built without PRESSKEY (make presskey)")
+	}
+	return exe, license, nil
+}
+
 // extract writes the named embedded files to a cache directory named after
 // prefix and their content, unless already there, and returns it.
 func extract(prefix string, names []string) (string, error) {
@@ -207,6 +224,8 @@ func Programs() []Program {
 	}
 	_, _, rerr := RunExit()
 	progs = append(progs, Program{"RunExit", RunExitVersion, "https://github.com/andshrew/RunExit", rerr == nil})
+	_, _, perr := Presskey()
+	progs = append(progs, Program{"PRESSKEY", PresskeyVersion, "https://github.com/DemiCloud/presskey", perr == nil})
 	if runtime.GOOS == "windows" {
 		for _, s := range []struct{ name, file, url string }{
 			{"SDL", "SDL3.dll", "https://github.com/libsdl-org/SDL"},

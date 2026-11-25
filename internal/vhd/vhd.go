@@ -38,6 +38,7 @@ type Disk struct {
 	closer   io.Closer
 	diskType uint32
 	size     int64 // virtual disk size in bytes
+	footer   []byte
 
 	// Dynamic disks only.
 	blockSize     int64
@@ -85,7 +86,7 @@ func New(r io.ReaderAt, fileSize int64) (*Disk, error) {
 		return nil, err
 	}
 
-	d := &Disk{r: r, diskType: ft.diskType, size: int64(ft.currentSize)}
+	d := &Disk{r: r, diskType: ft.diskType, size: int64(ft.currentSize), footer: ft.raw}
 	switch ft.diskType {
 	case TypeFixed:
 		if d.size > fileSize-SectorSize {
@@ -102,6 +103,19 @@ func New(r io.ReaderAt, fileSize int64) (*Disk, error) {
 	default:
 		return nil, fmt.Errorf("unknown VHD disk type %d", ft.diskType)
 	}
+}
+
+// FixedFooter returns the footer for a fixed VHD of this disk: the disk's
+// own footer, as a fixed disk's (no data offset, disk type 2, checksum
+// recomputed) if it is dynamic. Size, geometry, creator and unique ID are
+// kept. A fixed VHD is the raw disk followed by this footer.
+func (d *Disk) FixedFooter() []byte {
+	f := append([]byte(nil), d.footer...)
+	be := binary.BigEndian
+	be.PutUint64(f[16:], 0xFFFFFFFFFFFFFFFF)
+	be.PutUint32(f[60:], TypeFixed)
+	be.PutUint32(f[64:], Checksum(f, 64))
+	return f
 }
 
 // Close closes the underlying file, if Open opened it.
@@ -213,6 +227,7 @@ type footer struct {
 	dataOffset  uint64
 	currentSize uint64
 	diskType    uint32
+	raw         []byte
 }
 
 // readFooter reads and checks the 512-byte footer at off.
@@ -232,6 +247,7 @@ func readFooter(r io.ReaderAt, off int64) (footer, error) {
 		dataOffset:  be.Uint64(b[16:]),
 		currentSize: be.Uint64(b[48:]),
 		diskType:    be.Uint32(b[60:]),
+		raw:         b,
 	}, nil
 }
 

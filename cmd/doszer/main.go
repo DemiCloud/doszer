@@ -71,7 +71,7 @@ func init() {
 		{"install", "run an installer and extract the result into a source", runInstall},
 		{"run", "play an archive in DOSBox Pure", runRun},
 		{"repack", "rebuild an archive from its embedded manifest", runRepack},
-		{"prepare", "make a game-ready copy of a Windows 3.x shell", runPrepare},
+		{"prepare", "make a game-ready copy of a Windows shell or OS image", runPrepare},
 		{"verify", "check an archive against its manifest and the specification", runVerify},
 		{"version", "show the versions of doszer and the programs it embeds", runVersion},
 	}
@@ -963,9 +963,10 @@ func runPrepare(args []string) error {
 	dryRun := fs.BoolP("dry-run", "n", false, "")
 	force := fs.BoolP("force", "f", false, "")
 	add := fs.StringArray("add", nil, "")
-	const help = `doszer prepare - make a game-ready copy of a Windows 3.x shell
+	const help = `doszer prepare - make a game-ready copy of a Windows shell or OS image
 
 Usage: doszer prepare shell [options] SHELL OUTPUT
+       doszer prepare os [options] IMAGE OUTPUT
 
 Options:
       --add DIR           lay DIR's files over the result (repeatable)
@@ -975,18 +976,21 @@ Options:
 	if ok, err := parse(fs, args, help, 3, 3); !ok {
 		return err
 	}
-	if fs.Arg(0) != "shell" {
+	var rep *prepare.Report
+	var err error
+	switch fs.Arg(0) {
+	case "shell":
+		rep, err = prepare.Shell(prepare.ShellOptions{
+			Input: fs.Arg(1), Output: fs.Arg(2), Add: *add, DryRun: *dryRun, Force: *force,
+		})
+	case "os":
+		rep, err = prepare.OS(prepare.OSOptions{
+			Input: fs.Arg(1), Output: fs.Arg(2), Add: *add, DryRun: *dryRun, Force: *force,
+		})
+	default:
 		fmt.Fprint(os.Stderr, help)
 		return fmt.Errorf("unknown prepare target %q", fs.Arg(0))
 	}
-
-	rep, err := prepare.Shell(prepare.ShellOptions{
-		Input:  fs.Arg(1),
-		Output: fs.Arg(2),
-		Add:    *add,
-		DryRun: *dryRun,
-		Force:  *force,
-	})
 	endSteps(err)
 	if err != nil {
 		return err

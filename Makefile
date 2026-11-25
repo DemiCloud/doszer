@@ -62,6 +62,14 @@ RUNEXIT_SHA256_EXE     := 4ec227f841215607ad4a48516ad3af966a2e2f253a92d4a07f9551
 RUNEXIT_SHA256_LICENSE := 1923951bbb31372ffd9b0569b2740458f76e48489107b1b5f3d6fd2afc01ba47
 RUNEXIT                := $(BUILTIN)/guest/RUNEXIT.EXE $(BUILTIN)/guest/RUNEXIT-LICENSE
 
+# PRESSKEY (github.com/DemiCloud/presskey, MIT), embedded for `doszer
+# prepare os`: a 32-bit Windows 95+ program, the same for every platform.
+PRESSKEY_REF            := v1.0.0
+PRESSKEY_URL            := https://github.com/DemiCloud/presskey
+PRESSKEY_SHA256_EXE     := 1f29ff623cee0bf0d60aa039b7dc2bc13a2fd829577b8521ee2c78ed6e120a11
+PRESSKEY_SHA256_LICENSE := 560f988f525fb3908750f9bf1839fdaf7961d02a0e6e134c2b69988181dbf826
+PRESSKEY                := $(BUILTIN)/guest/PRESSKEY.EXE $(BUILTIN)/guest/PRESSKEY-LICENSE
+
 # Redump's IBM PC datfile, snapshotted at build time for `doszer dump`'s
 # verification (internal/redump; doszer fetches newer ones at run time).
 # Not pinned: it's a snapshot of a database that grows. `make dat` again
@@ -72,9 +80,9 @@ REDUMP_DAT     := internal/redump/data/pc.dat.gz
 # Every core build writes the same output file in $(DBP_SRC).
 .NOTPARALLEL:
 
-.PHONY: build test vet install release clean help core core-all redumper redumper-all runexit dat icon
+.PHONY: build test vet install release clean help core core-all redumper redumper-all runexit presskey guest dat icon
 
-build: core redumper runexit $(REDUMP_DAT) ## Development build → build/doszer (debug symbols; version = "dev" if no tags)
+build: core redumper guest $(REDUMP_DAT) ## Development build → build/doszer (debug symbols; version = "dev" if no tags)
 	mkdir -p build
 	go mod tidy
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o build/$(NAME) ./cmd/doszer
@@ -89,7 +97,7 @@ install: build ## Copy the built binary to $(DESTDIR)$(BINDIR) (default: /usr/lo
 	install -D -m 0755 build/$(NAME) $(DESTDIR)$(BINDIR)/$(NAME)
 	@echo "Binary installed to $(DESTDIR)$(BINDIR)/$(NAME)."
 
-release: clean core-all redumper-all runexit dat ## Stripped, trimpath, multi-arch release archives → dist/ + checksums.txt
+release: clean core-all redumper-all guest dat ## Stripped, trimpath, multi-arch release archives → dist/ + checksums.txt
 	mkdir -p dist
 	go mod tidy
 	@set -e; for platform in $(PLATFORMS); do \
@@ -159,7 +167,23 @@ $(BUILTIN)/%/redumper.exe:
 	unzip -p $< '*/bin/redumper.exe' > $@.tmp
 	mv $@.tmp $@
 
+guest: runexit presskey ## Fetch and stage the guest programs (for prepare)
+
 runexit: $(RUNEXIT) ## Fetch and stage RunExit (for prepare shell)
+
+presskey: $(PRESSKEY) ## Fetch and stage PRESSKEY (for prepare os)
+
+$(BUILTIN)/guest/PRESSKEY.EXE:
+	mkdir -p $(@D)
+	curl -fsSL -o $@.tmp $(PRESSKEY_URL)/releases/download/$(PRESSKEY_REF)/PRESSKEY.EXE
+	echo "$(PRESSKEY_SHA256_EXE)  $@.tmp" | sha256sum -c --quiet
+	mv $@.tmp $@
+
+$(BUILTIN)/guest/PRESSKEY-LICENSE:
+	mkdir -p $(@D)
+	curl -fsSL -o $@.tmp https://raw.githubusercontent.com/DemiCloud/presskey/$(PRESSKEY_REF)/LICENSE
+	echo "$(PRESSKEY_SHA256_LICENSE)  $@.tmp" | sha256sum -c --quiet
+	mv $@.tmp $@
 
 $(BUILTIN)/guest/RUNEXIT.EXE:
 	mkdir -p $(@D)

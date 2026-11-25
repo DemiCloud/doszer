@@ -7,6 +7,7 @@ internal/builtin/data/*/*.dll
 internal/builtin/data/*/redumper
 internal/builtin/data/*/redumper.exe
 internal/builtin/data/guest/RUNEXIT*
+internal/builtin/data/guest/PRESSKEY*
 internal/redump/data/pc.dat.gz
 /doszer
 /doszer.exe

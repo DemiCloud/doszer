@@ -54,6 +54,8 @@ type FS struct {
 	base int64 // byte offset of the volume within r
 	kind Kind
 
+	layout Layout
+
 	bytesPerSector    int64
 	clusterSize       int64
 	firstDataSector   int64
@@ -137,8 +139,18 @@ func New(r io.ReaderAt, base int64) (*FS, error) {
 	clusterCount := (totalSectors - firstData) / sectorsPerCluster
 
 	f := &FS{
-		r:               r,
-		base:            base,
+		r:    r,
+		base: base,
+		layout: Layout{
+			Base:              base,
+			BytesPerSector:    int(bytesPerSector),
+			SectorsPerCluster: int(sectorsPerCluster),
+			ReservedSectors:   int(reserved),
+			NumFATs:           int(numFATs),
+			FATSectors:        fatSize,
+			RootEntries:       int(rootEntries),
+			TotalSectors:      totalSectors,
+		},
 		bytesPerSector:  bytesPerSector,
 		clusterSize:     bytesPerSector * sectorsPerCluster,
 		firstDataSector: firstData,
@@ -155,11 +167,17 @@ func New(r io.ReaderAt, base int64) (*FS, error) {
 	default:
 		f.kind, f.endOfChainAtLeast = FAT32, 0x0FFFFFF8
 		f.rootCluster = le.Uint32(bs[44:])
+		f.layout.RootCluster = f.rootCluster
+		f.layout.FSInfoSector = int(le.Uint16(bs[48:]))
+		f.layout.BackupBootSector = int(le.Uint16(bs[50:]))
 	}
+	f.layout.Kind = f.kind
+	f.layout.ClusterCount = f.clusterCount
 
 	if err := f.readFAT(reserved*bytesPerSector, fatSize*bytesPerSector); err != nil {
 		return nil, err
 	}
+	f.layout.FAT0, f.layout.FAT1 = f.fat[0], f.fat[1]
 	return f, nil
 }
 
@@ -226,6 +244,8 @@ func (f *FS) clusterOffset(c uint32) int64 {
 type entry struct {
 	name     string // long name if present, else the short name
 	short    string // 8.3 name, always matched by lookup too
+	raw      [32]byte
+	long     []uint16 // the long name as stored, nil if none
 	attr     byte
 	cluster  uint32
 	size     uint32
@@ -233,6 +253,9 @@ type entry struct {
 }
 
 func (e *entry) isDir() bool { return e.attr&attrDirectory != 0 }
+
+// isLabel reports a volume label entry (only ever in the root).
+func (e *entry) isLabel() bool { return e.attr&attrVolumeID != 0 }
 
 // readDir returns a directory's entries: the fixed root (dir == nil on
 // FAT12/16) or a cluster chain. Entries are shared between callers and
@@ -336,6 +359,8 @@ func parseDir(data []byte) []*entry {
 		lfn, lfnNext = nil, 0
 
 		if attr&attrVolumeID != 0 {
+			// The volume label: kept for Tree, skipped by everything else.
+			out = append(out, &entry{raw: [32]byte(d), attr: attr})
 			continue
 		}
 		short := shortName(d)
@@ -355,6 +380,8 @@ func parseDir(data []byte) []*entry {
 		out = append(out, &entry{
 			name:     name,
 			short:    short,
+			raw:      [32]byte(d),
+			long:     long,
 			attr:     attr,
 			cluster:  cluster,
 			size:     le.Uint32(d[28:]),
@@ -440,13 +467,16 @@ func (f *FS) lookup(name string) (*entry, error) {
 		}
 		var found *entry
 		for _, e := range entries {
+			if e.isLabel() {
+				continue
+			}
 			if strings.EqualFold(e.name, part) {
 				found = e
 				break
 			}
 		}
 		for _, e := range entries {
-			if found == nil && strings.EqualFold(e.short, part) {
+			if found == nil && !e.isLabel() && strings.EqualFold(e.short, part) {
 				found = e
 			}
 		}
@@ -607,7 +637,9 @@ func (d *dir) ReadDir(n int) ([]fs.DirEntry, error) {
 			return nil, err
 		}
 		for _, e := range entries {
-			d.entries = append(d.entries, fileInfo{e})
+			if !e.isLabel() {
+				d.entries = append(d.entries, fileInfo{e})
+			}
 		}
 		d.read = true
 	}

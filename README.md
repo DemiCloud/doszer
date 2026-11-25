@@ -54,6 +54,7 @@ doszer FILE.dosz
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
 doszer verify  FILE.dosz
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
+doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
 doszer version
 ```
 
@@ -74,7 +75,7 @@ results, warnings and errors are printed.
 | `install` | Run an installer under DOSBox Pure and extract the chosen folder into the source. |
 | `repack` | Rebuild an archive from its embedded manifest. |
 | `verify` | Check an archive against its embedded manifest and the specification. |
-| `prepare` | Make a game-ready copy of a Windows 3.x shell (see "Preparing a shell"). |
+| `prepare` | Make a game-ready copy of a Windows 3.x shell or Windows 9x OS image (see "Preparing a shell", "Windows 9x OS image"). |
 
 `init` also hashes every disc image (CUE sheet) in the source into
 `[[source.media]]` entries (spec §7.2), labelled with the CUE sheet's name;
@@ -668,14 +669,43 @@ under Windows 3.x.
 
 ### Windows 9x OS image
 
-Specification §12's startup behaviour, for a Windows 98 image: in
-`C:\WINDOWS\SYSTEM.INI`, `[boot]`, replace `shell=Explorer.exe` with
+`doszer prepare os` makes a copy of a Windows 95/98 image with
+specification §12's startup behaviour:
 
-```ini
-shell=wscript.exe C:\WINDOWS\STARTRUN.VBS
+```bash
+doszer prepare os "Windows 98.vhd" "Windows 98 (games).vhd"
 ```
 
-and add `C:\WINDOWS\STARTRUN.VBS`:
+As with a shell, the output is a new image built for running games, not
+a copy of the original: keep the original, and install games with it
+(`install --os`), since a prepared image has no Explorer desktop for
+installers. The input is a VHD (fixed or dynamic) or a raw `.img` and is
+only read; the output is a fixed VHD (a raw image for raw input) of the
+same size, whatever the input's type, and never the input itself. Its file
+system is rebuilt in the same geometry, every file contiguous: the MBR and
+boot sectors are copied unchanged, and every kept file keeps its short and
+long name, attributes and dates. The changes:
+
+- `C:\WINDOWS\SYSTEM.INI`, `[boot]`: `shell=Explorer.exe` becomes
+  `shell=wscript.exe C:\WINDOWS\STARTRUN.VBS`, and `STARTRUN.VBS` (below)
+  is added;
+- a Program Manager group, `C:\WINDOWS\TOOLS.GRP` (Shutdown, Windows
+  Explorer, Registry Editor, Control Panel, Notepad, and Notepad on
+  `STARTRUN.VBS` and `SYSTEM.INI`), listed in `PROGMAN.INI`: what a
+  session without a game starts;
+- [PRESSKEY](https://github.com/DemiCloud/presskey) (embedded, MIT
+  license) as `C:\WINDOWS\PRESSKEY.EXE`, with its licence;
+- removes the Recycle Bin's contents, `WINDOWS\TEMP`'s and
+  `WINDOWS\Recent`'s, the swap file (`WIN386.SWP`), `~*.TMP` files,
+  `BOOTLOG.PRV`, `SCANDISK.LOG` and `FOUND.*` directories;
+- lays each `--add DIR`'s files over C: (new long names get Windows-style
+  `~N` short names).
+
+It refuses an image without Windows Script Host (`WSCRIPT.EXE`) or with an
+installation waiting to finish (`WINDOWS\WININIT.INI`: boot it once
+first). The desktop colour lives in the registry, which it doesn't change.
+
+`STARTRUN.VBS`:
 
 ```vbs
 Set fso = CreateObject("Scripting.FileSystemObject")
@@ -700,19 +730,20 @@ convert one). Under "Discard" a dynamic VHD is fine.
 #### Getting past a launcher
 
 Windows 98 ships Windows Script Host 1.0, which has no `SendKeys`, so a
-script can't press a launcher's Start button. A small helper program in
-the game's source can, e.g. [PRESSKEY](https://github.com/DemiCloud/presskey),
-started from `WINDOWS.BAT` before the game (`%` is written `%%` there):
+script can't press a launcher's Start button. PRESSKEY can: a prepared
+image has it in `C:\WINDOWS`. Start it from `WINDOWS.BAT` before the game
+(`%` is written `%%` there), only if it's there, so the archive still
+runs on an unprepared image (the player presses the button):
 
 ```bat
-START D:\PRESSKEY.EXE /C 104 GAME
+IF EXIST C:\WINDOWS\PRESSKEY.EXE START C:\WINDOWS\PRESSKEY.EXE /C 104 GAME
 START /W GAME.EXE
 ```
 
-Such a helper is ordinary content, not a manifest feature: the source
-carries the file, and a comment in the manifest says which release it is
-and where to get it, with its SHA-256, so anyone can rebuild the source.
-Programs run under DOSBox Pure's emulated CPU must not use CMOV or SSE.
+A game's source can carry its own helper instead, as ordinary content: a
+comment in the manifest then says which release it is and where to get
+it, with its SHA-256, so anyone can rebuild the source. Programs run under
+DOSBox Pure's emulated CPU must not use CMOV or SSE.
 
 ## Credits
 
@@ -730,7 +761,9 @@ its source is at that link.
 
 `prepare shell` adds [RunExit](https://github.com/andshrew/RunExit) by
 Steven Don and andshrew (MIT license), embedded from its official release
-binary, with its licence.
+binary, with its licence. `prepare os` adds
+[PRESSKEY](https://github.com/DemiCloud/presskey) (MIT license), embedded
+the same way.
 
 The built-in frontend also uses [SDL](https://www.libsdl.org/) (zlib
 license; its Windows DLLs are embedded) and
