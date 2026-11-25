@@ -75,7 +75,7 @@ func init() {
 		{"set", "change archives' parent, OS image or shell in place", runSet},
 		{"prepare", "make a game-ready copy of a Windows shell or OS image", runPrepare},
 		{"info", "show what an archive or source directory holds", runInfo},
-		{"verify", "check an archive against its manifest and the specification", runVerify},
+		{"verify", "check archives against their manifests and the specification", runVerify},
 		{"env", "show the directories, images and tools doszer finds here", runEnv},
 		{"version", "show the versions of doszer and the programs it embeds", runVersion},
 	}
@@ -653,6 +653,9 @@ Options:
 func findArchives(dirs []string) ([]string, error) {
 	var out []string
 	for _, dir := range dirs {
+		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+			return nil, fmt.Errorf("%s: not a directory", dir)
+		}
 		err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -1582,7 +1585,7 @@ func chooseBoot(o *manifest.TemplateOptions, source, systemDir, boot string, cfg
 	if systemDir == "" {
 		systemDir = install.FindSystemDir()
 	}
-	why := fmt.Sprintf("The game needs %s (%d programs found)", need, len(progs))
+	why := fmt.Sprintf("The game needs %s (%s found)", need, plural(len(progs), "program"))
 	switch {
 	case boot != "":
 		why = fmt.Sprintf("--boot %s (the game needs %s)", boot, need)
