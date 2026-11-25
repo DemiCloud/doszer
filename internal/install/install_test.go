@@ -172,7 +172,9 @@ func TestPureZip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pz.Close()
-	content := fstest.MapFS{"README.TXT": {Data: []byte("original")}}
+	// DOS paths match case-insensitively: the content may spell them
+	// differently from the save.
+	content := fstest.MapFS{"Readme.txt": {Data: []byte("original")}}
 	var lines []string
 	for _, c := range pz.Changes(content) {
 		lines = append(lines, c.Kind.String()+" "+c.Path)

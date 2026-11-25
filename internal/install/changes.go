@@ -154,19 +154,27 @@ func (pz *PureZip) parseMods(r io.Reader) error {
 }
 
 // Changes lists the save's files as changes against the content they
-// were made over: modified if the content has the same DOS path, else
-// added. Deletions come from FILEMODS.DBP.
+// were made over: modified if the content has the same DOS path,
+// compared case-insensitively (DOS paths are), else added. Deletions come
+// from FILEMODS.DBP.
 func (pz *PureZip) Changes(content fs.FS) []Change {
+	inContent := map[string]bool{}
+	if content != nil {
+		fs.WalkDir(content, ".", func(p string, d fs.DirEntry, err error) error {
+			if err == nil && !d.IsDir() {
+				inContent[strings.ToLower(p)] = true
+			}
+			return nil
+		})
+	}
 	var out []Change
 	for _, f := range pz.File {
 		if f.Name == "FILEMODS.DBP" || strings.HasSuffix(f.Name, "/") {
 			continue
 		}
 		k := Added
-		if content != nil {
-			if _, err := fs.Stat(content, f.Name); err == nil {
-				k = Modified
-			}
+		if inContent[strings.ToLower(f.Name)] {
+			k = Modified
 		}
 		out = append(out, Change{Path: f.Name, Kind: k, Size: int64(f.UncompressedSize64), Modified: f.Modified})
 	}
