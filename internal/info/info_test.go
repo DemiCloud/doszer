@@ -202,3 +202,32 @@ func TestReadLegacy(t *testing.T) {
 		t.Errorf("parents %+v, want the two-marker error", r.Parents)
 	}
 }
+
+// TestReadSource: a source directory's programs, files and discs, with
+// no archive-only lines, and the audio tracks described by their files.
+func TestReadSource(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "GAME/GAME.EXE", exe("", nil))
+	writeFile(t, dir, "GAME/SETUP.EXE", ne(3, 10))
+	writeFile(t, dir, "CD/disc.bin", make([]byte, 2352*4))
+	writeFile(t, dir, "CD/disc.cue", []byte("FILE \"disc.bin\" BINARY\r\n  TRACK 01 MODE1/2352\r\n    INDEX 01 00:00:00\r\n  TRACK 02 AUDIO\r\n    INDEX 01 00:00:02\r\nFILE \"t3.ogg\" OGG\r\n  TRACK 03 AUDIO\r\n    INDEX 01 00:00:00\r\n"))
+	r, err := ReadSource(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Manifest != nil || r.Files != 4 || r.Programs != 2 || r.Need.String() != "DOS" || len(r.Discs) != 1 {
+		t.Fatalf("report %+v", r)
+	}
+	var out bytes.Buffer
+	Print(&out, r)
+	for _, want := range []string{"Source:", "Manifest:  none yet", "OS:        DOS", "Setup:     Windows 3.1", "2 audio tracks (1 Ogg Vorbis, 1 raw)"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, out.String())
+		}
+	}
+	for _, not := range []string{"SHA-256", "Packed"} {
+		if strings.Contains(out.String(), not) {
+			t.Errorf("output has %q:\n%s", not, out.String())
+		}
+	}
+}

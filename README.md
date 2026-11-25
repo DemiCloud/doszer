@@ -54,7 +54,7 @@ doszer FILE.dosz
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
 doszer set     FILE.dosz... [--parent [OLD:]NEW | --no-parent] [--os [OLD:]NEW] [--shell [OLD:]NEW] [-n]
 doszer verify  FILE.dosz... | --all [DIR...]
-doszer info    FILE.dosz...
+doszer info    FILE.dosz|SOURCE...
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
 doszer env     [--system-dir DIR] [--save-dir DIR]
@@ -104,7 +104,7 @@ with a count; any failure makes it exit 1.
 | `repack` | Rebuild an archive from its embedded manifest. |
 | `set` | Change archives' parent, OS image or shell in place. |
 | `verify` | Check archives against their embedded manifests and the specification. |
-| `info` | Show what an archive holds (below). |
+| `info` | Show what an archive or source directory holds (below). |
 | `env` | Show the directories, images and tools doszer finds on this machine. |
 | `prepare` | Make a game-ready copy of a Windows 3.x shell or Windows 9x OS image (see "Preparing a shell", "Windows 9x OS image"). |
 
@@ -129,11 +129,17 @@ the archive that names it), the number of programs and the oldest
 system that runs them all (from their executable headers: DOS, then the
 Windows version a Windows program asks for, e.g. Windows 3.1, Windows 95
 or Windows 98), compression (deflated and stored files, sizes, ratio),
-each disc image's tracks (data, audio as WAV or Ogg Vorbis) with the
+each disc image's tracks (data, audio as WAV, Ogg Vorbis or raw in a BIN) with the
 `[[source.media]]` entry declaring it, its track hashes (§7.2) and any
 Redump match recorded with them,
 gamepad files, the manifest's `notes` and the archive comment. It reads;
 `verify` checks.
+
+Given a source directory, `info` shows what `init` and `build` start
+from: its `DOSZ.TOML` if it has one, the programs and the system they
+need (as `init` reads them, disc images included), its files and disc
+images. No hashes or compression, since there's no archive yet, and the
+manifest's trim, extract and conversions aren't applied.
 
 Without `--exec`, `--shell` or `--os`, `init` picks the boot model from
 what the game's programs need, read from their executable headers: the

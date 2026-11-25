@@ -74,7 +74,7 @@ func init() {
 		{"repack", "rebuild an archive from its embedded manifest", runRepack},
 		{"set", "change archives' parent, OS image or shell in place", runSet},
 		{"prepare", "make a game-ready copy of a Windows shell or OS image", runPrepare},
-		{"info", "show what an archive holds", runInfo},
+		{"info", "show what an archive or source directory holds", runInfo},
 		{"verify", "check an archive against its manifest and the specification", runVerify},
 		{"env", "show the directories, images and tools doszer finds here", runEnv},
 		{"version", "show the versions of doszer and the programs it embeds", runVersion},
@@ -1324,9 +1324,9 @@ Options:
 
 func runInfo(args []string) error {
 	fs := newFlags("info")
-	const help = `doszer info - show what an archive holds
+	const help = `doszer info - show what an archive or source directory holds
 
-Usage: doszer info FILE.dosz...
+Usage: doszer info FILE.dosz|SOURCE...
 
 Options:
 ` + flagFormatData + flagHelp
@@ -1336,7 +1336,11 @@ Options:
 	var data []info.Data
 	for i, p := range fs.Args() {
 		status.Step("Reading %s", filepath.Base(p))
-		r, err := info.Read(p)
+		read := info.Read
+		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+			read = info.ReadSource
+		}
+		r, err := read(p)
 		endSteps(err)
 		if err != nil {
 			return err

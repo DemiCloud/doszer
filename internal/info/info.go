@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -40,6 +41,8 @@ type Report struct {
 	Need                     platform.Need // what the programs need (platform.Needs)
 	Discs                    []Disc
 	Padmap, DOSYML, Frontend bool // PADMAP.DBP, DOS.YML, FRONTEND.DBP present
+
+	Source bool // a source directory (ReadSource): no hashes, compression or parents
 }
 
 // Bytes is a count of entries and their sizes.
@@ -132,11 +135,65 @@ func Read(p string) (*Report, error) {
 		}
 	}
 
-	r.Discs = discs(zr.File, byName)
+	r.Discs = discs(zipEntries(zr.File))
 	if r.Manifest != nil {
 		matchMedia(r.Discs, r.Manifest.Source.Media)
 	}
 	r.Parents = parents(p, zr.File)
+	return r, nil
+}
+
+// ReadSource reads a source directory's report: what init and build
+// start from, before the manifest's trim, extract and conversions. No
+// hashes or compression: there is no archive yet.
+func ReadSource(dir string) (*Report, error) {
+	r := &Report{Path: dir, Source: true}
+	var files []entry
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		fi, err := d.Info()
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(dir, p)
+		rel = filepath.ToSlash(rel)
+		if rel == manifest.FileName {
+			return nil
+		}
+		files = append(files, entry{rel, fi.Size(), func() ([]byte, error) { return os.ReadFile(p) }})
+		r.Files++
+		r.Stored.Size += fi.Size()
+		switch strings.ToUpper(rel) {
+		case "PADMAP.DBP":
+			r.Padmap = true
+		case "DOS.YML":
+			r.DOSYML = true
+		case "FRONTEND.DBP":
+			r.Frontend = true
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	progs, err := platform.Scan(dir)
+	if err != nil {
+		return nil, err
+	}
+	r.Programs = len(progs)
+	r.Need = platform.Needs(progs)
+	if data, err := os.ReadFile(filepath.Join(dir, manifest.FileName)); err == nil {
+		abs, _ := filepath.Abs(dir)
+		if r.Manifest, err = manifest.Parse(data, filepath.Base(abs)); err != nil {
+			return nil, fmt.Errorf("%s: %w", filepath.Join(dir, manifest.FileName), err)
+		}
+	}
+	r.Discs = discs(files)
+	if r.Manifest != nil {
+		matchMedia(r.Discs, r.Manifest.Source.Media)
+	}
 	return r, nil
 }
 
@@ -199,16 +256,38 @@ func readAll(e *zip.File) ([]byte, error) {
 	return io.ReadAll(rc)
 }
 
-// discs lists the archive's disc images: every CUE sheet, and every ISO no
-// sheet refers to.
-func discs(files []*zip.File, byName map[string]*zip.File) []Disc {
+// entry is a file of an archive or source directory, for discs.
+type entry struct {
+	name string // slash-separated
+	size int64
+	read func() ([]byte, error)
+}
+
+func zipEntries(files []*zip.File) []entry {
+	out := make([]entry, 0, len(files))
+	for _, f := range files {
+		if strings.HasSuffix(f.Name, "/") {
+			continue
+		}
+		out = append(out, entry{f.Name, int64(f.UncompressedSize64), func() ([]byte, error) { return readAll(f) }})
+	}
+	return out
+}
+
+// discs lists the disc images: every CUE sheet, and every ISO no sheet
+// refers to.
+func discs(files []entry) []Disc {
+	byName := map[string]entry{}
+	for _, e := range files {
+		byName[strings.ToUpper(e.name)] = e
+	}
 	var out []Disc
 	used := map[string]bool{}
 	for _, e := range files {
-		if !strings.EqualFold(path.Ext(e.Name), ".cue") {
+		if !strings.EqualFold(path.Ext(e.name), ".cue") || e.size > 1<<20 {
 			continue
 		}
-		data, err := readAll(e)
+		data, err := e.read()
 		if err != nil {
 			continue
 		}
@@ -216,13 +295,13 @@ func discs(files []*zip.File, byName map[string]*zip.File) []Disc {
 		if err != nil {
 			continue
 		}
-		d := Disc{Path: e.Name}
-		dir := path.Dir(e.Name)
+		d := Disc{Path: e.name}
+		dir := path.Dir(e.name)
 		for _, cf := range sheet.Files {
 			name := path.Join(dir, strings.ReplaceAll(cf.Name, `\`, "/"))
 			used[strings.ToUpper(name)] = true
-			if f := byName[strings.ToUpper(name)]; f != nil {
-				d.Size += int64(f.UncompressedSize64)
+			if f, ok := byName[strings.ToUpper(name)]; ok {
+				d.Size += f.size
 			}
 			for _, t := range cf.Tracks {
 				if t.Mode != "AUDIO" {
@@ -241,8 +320,8 @@ func discs(files []*zip.File, byName map[string]*zip.File) []Disc {
 		out = append(out, d)
 	}
 	for _, e := range files {
-		if strings.EqualFold(path.Ext(e.Name), ".iso") && !used[strings.ToUpper(e.Name)] {
-			out = append(out, Disc{Path: e.Name, Data: 1, Size: int64(e.UncompressedSize64)})
+		if strings.EqualFold(path.Ext(e.name), ".iso") && !used[strings.ToUpper(e.name)] {
+			out = append(out, Disc{Path: e.name, Data: 1, Size: e.size})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
@@ -324,18 +403,28 @@ func Print(w io.Writer, r *Report) {
 		}
 		fmt.Fprintf(w, "%-10s %s\n", k, fmt.Sprintf(format, a...))
 	}
-	line("File", "%s", filepath.Base(r.Path))
-	line("Size", "%s", size(r.Size))
-	line("SHA-256", "%s (this file)", r.SHA256)
-	line("Content", "%s (its files but DOSZ.TOML: §9)", r.Content)
+	if r.Source {
+		line("Source", "%s (before the manifest's trim, extract and conversions)", r.Path)
+	} else {
+		line("File", "%s", filepath.Base(r.Path))
+		line("Size", "%s", size(r.Size))
+		line("SHA-256", "%s (this file)", r.SHA256)
+		line("Content", "%s (its files but DOSZ.TOML: §9)", r.Content)
+	}
 
 	m := r.Manifest
-	if m == nil {
+	switch {
+	case m == nil && r.Source:
+		line("Manifest", "none yet (doszer init writes one)")
+	case m == nil:
 		line("Manifest", "none embedded (not built by a DOSZ implementation)")
-	} else {
+	default:
 		line("Name", "%s", m.Name)
 		for _, kv := range bootLines(&m.Boot) {
 			line(kv[0], "%s", kv[1])
+		}
+		if r.Source && m.Boot.Parent != "" {
+			line("Parent", "%s", m.Boot.Parent)
 		}
 	}
 	for i, p := range r.Parents {
@@ -362,11 +451,13 @@ func Print(w io.Writer, r *Report) {
 
 	total := Bytes{Files: r.Files, Size: r.Deflated.Size + r.Stored.Size, Compressed: r.Deflated.Compressed + r.Stored.Compressed}
 	line("Contents", "%s, %s", plural(total.Files, "file"), size(total.Size))
-	line("Packed", "%s (%s)", size(total.Compressed), ratio(total))
+	if !r.Source {
+		line("Packed", "%s (%s)", size(total.Compressed), ratio(total))
+	}
 	if r.Deflated.Files > 0 {
 		line("", "deflated  %-11s %10s to %s (%s)", plural(r.Deflated.Files, "file"), size(r.Deflated.Size), size(r.Deflated.Compressed), ratio(r.Deflated))
 	}
-	if r.Stored.Files > 0 {
+	if r.Stored.Files > 0 && !r.Source {
 		line("", "stored    %-11s %10s", plural(r.Stored.Files, "file"), size(r.Stored.Size))
 	}
 
@@ -381,14 +472,19 @@ func Print(w io.Writer, r *Report) {
 		}
 		if d.Audio > 0 {
 			a := plural(d.Audio, "audio track")
-			switch {
-			case d.Ogg == d.Audio:
-				a += " (Ogg Vorbis)"
-			case d.WAV == d.Audio:
-				a += " (WAV)"
-			default:
-				a += fmt.Sprintf(" (%d WAV, %d Ogg Vorbis)", d.WAV, d.Ogg)
+			var kinds []string
+			for _, k := range []struct {
+				n    int
+				name string
+			}{{d.WAV, "WAV"}, {d.Ogg, "Ogg Vorbis"}, {d.Audio - d.WAV - d.Ogg, "raw"}} {
+				switch {
+				case k.n == d.Audio:
+					kinds = []string{k.name}
+				case k.n > 0 && k.n < d.Audio:
+					kinds = append(kinds, fmt.Sprintf("%d %s", k.n, k.name))
+				}
 			}
+			a += " (" + strings.Join(kinds, ", ") + ")"
 			tracks = append(tracks, a)
 		}
 		line(k, "%s: %s, %s", d.Path, strings.Join(tracks, ", "), size(d.Size))
@@ -504,9 +600,10 @@ func size(n int64) string {
 // and TOML.
 type Data struct {
 	File          string       `json:"file" yaml:"file" toml:"file"`
+	Source        bool         `json:"source,omitempty" yaml:"source,omitempty" toml:"source,omitempty"` // a source directory: no hashes or compression
 	Size          int64        `json:"size" yaml:"size" toml:"size"`
-	SHA256        string       `json:"sha256" yaml:"sha256" toml:"sha256"`
-	ContentSHA256 string       `json:"content_sha256" yaml:"content_sha256" toml:"content_sha256"`
+	SHA256        string       `json:"sha256,omitempty" yaml:"sha256,omitempty" toml:"sha256,omitempty"`
+	ContentSHA256 string       `json:"content_sha256,omitempty" yaml:"content_sha256,omitempty" toml:"content_sha256,omitempty"`
 	Name          string       `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
 	Manifest      bool         `json:"manifest" yaml:"manifest" toml:"manifest"`
 	Boot          string       `json:"boot,omitempty" yaml:"boot,omitempty" toml:"boot,omitempty"` // dos, menu, shell, os
@@ -567,7 +664,7 @@ type TrackData struct {
 // Data returns r for --format.
 func (r *Report) Data() Data {
 	d := Data{
-		File: filepath.Base(r.Path), Size: r.Size, SHA256: r.SHA256, ContentSHA256: r.Content,
+		File: filepath.Base(r.Path), Source: r.Source, Size: r.Size, SHA256: r.SHA256, ContentSHA256: r.Content,
 		Programs: r.Programs, Files: r.Files,
 		Bytes:    r.Deflated.Size + r.Stored.Size,
 		Packed:   r.Deflated.Compressed + r.Stored.Compressed,
