@@ -453,13 +453,16 @@ it, and waits for its window to close. Then it reads the save files:
 
 An OS image session runs under "Save Difference Per Content", so the OS
 image is never modified and C: changes land in `<name>-CDRIVE.sav`;
-they're listed, not extracted, since every archive shares C:.
+they're listed, not extracted, since every archive shares C:. (Archives
+themselves run under "Discard", specification §12; `install` keeps C:
+for its one session so `--drive c` can read it.)
 
 The OS image must be a raw `.img` or a fixed-size VHD, not a dynamic
 (growing) VHD: DOSBox Pure's "Save Difference" mode compares written
 sectors against the wrong bytes of a dynamic VHD and silently drops some
 writes, corrupting the session's C: (and, in a frontend, any game's C:
-changes). `install` and `run` refuse a dynamic VHD. `install` refuses a dynamic VHD. To convert one:
+changes). `install` refuses a dynamic VHD; "Discard", which `run` uses,
+is unaffected. To convert one:
 `qemu-img convert -O vpc -o subformat=fixed dynamic.vhd fixed.vhd`.
 
 An OS image session boots `--os`, else the image `install_os` maps
@@ -536,7 +539,9 @@ or parent archives.
 `doszer run FILE.dosz` plays a built archive, to try it without a
 frontend. Its saves are named after the archive in the save directory, so
 the next `run` continues from them. An archive that boots an OS image
-runs under "Save Difference Per Content": the image is never written to.
+runs under "Discard" (specification §12): the image is never written to,
+C: starts from the image every time, and only the archive's own D:
+changes are kept.
 
 `doszer FILE.dosz`, with no command, does the same, so doszer can be the
 program that opens `.dosz` files (`doszer "%1"` on Windows).
@@ -571,7 +576,7 @@ Archives assume these DOSBox Pure core options (see the specification, §12):
 
 | Option | Value |
 |---|---|
-| `dosbox_pure_bootos_ramdisk` | `diff` |
+| `dosbox_pure_bootos_ramdisk` | `true` (Discard) |
 | `dosbox_pure_menu_time` | `0` |
 
 OS images and system shells go in a `dosbox_pure/` subdirectory of the
@@ -607,8 +612,9 @@ Program Manager: Explorer started by a script that isn't the configured
 shell opens a folder window, not the desktop. AutoRun is Explorer's, so
 with Explorer never running as the shell, discs are not AutoRun.
 
-Use a fixed VHD or raw image: DOSBox Pure loses writes to a dynamic VHD
-under `diff` (see "Install" above to convert one).
+`install` needs a fixed VHD or raw image: DOSBox Pure loses writes to a
+dynamic VHD under `diff`, which its session uses (see "Install" above to
+convert one). Under "Discard" a dynamic VHD is fine.
 
 #### Getting past a launcher
 

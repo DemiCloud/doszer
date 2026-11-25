@@ -34,16 +34,32 @@ type Session struct {
 	CoreOptions map[string]string
 }
 
-// coreOptions are the core options every session runs with: specification
-// §12's, which archives assume. "Save Difference Per Content" keeps an OS
-// image untouched and puts C: changes in <name>-CDRIVE.sav; the D: free
-// space is pinned because it seeds the D: save's hash. A start menu time
+// coreOptions are the core options an install session runs with:
+// specification §12's, except that C: changes are kept: "Save Difference
+// Per Content" keeps an OS image untouched and puts them in
+// <name>-CDRIVE.sav, for --drive c (a fresh content name each session, so
+// nothing accumulates). The D: free space is pinned because it seeds the
+// D: save's hash. A start menu time
 // of 0 skips the menu and closes DOSBox Pure when the game it started
 // ends - e.g. when Windows shuts down after the game - which the libretro
 // core does only for menu_time 0-98 (dosbox_pure_libretro.cpp, retro_run,
 // DBPSTATE_EXITED).
 var coreOptions = map[string]string{
 	"dosbox_pure_bootos_ramdisk":    "diff",
+	"dosbox_pure_bootos_dfreespace": "1024",
+	"dosbox_pure_menu_time":         "0",
+}
+
+// playOptions are the core options Play runs an archive with:
+// specification §12's. "Discard" opens the OS image read-only and keeps
+// C: changes in memory for the session only, so every boot starts from
+// the image as it is - no accumulated state, no unclean-shutdown marker
+// from a session closed while Windows ran (dosbox_pure_run.h, RunBoot:
+// MountOSIMG with needwritable false). It stores every write, so a
+// dynamic VHD is safe (bios_disk.cpp, imageDisk::Write_AbsoluteSector,
+// discard), unlike under diff (checkDiffSafe).
+var playOptions = map[string]string{
+	"dosbox_pure_bootos_ramdisk":    "true",
 	"dosbox_pure_bootos_dfreespace": "1024",
 	"dosbox_pure_menu_time":         "0",
 }

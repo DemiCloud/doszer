@@ -14,8 +14,8 @@ import (
 // Play runs archive in DOSBox Pure and returns when its window closes.
 // Its saves are named after it, in the save directory Discover settles on,
 // so a later Play of the same archive continues from them. An archive that
-// boots an OS image runs it under "Save Difference Per Content"
-// (coreOptions): the image is never written to.
+// boots an OS image runs it under "Discard" (playOptions): the image is
+// never written to, and C: starts from it every time.
 func Play(archive, systemDir, saveDir string) (Env, error) {
 	abs, err := filepath.Abs(archive)
 	if err != nil {
@@ -34,7 +34,7 @@ func Play(archive, systemDir, saveDir string) (Env, error) {
 			return env, fmt.Errorf("%s boots %s from the system directory, and none is configured or found (set system_dir or pass --system-dir)", filepath.Base(archive), p)
 		}
 		if kind == "O" {
-			if err := checkDiffSafe(env.SystemDir, p); err != nil {
+			if _, err := osImagePath(env.SystemDir, p); err != nil {
 				return env, err
 			}
 		}
@@ -51,7 +51,7 @@ func Play(archive, systemDir, saveDir string) (Env, error) {
 		Content:     abs,
 		Dir:         dir,
 		Title:       "doszer run - " + name,
-		CoreOptions: coreOptions,
+		CoreOptions: playOptions,
 	}
 	defer s.Close()
 	return env, launch(env, s)

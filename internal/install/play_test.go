@@ -9,6 +9,18 @@ import (
 
 func TestPlay(t *testing.T) {
 	systemDir, saveDir := fakeDOSBoxPure(t)
+	old := launch
+	launch = func(e Env, s *Session) error {
+		if s.CoreOptions["dosbox_pure_bootos_ramdisk"] != "true" || s.CoreOptions["dosbox_pure_menu_time"] != "0" {
+			t.Errorf("play core options %v", s.CoreOptions)
+		}
+		data, err := os.ReadFile(os.Getenv("FAKE_SAVE"))
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(e.SaveDir, s.Name+os.Getenv("FAKE_SUFFIX")), data, 0o644)
+	}
+	t.Cleanup(func() { launch = old })
 	save := filepath.Join(t.TempDir(), "fixture.pure.zip")
 	os.WriteFile(save, zipBytes(t, map[string]string{"GAME/SAVE.DAT": "x"}), 0o644)
 	t.Setenv("FAKE_SAVE", save)

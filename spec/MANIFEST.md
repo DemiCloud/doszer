@@ -517,8 +517,19 @@ options:
 
 | Option | Value | Reason |
 |---|---|---|
-| `dosbox_pure_bootos_ramdisk` | `diff` | OS images are shared and MUST NOT be modified. |
+| `dosbox_pure_bootos_ramdisk` | `true` | OS images are shared and MUST NOT be modified, and every session starts from the same state. |
 | `dosbox_pure_menu_time` | `0` | Exit when an auto-started program ends. |
+
+With `bootos_ramdisk` set to `true` ("Discard"), changes to the OS image's
+C: drive last only until the session ends; changes to the archive's own
+files on D: are kept. A program that needs settings on C: (e.g. registry
+entries) SHOULD have them restored at each startup by `WINDOWS.BAT`.
+
+> **Note:** `diff` ("Save Difference Per Content") also leaves the image
+> unmodified, but keeps C: changes per archive. They accumulate, and a
+> session that ends without the guest OS shutting down leaves C: marked
+> as not shut down cleanly, so the next session starts with recovery
+> prompts (e.g. Windows' Safe Mode).
 
 An OS image used with the OS image model MUST, at startup:
 
