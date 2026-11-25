@@ -36,6 +36,9 @@ type Config struct {
 	Options   map[string]string // core option values; any other option takes the core's default
 	Title     string            // window title, followed by the mouse capture state
 	Frames    int               // stop after this many frames, unpaced (tests); 0 runs until closed
+	// OnFrame, if set, is called with each frame the core draws: XRGB8888
+	// pixels, valid only during the call (tests: screenshots).
+	OnFrame func(frame int, pix []byte, width, height, pitch int)
 }
 
 // libretro.h constants used.
@@ -142,6 +145,9 @@ type host struct {
 	buttons               [8]bool
 
 	vfs vfsState
+
+	onFrame func(frame int, pix []byte, width, height, pitch int)
+	frame   int
 }
 
 var h *host
@@ -176,6 +182,7 @@ func Run(cfg Config) error {
 		sysDir:  cString(cfg.SystemDir),
 		saveDir: cString(cfg.SaveDir),
 		options: map[string][]byte{},
+		onFrame: cfg.OnFrame,
 	}
 	defer func() { h = nil }()
 	for k, v := range cfg.Options {
@@ -224,6 +231,7 @@ func Run(cfg Config) error {
 
 	next := time.Now()
 	for frame := 1; !h.quit; frame++ {
+		h.frame = frame
 		var e sdl.Event
 		for sdl.PollEvent(&e) != 0 {
 			h.event(&e, window)
@@ -462,6 +470,9 @@ func videoRefresh(data unsafe.Pointer, width, height uint32, pitch uintptr) uint
 	}
 	if h.texture != 0 {
 		sdl.UpdateTexture(h.texture, nil, data, int32(pitch))
+	}
+	if h.onFrame != nil {
+		h.onFrame(h.frame, unsafe.Slice((*byte)(data), int(pitch)*int(height)), int(width), int(height), int(pitch))
 	}
 	return 0
 }

@@ -205,6 +205,13 @@ against DOSBox Pure 1.0 Preview 8 (`dosbox_pure_libretro.cpp`) and its
 | Pixel format | XRGB8888 (SDL's `RGB888`), software rendered | `retro_load_game`, `SET_PIXEL_FORMAT` |
 | `FRONTEND.DBP` | Ignored by the core (standalone only), so the built-in frontend passes core options itself | `init_dosbox`, `#ifdef DBP_STANDALONE` |
 
+`internal/libretro`'s `TestProbe` runs real content headless and saves a
+screenshot every few seconds (`DOSZER_PROBE_CONTENT`, `_SYSTEM`, `_OUT`,
+`_FRAMES`, `_EVERY`): how to see what a game does in an OS image session
+without a window, e.g. a startup script that leaves the screen black. Use
+a system directory of symlinks to the images, and `diff`, so nothing is
+written to them.
+
 ## RetroArch facts
 
 `install`'s default frontend. Verified against RetroArch's source
