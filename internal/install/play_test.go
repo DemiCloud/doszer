@@ -100,3 +100,97 @@ func TestSessionOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestPlaySaveDir(t *testing.T) {
+	// RetroDECK keeps saves per ROM folder: roms/dos and roms/windows9x
+	// archives, both DOSBox Pure's, save in saves/dos and saves/windows9x.
+	type layout struct {
+		retroDECK  bool // write retrodeck.json
+		noSaves    bool // its saves_path doesn't exist
+		localSaves bool // a saves/ folder in the working directory
+	}
+	tests := []struct {
+		name    string
+		layout  layout
+		archive string // relative to the RetroDECK home
+		want    string // relative to it; "" for none (Discover's default)
+	}{
+		{"no RetroDECK", layout{}, "roms/dos/Game.dosz", ""},
+		{"dos folder", layout{retroDECK: true}, "roms/dos/Game.dosz", "saves/dos"},
+		{"windows9x folder", layout{retroDECK: true}, "roms/windows9x/Game.dosz", "saves/windows9x"},
+		{"outside the ROM folders", layout{retroDECK: true}, "builds/Game.dosz", ""},
+		{"ROM folder's sibling with a shared prefix", layout{retroDECK: true}, "roms2/dos/Game.dosz", ""},
+		{"saves_path missing", layout{retroDECK: true, noSaves: true}, "roms/dos/Game.dosz", ""},
+		{"./saves first", layout{retroDECK: true, localSaves: true}, "roms/dos/Game.dosz", "work/saves"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			rd := filepath.Join(home, "retrodeck")
+			if tt.layout.retroDECK {
+				os.MkdirAll(filepath.Join(rd, "roms"), 0o755)
+				if !tt.layout.noSaves {
+					os.MkdirAll(filepath.Join(rd, "saves"), 0o755)
+				}
+				cfg := filepath.Join(home, retroDECKConfig)
+				os.MkdirAll(filepath.Dir(cfg), 0o755)
+				os.WriteFile(cfg, []byte(`{"paths": {"roms_path": "`+filepath.Join(rd, "roms")+`", "saves_path": "`+filepath.Join(rd, "saves")+`"}}`), 0o644)
+			}
+			work := filepath.Join(rd, "work")
+			os.MkdirAll(work, 0o755)
+			if tt.layout.localSaves {
+				os.MkdirAll(filepath.Join(work, "saves"), 0o755)
+			}
+			t.Chdir(work)
+			archive := filepath.Join(rd, filepath.FromSlash(tt.archive))
+
+			got, err := PlaySaveDir(archive)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := ""
+			if tt.want != "" {
+				want = filepath.Join(rd, filepath.FromSlash(tt.want))
+			}
+			if got != want {
+				t.Fatalf("PlaySaveDir = %q, want %q", got, want)
+			}
+			if want != "" {
+				if fi, err := os.Stat(want); err != nil || !fi.IsDir() {
+					t.Fatalf("%s not created: %v", want, err)
+				}
+			}
+		})
+	}
+}
+
+func TestPlayUsesRetroDECKSaves(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Chdir(t.TempDir())
+	roms, saves := filepath.Join(home, "roms"), filepath.Join(home, "saves")
+	os.MkdirAll(filepath.Join(roms, "dos"), 0o755)
+	os.MkdirAll(saves, 0o755)
+	cfg := filepath.Join(home, retroDECKConfig)
+	os.MkdirAll(filepath.Dir(cfg), 0o755)
+	os.WriteFile(cfg, []byte(`{"paths": {"roms_path": "`+roms+`", "saves_path": "`+saves+`"}}`), 0o644)
+	archive := filepath.Join(roms, "dos", "Example Game.dosz")
+	os.WriteFile(archive, zipBytes(t, map[string]string{"GAME/GAME.EXE": "MZ"}), 0o644)
+
+	old := launch
+	var got string
+	launch = func(e Env, s *Session) error { got = e.SaveDir; return nil }
+	t.Cleanup(func() { launch = old })
+	if _, err := Play(archive, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(saves, "dos"); got != want {
+		t.Fatalf("save dir %q, want %q", got, want)
+	}
+	// A save directory given still wins.
+	given := t.TempDir()
+	if _, err := Play(archive, "", given, nil); err != nil || got != given {
+		t.Fatalf("save dir %q, err %v, want %q", got, err, given)
+	}
+}

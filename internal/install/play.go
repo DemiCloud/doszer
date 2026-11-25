@@ -13,7 +13,8 @@ import (
 )
 
 // Play runs archive in DOSBox Pure and returns when its window closes.
-// Its saves are named after it, in the save directory Discover settles on,
+// Its saves are named after it, in saveDir, else PlaySaveDir's, else
+// Discover's,
 // so a later Play of the same archive continues from them. An archive that
 // boots an OS image runs it under "Discard" (playOptions): the image is
 // never written to, and C: starts from it every time. options are more
@@ -32,6 +33,11 @@ func Play(archive, systemDir, saveDir string, options map[string]string) (Env, e
 	boot, title, err := readArchive(abs, name)
 	if err != nil {
 		return Env{}, err
+	}
+	if saveDir == "" {
+		if saveDir, err = PlaySaveDir(abs); err != nil {
+			return Env{}, err
+		}
 	}
 	env, err := Discover(systemDir, saveDir)
 	if err != nil {

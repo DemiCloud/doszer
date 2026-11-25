@@ -572,8 +572,15 @@ changed.
   `~/.var/app/net.retrodeck.retrodeck/config/retrodeck/retrodeck.json`).
   A manifest's `os = 'dosbox_pure/Win98'` is then
   `system/dosbox_pure/Win98.vhd` (or `.img`).
-- Saves go to `save_dir` (`--save-dir`), else `doszer/saves` in the user
-  cache directory, never a frontend's own.
+- `run`'s saves go to `save_dir` (`--save-dir`), else a `saves/` folder
+  in the working directory, else one beside the doszer executable, else,
+  for an archive in RetroDECK's ROM folders (`roms_path`), RetroDECK's own:
+  `<saves_path>/<the archive's folder>`, as RetroArch sorts saves by
+  content directory (`roms/dos/Game.dosz` saves in `saves/dos`,
+  `roms/windows9x/Game.dosz` in `saves/windows9x`), so `run` and RetroDECK
+  continue each other's games. Otherwise, and always for `install`, whose
+  session saves are throwaway, `save_dir` or `doszer/saves` in the user
+  cache directory.
 
 | Keys | |
 |---|---|

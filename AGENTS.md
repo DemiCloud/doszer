@@ -85,9 +85,14 @@ README.md            doszer usage, configuration, install workflow
   standalone DOSBox Pure support was removed: driving an external
   frontend meant writing its configuration and option files and guessing
   at its directories. doszer reads no frontend's configuration, with one
-  exception: RetroDECK's `retrodeck.json` (`paths.bios_path`), read-only,
-  as the last fallback for the system directory (after `system_dir`,
-  `./system` and `system/` beside the executable). The staged
+  exception: RetroDECK's `retrodeck.json` (`paths.bios_path`, `roms_path`,
+  `saves_path`), read-only, as the last fallback for the system directory
+  (after `system_dir`, `./system` and `system/` beside the executable) and
+  for `run`'s save directory (after `save_dir`, `./saves` and `saves/`
+  beside the executable): `<saves_path>/<archive's folder>` for an archive
+  under `roms_path`, matching RetroArch's sort-by-content-directory, so
+  `run` shares saves with RetroDECK. `install` never searches: its
+  session saves are throwaway. The staged
   binaries are gitignored; each platform's `MANIFEST` placeholder stays
   tracked so `go:embed` always has a directory. Upgrading DOSBox Pure
   means re-checking the DOSBox Pure facts below against the new source.

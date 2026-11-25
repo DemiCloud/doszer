@@ -774,7 +774,8 @@ Usage: doszer run [options] ARCHIVE.dosz
 
 Options:
       --option KEY=VALUE  DOSBox Pure core option for this session (repeatable)
-` + flagSaveDir + flagSystemDir + flagHelp
+      --save-dir DIR      DOSBox Pure save directory (default: save_dir, else ./saves, else RetroDECK's)
+` + flagSystemDir + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
 	}

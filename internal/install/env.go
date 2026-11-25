@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/DemiCloud/doszer/internal/builtin"
 	"github.com/DemiCloud/doszer/internal/libretro"
@@ -25,8 +26,8 @@ type Env struct {
 // system/ folder in the working directory, one beside the doszer
 // executable (as standalone DOSBox Pure keeps it beside its own), and
 // RetroDECK's BIOS folder (retroDECKBIOS); the save directory is doszer's
-// own, in the user cache directory: doszer never reads or writes a
-// frontend's saves.
+// own, in the user cache directory (Play searches further first:
+// PlaySaveDir).
 func Discover(systemDir, saveDir string) (Env, error) {
 	for _, d := range []string{systemDir, saveDir} {
 		if d == "" {
@@ -73,30 +74,93 @@ func findSystemDir() string {
 // retroDECKConfig is RetroDECK's settings file, under the home directory.
 var retroDECKConfig = filepath.Join(".var", "app", "net.retrodeck.retrodeck", "config", "retrodeck", "retrodeck.json")
 
-// retroDECKBIOS returns the BIOS folder RetroDECK's settings name
-// (paths.bios_path), where archives' OS images live in production, or ""
-// if RetroDECK isn't installed or the folder doesn't exist.
-func retroDECKBIOS() string {
+// retroDECKDirs are the folders RetroDECK's settings name (paths.bios_path,
+// roms_path and saves_path), each "" if unset or not an existing folder.
+type retroDECKDirs struct{ BIOS, ROMs, Saves string }
+
+// retroDECK reads RetroDECK's folders from its settings, or returns none
+// if RetroDECK isn't installed.
+func retroDECK() retroDECKDirs {
+	var d retroDECKDirs
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ""
+		return d
 	}
 	data, err := os.ReadFile(filepath.Join(home, retroDECKConfig))
 	if err != nil {
-		return ""
+		return d
 	}
 	var cfg struct {
 		Paths struct {
-			BIOS string `json:"bios_path"`
+			BIOS  string `json:"bios_path"`
+			ROMs  string `json:"roms_path"`
+			Saves string `json:"saves_path"`
 		} `json:"paths"`
 	}
-	if json.Unmarshal(data, &cfg) != nil || cfg.Paths.BIOS == "" {
-		return ""
+	if json.Unmarshal(data, &cfg) != nil {
+		return d
 	}
-	if fi, err := os.Stat(cfg.Paths.BIOS); err != nil || !fi.IsDir() {
-		return ""
+	isDir := func(p string) string {
+		if p == "" {
+			return ""
+		}
+		if fi, err := os.Stat(p); err != nil || !fi.IsDir() {
+			return ""
+		}
+		return p
 	}
-	return cfg.Paths.BIOS
+	return retroDECKDirs{BIOS: isDir(cfg.Paths.BIOS), ROMs: isDir(cfg.Paths.ROMs), Saves: isDir(cfg.Paths.Saves)}
+}
+
+// retroDECKBIOS returns RetroDECK's BIOS folder, where archives' OS images
+// live in production, or "".
+func retroDECKBIOS() string { return retroDECK().BIOS }
+
+// PlaySaveDir returns the save directory Play uses for archive when none
+// is given: the first that exists of a saves/ folder in the working
+// directory and one beside the doszer executable (as for system/), else,
+// for an archive in RetroDECK's ROM folders, the folder RetroDECK's
+// RetroArch keeps its saves in: <saves_path>/<the archive's folder name>
+// (RetroArch's "sort saves by content directory", so roms/dos and
+// roms/windows9x each get their own), created if missing. Else "", for
+// Discover's default. install doesn't search: its sessions' throwaway
+// saves stay in doszer's cache.
+func PlaySaveDir(archive string) (string, error) {
+	candidates := []string{"saves"}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "saves"))
+	}
+	for _, d := range candidates {
+		if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+			return filepath.Abs(d)
+		}
+	}
+	rd := retroDECK()
+	if rd.ROMs == "" || rd.Saves == "" {
+		return "", nil
+	}
+	abs, err := filepath.Abs(archive)
+	if err != nil {
+		return "", err
+	}
+	if !within(abs, rd.ROMs) {
+		return "", nil // a test build, say: not RetroDECK's to keep
+	}
+	dir := filepath.Join(rd.Saves, filepath.Base(filepath.Dir(abs)))
+	return dir, os.MkdirAll(dir, 0o755)
+}
+
+// within reports whether p is inside dir, following symbolic links (a
+// Steam Deck's ROM folder is often a link to an SD card).
+func within(p, dir string) bool {
+	resolve := func(s string) string {
+		if r, err := filepath.EvalSymlinks(s); err == nil {
+			return r
+		}
+		return s
+	}
+	rel, err := filepath.Rel(resolve(dir), resolve(p))
+	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
 // launch runs a session's content in DOSBox Pure and returns when it
