@@ -40,18 +40,18 @@ type Options struct {
 
 // Provenance is the build information an archive comment records.
 type Provenance struct {
-	Generator string    // implementation and version, e.g. "doszer 1.0"
-	Homepage  string    // the implementation's URL, if any
-	Built     time.Time // build date
+	Generator string // implementation and version, e.g. "doszer 1.0"
+	Homepage  string // the implementation's URL, if any
 }
 
 // Comment returns the archive comment for an archive named name, built
-// from manifest format format: the name, then who built it when, then the
-// homepage, CRLF-separated.
+// from manifest format format: the name, then what built it, then the
+// homepage, CRLF-separated. No date: two builds of one source by one
+// version are then the same file, comment included.
 func (p *Provenance) Comment(name string, format int) string {
 	lines := []string{
 		name,
-		fmt.Sprintf("Built by %s on %s (DOSZ manifest format %d)", p.Generator, p.Built.UTC().Format("2006-01-02"), format),
+		fmt.Sprintf("Built by %s (DOSZ manifest format %d)", p.Generator, format),
 	}
 	if p.Homepage != "" {
 		lines = append(lines, p.Homepage)

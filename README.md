@@ -79,16 +79,31 @@ results, warnings and errors are printed.
 | `info` | Show what an archive holds (below). |
 | `prepare` | Make a game-ready copy of a Windows 3.x shell or Windows 9x OS image (see "Preparing a shell", "Windows 9x OS image"). |
 
-`info` shows an archive's size and two SHA-256 hashes: of the whole file,
-and of everything but the archive comment, which two builds of the same
-source share (the comment records the build date, §8.4). Then its name,
-boot model, parent chain (each parent looked for beside the archive that
-names it), the programs in it by platform (DOS, Windows 3.x, Windows 95
-or later, from their executable headers), compression (deflated and
-stored files, sizes, ratio), each disc image's tracks (data, audio as WAV
-or Ogg Vorbis) with the `[[source.media]]` entry declaring it and its
-track hashes (§7.2), gamepad files, the manifest's `notes` and the archive
-comment. It reads; `verify` checks.
+`info` shows an archive's size and two SHA-256 hashes:
+
+- `SHA-256`: the file itself, as `sha256sum` prints it. Two builds of the
+  same source by the same `doszer` are the same file; anything else,
+  including an edit to the manifest's `notes`, changes it.
+- `Content`: the files the archive gives DOSBox Pure, which is what the
+  specification's equivalence compares (§9): every file but `DOSZ.TOML`.
+  Editing `notes` or rebuilding with another `doszer` version (a new
+  archive comment) leaves it alone; changing a game file, the boot model
+  (`AUTOBOOT.DBP`) or a gamepad mapping changes it. It is the SHA-256 of
+  `sha256sum`'s output for those files in byte-wise path order, so it can
+  be checked without `doszer`: unzip the archive, then, in it,
+  `find . -type f ! -name DOSZ.TOML | LC_ALL=C sort | sed 's|^./||' | xargs -d '\n' sha256sum | sha256sum`.
+  An archive with Ogg Vorbis audio has a different content hash when
+  built with a different encoder.
+
+Then its name, boot model, parent chain (each parent looked for beside
+the archive that names it), the number of programs and the oldest
+system that runs them all (from their executable headers: DOS, then the
+Windows version a Windows program asks for, e.g. Windows 3.1, Windows 95
+or Windows 98), compression (deflated and stored files, sizes, ratio),
+each disc image's tracks (data, audio as WAV or Ogg Vorbis) with the
+`[[source.media]]` entry declaring it and its track hashes (§7.2),
+gamepad files, the manifest's `notes` and the archive comment. It reads;
+`verify` checks.
 
 `init` also hashes every disc image (CUE sheet) in the source into
 `[[source.media]]` entries (spec §7.2), labelled with the CUE sheet's name;
@@ -101,11 +116,11 @@ are skipped with a warning; use `audio = "wav"` to keep a disc fully
 verifiable. A disc that isn't found fails the build only when `[[extract]]`
 reads from it, and is otherwise a warning (a failure under `--strict`).
 
-`build` and `repack` record the game's name, the `doszer` version, the
-build date (UTC, or `SOURCE_DATE_EPOCH`'s) and this project's URL in the
-ZIP comment, which `unzip -z` and most archive tools show. It is outside
-the specification's reproducibility rules (§8.4): two builds of the same
-source differ only there, and `verify` ignores it.
+`build` and `repack` record the game's name, the `doszer` version and
+this project's URL in the ZIP comment, which `unzip -z` and most archive
+tools show. It is outside the specification's reproducibility rules
+(§8.4), and `verify` ignores it. It holds no date, so building the same
+source twice with the same `doszer` gives the same file.
 
 Paths match case-insensitively (spec §2), so two source files or archive
 entries whose paths differ only in case are one file: `build` and `repack`

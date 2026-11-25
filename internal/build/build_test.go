@@ -675,7 +675,7 @@ func TestRunWritesProvenanceComment(t *testing.T) {
 	if _, err := build.Run(build.Options{SourceDir: dir, OutputPath: plain}); err != nil {
 		t.Fatal(err)
 	}
-	p := &build.Provenance{Generator: "doszer 1.2.3", Homepage: "https://example.com/doszer", Built: time.Date(2026, 11, 15, 23, 30, 0, 0, time.FixedZone("", -8*3600))}
+	p := &build.Provenance{Generator: "doszer 1.2.3", Homepage: "https://example.com/doszer"}
 	if _, err := build.Run(build.Options{SourceDir: dir, OutputPath: commented, Provenance: p}); err != nil {
 		t.Fatal(err)
 	}
@@ -685,7 +685,7 @@ func TestRunWritesProvenanceComment(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer zr.Close()
-	want := "Test Game\r\nBuilt by doszer 1.2.3 on 2026-11-16 (DOSZ manifest format 1)\r\nhttps://example.com/doszer\r\n"
+	want := "Test Game\r\nBuilt by doszer 1.2.3 (DOSZ manifest format 1)\r\nhttps://example.com/doszer\r\n"
 	if zr.Comment != want {
 		t.Errorf("comment %q, want %q", zr.Comment, want)
 	}
@@ -700,8 +700,8 @@ func TestRunWritesProvenanceComment(t *testing.T) {
 }
 
 func TestProvenanceCommentWithoutHomepage(t *testing.T) {
-	p := &build.Provenance{Generator: "x 1", Built: time.Unix(0, 0)}
-	if got := p.Comment("Game", 1); got != "Game\r\nBuilt by x 1 on 1970-01-01 (DOSZ manifest format 1)\r\n" {
+	p := &build.Provenance{Generator: "x 1"}
+	if got := p.Comment("Game", 1); got != "Game\r\nBuilt by x 1 (DOSZ manifest format 1)\r\n" {
 		t.Errorf("got %q", got)
 	}
 }

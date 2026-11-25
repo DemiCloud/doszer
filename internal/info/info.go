@@ -12,8 +12,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/DemiCloud/doszer/internal/cue"
 	"github.com/DemiCloud/doszer/internal/manifest"
@@ -24,7 +26,7 @@ type Report struct {
 	Path    string
 	Size    int64
 	SHA256  string // the whole file
-	Content string // SHA-256 of the file up to the archive comment (§8.4)
+	Content string // SHA-256 of the files DOSBox Pure loads (contentHash)
 	Comment string // the archive comment
 
 	Manifest *manifest.Manifest // nil: none embedded
@@ -32,7 +34,8 @@ type Report struct {
 
 	Files                    int
 	Deflated, Stored         Bytes
-	Programs                 map[Platform]int
+	Programs                 int
+	MinOS                    Target // the oldest system every program runs on; zero without programs
 	Discs                    []Disc
 	Padmap, DOSYML, Frontend bool // PADMAP.DBP, DOS.YML, FRONTEND.DBP present
 }
@@ -75,9 +78,14 @@ func Read(p string) (*Report, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", p, err)
 	}
-	r := &Report{Path: p, Size: fi.Size(), Comment: zr.Comment, Programs: map[Platform]int{}}
-	if r.SHA256, r.Content, err = hashes(f, fi.Size(), len(zr.Comment)); err != nil {
+	r := &Report{Path: p, Size: fi.Size(), Comment: zr.Comment}
+	h := sha256.New()
+	if _, err := io.Copy(h, io.NewSectionReader(f, 0, fi.Size())); err != nil {
 		return nil, err
+	}
+	r.SHA256 = hex.EncodeToString(h.Sum(nil))
+	if r.Content, err = contentHash(zr.File); err != nil {
+		return nil, fmt.Errorf("%s: %w", p, err)
 	}
 
 	byName := map[string]*zip.File{}
@@ -97,8 +105,11 @@ func Read(p string) (*Report, error) {
 		if isProgramName(e.Name) {
 			rc, err := e.Open()
 			if err == nil {
-				if pl := classify(e.Name, rc); pl != NotProgram {
-					r.Programs[pl]++
+				if t := classify(e.Name, rc); t.Platform != NotProgram {
+					r.Programs++
+					if r.MinOS.Platform == NotProgram || r.MinOS.less(t) {
+						r.MinOS = t
+					}
 				}
 				rc.Close()
 			}
@@ -127,21 +138,54 @@ func Read(p string) (*Report, error) {
 	return r, nil
 }
 
-// hashes returns the SHA-256 of the whole file and of its bytes before the
-// archive comment's length field: everything but the comment, which is the
-// only part of an archive that differs between two builds of one source
-// (§8.4).
-func hashes(f io.ReaderAt, size int64, commentLen int) (whole, content string, err error) {
+// contentHash is the SHA-256 of what §9's equivalence compares: one line
+// per file but DOSZ.TOML, in byte-wise path order, as sha256sum prints it
+// ("<SHA-256 of the content>  <path>\n"). The archive comment and the
+// manifest (notes included) don't affect it, so neither do rebuilds or
+// edits to the manifest that leave the files alone. Reproducible outside
+// doszer: unzip the archive, then, in it,
+// find . -type f ! -name DOSZ.TOML | LC_ALL=C sort | sed 's|^./||' |
+// xargs -d '\n' sha256sum | sha256sum.
+func contentHash(files []*zip.File) (string, error) {
+	var es []*zip.File
+	for _, e := range files {
+		if !strings.HasSuffix(e.Name, "/") && !strings.EqualFold(e.Name, manifest.FileName) {
+			es = append(es, e)
+		}
+	}
+	sort.Slice(es, func(i, j int) bool { return es[i].Name < es[j].Name })
+	sums := make([]string, len(es))
+	errs := make([]error, len(es))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, runtime.GOMAXPROCS(0))
+	for i, e := range es {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			rc, err := e.Open()
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			defer rc.Close()
+			h := sha256.New()
+			if _, err := io.Copy(h, rc); err != nil {
+				errs[i] = fmt.Errorf("%s: %w", e.Name, err)
+				return
+			}
+			sums[i] = hex.EncodeToString(h.Sum(nil))
+		}()
+	}
+	wg.Wait()
 	h := sha256.New()
-	cut := size - int64(commentLen) - 2
-	if _, err := io.Copy(h, io.NewSectionReader(f, 0, cut)); err != nil {
-		return "", "", err
+	for i, e := range es {
+		if errs[i] != nil {
+			return "", errs[i]
+		}
+		fmt.Fprintf(h, "%s  %s\n", sums[i], e.Name)
 	}
-	content = hex.EncodeToString(h.Sum(nil))
-	if _, err := io.Copy(h, io.NewSectionReader(f, cut, size-cut)); err != nil {
-		return "", "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), content, nil
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func readAll(e *zip.File) ([]byte, error) {
@@ -280,8 +324,8 @@ func Print(w io.Writer, r *Report) {
 	}
 	line("File", "%s", filepath.Base(r.Path))
 	line("Size", "%s", size(r.Size))
-	line("SHA-256", "%s", r.SHA256)
-	line("Content", "%s (SHA-256 without the archive comment)", r.Content)
+	line("SHA-256", "%s (this file)", r.SHA256)
+	line("Content", "%s (its files but DOSZ.TOML: §9)", r.Content)
 
 	m := r.Manifest
 	if m == nil {
@@ -306,25 +350,9 @@ func Print(w io.Writer, r *Report) {
 		}
 		line(k, "%s%s (%s)", strings.Repeat("  ", i), p.Name, state)
 	}
-	if len(r.Programs) > 0 {
-		total := 0
-		for _, n := range r.Programs {
-			total += n
-		}
-		line("Programs", "%d", total)
-		k := "OS"
-		for _, pl := range []Platform{DOS, Win16, Win32, WinNT5, OS2} {
-			n := r.Programs[pl]
-			switch {
-			case n == 0:
-				continue
-			case len(r.Programs) == 1:
-				line(k, "%s", pl)
-			default:
-				line(k, "%s (%d)", pl, n)
-			}
-			k = ""
-		}
+	if r.Programs > 0 {
+		line("Programs", "%d", r.Programs)
+		line("OS", "%s", r.MinOS)
 	}
 
 	total := Bytes{Files: r.Files, Size: r.Deflated.Size + r.Stored.Size, Compressed: r.Deflated.Compressed + r.Stored.Compressed}

@@ -3,9 +3,13 @@ package info
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -31,24 +35,63 @@ func exe(sig string, edit func(h []byte)) []byte {
 	return b
 }
 
+func ne(major, minor byte) []byte {
+	return exe("NE", func(h []byte) { h[0x36], h[0x3E], h[0x3F] = 2, minor, major })
+}
+
+func pe(major, minor uint16) []byte {
+	return exe("PE\x00\x00", func(h []byte) {
+		binary.LittleEndian.PutUint16(h[24+48:], major)
+		binary.LittleEndian.PutUint16(h[24+50:], minor)
+	})
+}
+
+// TestMinOS: the OS line is the oldest system every program runs on.
+func TestMinOS(t *testing.T) {
+	tests := []struct {
+		progs [][]byte
+		want  string
+	}{
+		{[][]byte{exe("", nil), exe("", nil)}, "DOS"},
+		{[][]byte{exe("", nil), ne(3, 10)}, "Windows 3.1"},
+		{[][]byte{ne(3, 10), pe(4, 0), exe("", nil)}, "Windows 95"},
+		{[][]byte{pe(4, 10), pe(4, 0)}, "Windows 98"},
+	}
+	for _, tt := range tests {
+		var min Target
+		for i, p := range tt.progs {
+			c := classify(fmt.Sprintf("P%d.EXE", i), bytes.NewReader(p))
+			if min.Platform == NotProgram || min.less(c) {
+				min = c
+			}
+		}
+		if min.String() != tt.want {
+			t.Errorf("%v: %s, want %s", tt.progs != nil, min, tt.want)
+		}
+	}
+}
+
 func TestClassify(t *testing.T) {
 	tests := []struct {
 		name string
 		data []byte
-		want Platform
+		want string
 	}{
-		{"GAME.COM", []byte{0xB4, 0x4C, 0xCD, 0x21}, DOS},
-		{"GAME.EXE", exe("", nil), DOS},
-		{"DOS4GW.EXE", exe("LE", nil), DOS},
-		{"WIN16.EXE", exe("NE", func(h []byte) { h[0x36] = 2 }), Win16},
-		{"OS2.EXE", exe("NE", func(h []byte) { h[0x36] = 1 }), OS2},
-		{"WIN95.EXE", exe("PE\x00\x00", func(h []byte) { binary.LittleEndian.PutUint16(h[24+48:], 4) }), Win32},
-		{"XP.EXE", exe("PE\x00\x00", func(h []byte) { binary.LittleEndian.PutUint16(h[24+48:], 5) }), WinNT5},
-		{"README.EXE", []byte("not a program"), NotProgram},
-		{"TINY.EXE", []byte("MZ"), DOS},
+		{"GAME.COM", []byte{0xB4, 0x4C, 0xCD, 0x21}, "DOS"},
+		{"GAME.EXE", exe("", nil), "DOS"},
+		{"DOS4GW.EXE", exe("LE", nil), "DOS"},
+		{"WIN30.EXE", ne(3, 0), "Windows 3.0"},
+		{"WIN31.EXE", ne(3, 10), "Windows 3.1"},
+		{"OLD.EXE", ne(0, 0), "Windows 3.0"},
+		{"OS2.EXE", exe("NE", func(h []byte) { h[0x36] = 1 }), "OS/2"},
+		{"WIN95.EXE", pe(4, 0), "Windows 95"},
+		{"WIN98.EXE", pe(4, 10), "Windows 98"},
+		{"XP.EXE", pe(5, 1), "Windows XP"},
+		{"README.EXE", []byte("not a program"), "not a program"},
+		{"TINY.EXE", []byte("MZ"), "DOS"},
 	}
 	for _, tt := range tests {
-		if got := classify(tt.name, bytes.NewReader(tt.data)); got != tt.want {
+		if got := classify(tt.name, bytes.NewReader(tt.data)).String(); got != tt.want {
 			t.Errorf("%s: %v, want %v", tt.name, got, tt.want)
 		}
 	}
@@ -70,7 +113,7 @@ func buildArchive(t *testing.T, out, manifest string, files map[string][]byte, b
 	for n, d := range files {
 		writeFile(t, src, n, d)
 	}
-	prov := &build.Provenance{Generator: "doszer test", Built: built}
+	prov := &build.Provenance{Generator: "doszer test"}
 	if _, err := build.Run(build.Options{SourceDir: src, OutputPath: out, Provenance: prov}); err != nil {
 		t.Fatal(err)
 	}
@@ -80,8 +123,8 @@ func TestRead(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string][]byte{
 		"GAME.EXE":  exe("", nil),
-		"SETUP.EXE": exe("NE", func(h []byte) { h[0x36] = 2 }),
-		"WIN.EXE":   exe("PE\x00\x00", func(h []byte) { binary.LittleEndian.PutUint16(h[24+48:], 4) }),
+		"SETUP.EXE": ne(3, 10),
+		"WIN.EXE":   pe(4, 0),
 	}
 	child := `format = 1
 name = "Child Game"
@@ -99,8 +142,8 @@ parent = "Base.dosz"
 	if r.Manifest == nil || r.Manifest.Name != "Child Game" {
 		t.Fatalf("manifest %+v", r.Manifest)
 	}
-	if r.Programs[DOS] != 1 || r.Programs[Win16] != 1 || r.Programs[Win32] != 1 {
-		t.Errorf("programs %v", r.Programs)
+	if r.Programs != 3 || r.MinOS.String() != "Windows 95" {
+		t.Errorf("programs %d, OS %s", r.Programs, r.MinOS)
 	}
 	if len(r.Parents) != 1 || r.Parents[0].Name != "Base.dosz" || r.Parents[0].Found {
 		t.Errorf("parents %+v, want Base.dosz not found", r.Parents)
@@ -113,20 +156,59 @@ parent = "Base.dosz"
 		t.Errorf("parents %+v, want Base.dosz found, then Shared.dosz not", r.Parents)
 	}
 
-	// The content hash ignores the archive comment; the whole-file one doesn't.
-	b := filepath.Join(t.TempDir(), "Child.dosz")
-	buildArchive(t, b, child, files, time.Date(2027, 6, 1, 0, 0, 0, 0, time.UTC))
-	r2, _ := Read(b)
-	if r2.Content != r.Content {
-		t.Error("content hash differs between two builds of one source")
+	// A rebuild is the same file; a notes edit changes the file but not
+	// its content hash (§9 leaves DOSZ.TOML out); a file edit changes both.
+	same := filepath.Join(t.TempDir(), "Child.dosz")
+	buildArchive(t, same, child, files, time.Time{})
+	rSame, _ := Read(same)
+	if rSame.SHA256 != r.SHA256 {
+		t.Error("two builds of one source differ")
 	}
-	if r2.SHA256 == r.SHA256 {
-		t.Error("whole-file hash ignores the comment")
+	notes := filepath.Join(t.TempDir(), "Child.dosz")
+	buildArchive(t, notes, strings.Replace(child, "First line.", "First line, fixed.", 1), files, time.Time{})
+	rNotes, _ := Read(notes)
+	if rNotes.SHA256 == r.SHA256 || rNotes.Content != r.Content {
+		t.Errorf("notes edit: file hash changed %v (want true), content hash changed %v (want false)", rNotes.SHA256 != r.SHA256, rNotes.Content != r.Content)
+	}
+	edited := map[string][]byte{"EXTRA.TXT": []byte("x\r\n")}
+	for k, v := range files {
+		edited[k] = v
+	}
+	other := filepath.Join(t.TempDir(), "Child.dosz")
+	buildArchive(t, other, child, edited, time.Time{})
+	rOther, _ := Read(other)
+	if rOther.Content == r.Content {
+		t.Error("a file edit left the content hash alone")
+	}
+
+	// The content hash is sha256sum's output over the files, hashed.
+	zr, _ := zip.OpenReader(a)
+	var lines bytes.Buffer
+	var names []string
+	for _, e := range zr.File {
+		if e.Name != "DOSZ.TOML" {
+			names = append(names, e.Name)
+		}
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		for _, e := range zr.File {
+			if e.Name == n {
+				rc, _ := e.Open()
+				b, _ := io.ReadAll(rc)
+				rc.Close()
+				fmt.Fprintf(&lines, "%x  %s\n", sha256.Sum256(b), n)
+			}
+		}
+	}
+	zr.Close()
+	if want := fmt.Sprintf("%x", sha256.Sum256(lines.Bytes())); r.Content != want {
+		t.Errorf("content hash %s, want %s", r.Content, want)
 	}
 
 	var out bytes.Buffer
 	Print(&out, r)
-	for _, want := range []string{"Name:      Child Game", "Boot:      DOS\nStarts:    C:\\GAME.EXE", "Parent:    Base.dosz (found)", "             Shared.dosz (not found beside it)", "Programs:  3\nOS:        DOS (1)\n           Windows 3.x (1)\n           Windows 95 (or later) (1)", "  First line.\n  Second line.", "Built by doszer test on 2026-01-01"} {
+	for _, want := range []string{"Name:      Child Game", "Boot:      DOS\nStarts:    C:\\GAME.EXE", "Parent:    Base.dosz (found)", "             Shared.dosz (not found beside it)", "Programs:  3\nOS:        Windows 95", "  First line.\n  Second line.", "Built by doszer test (DOSZ manifest format 1)"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, out.String())
 		}
