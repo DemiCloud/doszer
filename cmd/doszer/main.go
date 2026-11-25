@@ -736,6 +736,16 @@ func printInstallReport(rep *install.Report, dryRun bool) {
 			fmt.Printf("Set boot.exec = '%s' in %s\n", rep.Exec, manifest.FileName)
 		}
 	}
+	if len(rep.DLLs) > 0 {
+		verb := "Copied"
+		if dryRun {
+			verb = "Would copy"
+		}
+		fmt.Printf("%s %d DLL(s) the game imports from Windows' folders beside it:\n", verb, len(rep.DLLs))
+		for _, d := range rep.DLLs {
+			fmt.Printf("  %s (from %s)\n", d.To, install.DOSPath("C:", d.From))
+		}
+	}
 	if rep.Registry != "" {
 		verb := "Wrote"
 		if dryRun {

@@ -480,6 +480,18 @@ REGEDIT /S D:\GAME\INSTALL.REG
 
 A game that reads nothing from the registry runs without it.
 
+The extracted folder is on D: in the archive wherever the game was
+installed, so with `--drive c`, paths into it in `INSTALL.REG` are moved
+from C: to D:.
+
+Installers also put runtime DLLs into Windows' own folders
+(`C:\WINDOWS\SYSTEM`), which the archive doesn't carry either. So
+`install` reads the import tables of the extracted folder's programs and
+copies each DLL the installer added to or changed in `C:\WINDOWS` or
+`C:\WINDOWS\SYSTEM` that one of them imports (and the DLLs those import)
+beside the program: Windows looks in a program's own folder first. Other
+changes to Windows, such as fonts, are listed but not carried over.
+
 `install --from <file>` skips DOSBox Pure and extracts from an existing
 save or disk image:
 

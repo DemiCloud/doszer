@@ -120,6 +120,10 @@ type Report struct {
 	// how many values; "" if it added none.
 	Registry       string
 	RegistryValues int
+
+	// OS image model: DLLs the installer put in Windows' folders that the
+	// extracted programs import, copied beside them (copyImportedDLLs).
+	DLLs []DLLCopy
 }
 
 // Run runs an install session, or reads opts.From, and extracts the
@@ -264,6 +268,11 @@ func collectOS(rep *Report, s *Session, env Env, opts Options) ([]string, error)
 			return saves, fmt.Errorf("C: changes: %w", err)
 		}
 		if err := extractD(rep, s, sf, &saves, opts); err != nil {
+			return saves, err
+		}
+		// D:'s programs are in the source now (not in a dry run, which
+		// then finds none to scan).
+		if err := copyImportedDLLs(rep, os.DirFS(opts.Source), after, rep.Other, opts); err != nil {
 			return saves, err
 		}
 		return saves, exportRegistry(rep, before, after, opts)
@@ -502,6 +511,9 @@ func extractOverlay(rep *Report, image, sav string, opts Options) error {
 	if err := extract(rep, afs, opts); err != nil {
 		return err
 	}
+	if err := copyImportedDLLs(rep, afs, afs, rep.Changes, opts); err != nil {
+		return err
+	}
 	return exportRegistry(rep, bfs, afs, opts)
 }
 
@@ -532,6 +544,9 @@ func extractImage(rep *Report, image string, opts Options) error {
 			return err
 		}
 		if err := extract(rep, afs, opts); err != nil {
+			return err
+		}
+		if err := copyImportedDLLs(rep, afs, afs, rep.Changes, opts); err != nil {
 			return err
 		}
 		return exportRegistry(rep, bfs, afs, opts)
