@@ -3,6 +3,7 @@ package build
 import (
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // matchGlob reports whether path matches pattern (§5.4): "/" separated,
@@ -35,12 +36,14 @@ func matchSegments(pat, path []string) bool {
 	return matchSegments(pat[1:], path[1:])
 }
 
-var segmentCache = map[string]*regexp.Regexp{}
+// segmentCache holds compiled segments; verify matches entries
+// concurrently, so it's a sync.Map.
+var segmentCache sync.Map // string -> *regexp.Regexp
 
 // segmentRegexp compiles one path segment's glob into a cached regexp.
 func segmentRegexp(seg string) *regexp.Regexp {
-	if re, ok := segmentCache[seg]; ok {
-		return re
+	if re, ok := segmentCache.Load(seg); ok {
+		return re.(*regexp.Regexp)
 	}
 
 	var b strings.Builder
@@ -58,7 +61,7 @@ func segmentRegexp(seg string) *regexp.Regexp {
 	b.WriteString("$")
 
 	re := regexp.MustCompile(b.String())
-	segmentCache[seg] = re
+	segmentCache.Store(seg, re)
 	return re
 }
 
