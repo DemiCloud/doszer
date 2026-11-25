@@ -417,12 +417,54 @@ Options:
 		return err
 	}
 
+	warnMissingImage(&res.Manifest.Boot, cfg.SystemDir)
 	if opts.DryRun {
 		fmt.Printf("Dry run: would write %s (%d entries)\n", res.OutputPath, len(res.Entries))
 	} else {
 		fmt.Printf("Built %s (%d entries)\n", res.OutputPath, len(res.Entries))
 	}
 	return nil
+}
+
+// warnMissingImage warns, on one line, when the shell or OS image boot
+// names isn't in the system directory here (configured, else found). It
+// never fails anything: archives may be played on another machine. With
+// no system directory here, it says nothing.
+func warnMissingImage(b *manifest.Boot, systemDir string) {
+	name, shell := b.OS, false
+	if b.Shell != "" {
+		name, shell = b.Shell, true
+	}
+	if name == "" {
+		return
+	}
+	if systemDir == "" {
+		systemDir = install.FindSystemDir()
+	}
+	if systemDir == "" {
+		return
+	}
+	what := "boot.os"
+	if shell {
+		what = "boot.shell"
+	}
+	near := ""
+	for _, f := range install.SystemFiles(systemDir) {
+		if f.Shell != shell {
+			continue
+		}
+		if f.Name == name {
+			return
+		}
+		if strings.EqualFold(f.Name, name) {
+			near = f.Name
+		}
+	}
+	if near != "" {
+		status.Printf(os.Stderr, "[WARN] %s %q is %q in %s: DOSBox Pure matches names exactly\n", what, name, near, systemDir)
+		return
+	}
+	status.Printf(os.Stderr, "[WARN] %s %q isn't in %s (fine if the archive is played elsewhere)\n", what, name, systemDir)
 }
 
 // printBuildPlan reports what a build did or would do. Trim/flatten/rewrite
@@ -1140,6 +1182,7 @@ Options:
 		return err
 	}
 
+	warnMissingImage(&res.Manifest.Boot, cfg.SystemDir)
 	if opts.DryRun {
 		fmt.Printf("Dry run: would write %s (%d entries)\n", res.OutputPath, len(res.Entries))
 	} else {
@@ -1350,6 +1393,11 @@ Options:
 	if opts.Provenance, err = provenance(); err != nil {
 		return err
 	}
+	cfg, err := config.Load("")
+	if err != nil {
+		return err
+	}
+	warned := map[string]bool{}
 
 	type result struct {
 		File    string        `json:"file" yaml:"file" toml:"file"`
@@ -1369,6 +1417,13 @@ Options:
 			o.DryRun = true
 		}
 		res, err := repack.Set(o)
+		if err == nil && res.Changed() && !show && !format.Structured() {
+			k := res.After.Shell + "\x00" + res.After.OS
+			if !warned[k] {
+				warned[k] = true
+				defer warnMissingImage(&res.After, cfg.SystemDir)
+			}
+		}
 		if format.Structured() {
 			r := result{File: p}
 			if err != nil {

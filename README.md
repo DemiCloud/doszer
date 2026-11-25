@@ -210,6 +210,12 @@ Neither `build`, `repack` nor `set` writes an empty root `.parent` file
 other than the manifest's parent marker: DOSBox Pure refuses an archive
 with two.
 
+`build`, `repack` and `set` warn, on one line, when the `boot.shell` or
+`boot.os` an archive names isn't in the system directory here (or only
+in a different case: DOSBox Pure matches names exactly). It's only a
+warning, and nothing is said without a system directory: archives may be
+built on one machine and played on another.
+
 The default output is `<name>.dosz` in the current directory. `--name`
 overrides the manifest's `name`, which defaults to the source directory name.
 An output inside the source (a build run from the source directory) is not
