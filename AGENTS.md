@@ -432,7 +432,10 @@ Raised by a real retrofit attempt (repacking a legacy archive):
   it when they change content, `collect` reads it from `os.DirEntry.Info`,
   `internal/iso9660` parses it from each Directory Record's recording
   date/time field (ECMA-119 §9.1.5), and `repack` carries forward whatever
-  was already on the input archive's own entries. `verify` checks the
+  was already on the input archive's own entries: their MS-DOS date/time
+  fields (`zipw.DOSModified`), the only timestamp DOSBox Pure reads, never
+  `zip.File.Modified`, which prefers an extended timestamp field (UTC)
+  and so shifted a Windows-made archive's dates by its maker's time zone. `verify` checks the
   epoch only on the three generated files, not on an ordinary entry, since
   it has no independent way to know what an arbitrary file's timestamp
   should be.

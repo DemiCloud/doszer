@@ -392,6 +392,62 @@ shell = "dosbox_pure/Win31"
 // through doszer build - simulating a pre-existing game archive someone
 // wants to retrofit a manifest onto, or any archive from a different
 // implementation.
+// TestRepackKeepsDOSDateOverExtendedTimestamp: an archive made on Windows
+// (or by Info-ZIP) records each entry's time twice, as local MS-DOS
+// date/time fields and as a UTC extended timestamp field. DOSBox Pure reads
+// only the DOS fields, so repack must keep those, not shift every date by
+// the time zone the archive was made in.
+func TestRepackKeepsDOSDateOverExtendedTimestamp(t *testing.T) {
+	in := buildArchive(t, plainManifest, map[string]string{"GAME.EXE": "x"})
+	madeAt := time.Date(1994, 6, 15, 10, 30, 0, 0, time.FixedZone("PST", -8*3600))
+
+	r, err := zip.OpenReader(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	for _, f := range r.File {
+		fh := f.FileHeader
+		fh.Modified = time.Time{}
+		if f.Name == "GAME.EXE" {
+			fh.Modified = madeAt // archive/zip writes local DOS fields and a UTC extra field
+		}
+		fw, err := w.CreateHeader(&fh)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.Copy(fw, rc); err != nil {
+			t.Fatal(err)
+		}
+		rc.Close()
+	}
+	r.Close()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(in, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if f := readZip(t, in)["GAME.EXE"]; f.Modified.UTC().Hour() != 18 {
+		t.Fatalf("fixture: Modified = %v, want the extra field's 18:30 UTC", f.Modified.UTC())
+	}
+
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := repack.Run(repack.Options{InputPath: in, OutputPath: out}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	f := readZip(t, out)["GAME.EXE"]
+	want := uint16(10<<11 | 30<<5)
+	if f.ModifiedTime != want { //nolint:staticcheck // the DOS field is the point
+		t.Errorf("GAME.EXE DOS time = %#x, want the input's DOS time %#x (10:30)", f.ModifiedTime, want) //nolint:staticcheck
+	}
+}
+
 func buildLegacyArchive(t *testing.T, manifestBody string, files map[string]string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "legacy.dosz")

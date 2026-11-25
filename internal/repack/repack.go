@@ -27,6 +27,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/status"
+	"github.com/DemiCloud/doszer/internal/zipw"
 )
 
 // Options configures a repack.
@@ -81,7 +82,7 @@ func Run(opts Options) (*build.Result, error) {
 		// than being decompressed here and recompressed there - repack's
 		// main cost on an archive most of whose content a given run leaves
 		// untouched.
-		entries[name] = build.Entry{Source: rawSource(f), Modified: f.Modified}
+		entries[name] = build.Entry{Source: rawSource(f), Modified: zipw.DOSModified(&f.FileHeader)}
 	}
 
 	defaultName := strings.TrimSuffix(filepath.Base(opts.InputPath), filepath.Ext(opts.InputPath))

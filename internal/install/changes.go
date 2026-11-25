@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/DemiCloud/doszer/internal/zipw"
 )
 
 // Kind is what happened to a file.
@@ -176,7 +178,7 @@ func (pz *PureZip) Changes(content fs.FS) []Change {
 		if inContent[strings.ToLower(f.Name)] {
 			k = Modified
 		}
-		out = append(out, Change{Path: f.Name, Kind: k, Size: int64(f.UncompressedSize64), Modified: f.Modified})
+		out = append(out, Change{Path: f.Name, Kind: k, Size: int64(f.UncompressedSize64), Modified: zipw.DOSModified(&f.FileHeader)})
 	}
 	for _, d := range pz.Deleted {
 		out = append(out, Change{Path: strings.ReplaceAll(d, `\`, "/"), Kind: Deleted})

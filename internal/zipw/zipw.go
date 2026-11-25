@@ -201,6 +201,21 @@ func (w *Writer) Close() error {
 	return w.zw.Close()
 }
 
+// DOSModified returns h's MS-DOS date and time fields as a UTC time, the
+// inverse of what Add writes. They are the timestamp DOS sees, and the
+// only one DOSBox Pure reads (src/dos/drive_zip.cpp). h.Modified prefers
+// an extended timestamp field when the entry has one (NTFS or Unix times,
+// in UTC, as Windows' and Info-ZIP's tools write), which differs from the
+// DOS fields, local time where the ZIP was made, by that time zone. A zero
+// date reads as the DOS epoch.
+func DOSModified(h *zip.FileHeader) time.Time {
+	d, t := h.ModifiedDate, h.ModifiedTime //nolint:staticcheck // the raw DOS fields are the point
+	if d == 0 {
+		return dosEpoch
+	}
+	return time.Date(int(d>>9)+1980, time.Month(d>>5&0xF), int(d&0x1F), int(t>>11), int(t>>5&0x3F), int(t&0x1F)*2, 0, time.UTC)
+}
+
 // toDOSTime converts t to MS-DOS date/time encoding (2-second resolution,
 // years 1980-2107), clamping t to that range first if needed.
 func toDOSTime(t time.Time) (date, timeField uint16) {

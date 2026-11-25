@@ -294,7 +294,7 @@ func load(p string) (tree, func(), error) {
 		if name == "" || strings.HasPrefix(name, "/") || strings.Contains("/"+name+"/", "/../") {
 			continue
 		}
-		e := &entry{name: name, dir: f.FileInfo().IsDir(), modified: dosModified(&f.FileHeader)}
+		e := &entry{name: name, dir: f.FileInfo().IsDir(), modified: zipw.DOSModified(&f.FileHeader)}
 		if !e.dir {
 			e.open = f.Open
 		}
@@ -311,16 +311,6 @@ func load(p string) (tree, func(), error) {
 		}
 	}
 	return t, func() { zr.Close() }, nil
-}
-
-// dosModified returns the entry's MS-DOS date and time fields, the
-// timestamp DOSBox Pure shows (src/dos/drive_zip.cpp reads only those), as
-// a UTC time zipw writes back unchanged. f.Modified prefers an extra field
-// (e.g. NTFS times, in UTC) when one is present, which differs from the DOS
-// fields by the time zone of whoever made the ZIP.
-func dosModified(f *zip.FileHeader) time.Time {
-	d, tm := f.ModifiedDate, f.ModifiedTime //nolint:staticcheck // the DOS fields are the point
-	return time.Date(int(d>>9)+1980, time.Month(d>>5&0xF), int(d&0x1F), int(tm>>11), int(tm>>5&0x3F), int(tm&0x1F)*2, 0, time.UTC)
 }
 
 // overlay lays dir's files over t.

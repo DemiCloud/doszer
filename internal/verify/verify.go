@@ -18,6 +18,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/status"
+	"github.com/DemiCloud/doszer/internal/zipw"
 )
 
 // Verify checks archivePath and returns every way it fails to conform, or
@@ -53,7 +54,7 @@ func Check(archivePath string) (warnings []string, err error) {
 		errs = append(errs, fmt.Errorf("missing %s (§8.3)", manifest.FileName))
 		return nil, errors.Join(errs...)
 	}
-	if !isEpoch(mf.Modified) {
+	if !isEpoch(zipw.DOSModified(&mf.FileHeader)) {
 		errs = append(errs, fmt.Errorf("%s: a generated file must use the fixed epoch (§8.2)", mf.Name))
 	}
 
@@ -126,7 +127,7 @@ func checkDeterministic(files []*zip.File) []error {
 	}
 	dates := build.MediaDates(files)
 	for _, name := range sortedKeys(dates) {
-		if want := dosTime(dates[name]); !byName[name].Modified.UTC().Equal(want) {
+		if want := dosTime(dates[name]); !zipw.DOSModified(&byName[name].FileHeader).Equal(want) {
 			errs = append(errs, fmt.Errorf("%s: a disc image file must use the disc's date, %s (§8.2)", name, want.Format("2006-01-02 15:04:05")))
 		}
 	}
@@ -194,7 +195,7 @@ func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.
 		if !ok {
 			errs = append(errs, fmt.Errorf("missing AUTOBOOT.DBP (§6.8)"))
 		} else {
-			if !isEpoch(f.Modified) {
+			if !isEpoch(zipw.DOSModified(&f.FileHeader)) {
 				errs = append(errs, fmt.Errorf("%s: a generated file must use the fixed epoch (§8.2)", f.Name))
 			}
 			if content, err := readZipFile(f); err == nil {
@@ -224,7 +225,7 @@ func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.
 			errs = append(errs, fmt.Errorf("missing %s (§6.8)", name))
 		case f.UncompressedSize64 != 0:
 			errs = append(errs, fmt.Errorf("%s: must be zero bytes (§6.8)", f.Name))
-		case !isEpoch(f.Modified):
+		case !isEpoch(zipw.DOSModified(&f.FileHeader)):
 			errs = append(errs, fmt.Errorf("%s: a generated file must use the fixed epoch (§8.2)", f.Name))
 		}
 	}
@@ -297,7 +298,7 @@ func checkGenerated(byName map[string]*zip.File, name string, want func(got []by
 		return []error{fmt.Errorf("missing %s (§6.8)", name)}
 	}
 	var errs []error
-	if !isEpoch(f.Modified) {
+	if !isEpoch(zipw.DOSModified(&f.FileHeader)) {
 		errs = append(errs, fmt.Errorf("%s: a generated file must use the fixed epoch (§8.2)", f.Name))
 	}
 	content, err := readZipFile(f)
