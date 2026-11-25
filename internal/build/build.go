@@ -31,6 +31,11 @@ type Options struct {
 
 	// Provenance, if set, is recorded in the archive comment (§8.4).
 	Provenance *Provenance
+
+	// BeforeRename, if set, is called once the archive is written and
+	// before it is renamed into place: Repack's caller closes its input
+	// archive there, which Windows can't replace while it is open.
+	BeforeRename func()
 }
 
 // Provenance is the build information an archive comment records.
@@ -294,6 +299,9 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, pathWarnings, 
 	}
 	if err := out.Close(); err != nil {
 		return res, err
+	}
+	if opts.BeforeRename != nil {
+		opts.BeforeRename()
 	}
 	if err := os.Rename(partial, outputPath); err != nil {
 		return res, err

@@ -22,6 +22,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/manifest"
@@ -49,7 +50,12 @@ func Run(opts Options) (*build.Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", opts.InputPath, err)
 	}
-	defer r.Close()
+	// Closed before the output is renamed into place too (BeforeRename):
+	// on Windows an open file can't be replaced, and the output may be
+	// the input itself.
+	var closeOnce sync.Once
+	closeInput := func() { closeOnce.Do(func() { r.Close() }) }
+	defer closeInput()
 
 	var mf *zip.File
 	entries := make(map[string]build.Entry, len(r.File))
@@ -117,11 +123,12 @@ func Run(opts Options) (*build.Result, error) {
 	}
 
 	return build.Repack(entries, m, build.Options{
-		OutputPath: opts.OutputPath,
-		DryRun:     opts.DryRun,
-		Strict:     opts.Strict,
-		OggQuality: opts.OggQuality,
-		Provenance: opts.Provenance,
+		OutputPath:   opts.OutputPath,
+		DryRun:       opts.DryRun,
+		Strict:       opts.Strict,
+		OggQuality:   opts.OggQuality,
+		Provenance:   opts.Provenance,
+		BeforeRename: closeInput,
 	})
 }
 
