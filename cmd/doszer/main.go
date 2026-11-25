@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -263,11 +264,15 @@ func runInit(args []string) error {
 	fs.StringVar(&o.OS, "os", "", "")
 	fs.StringVar(&o.Shell, "shell", "", "")
 	systemDir := fs.String("system-dir", "", "")
+	boot := fs.String("boot", "", "")
+	fs.StringVar(&o.Audio, "audio", "", "")
 	const help = `doszer init - write a commented DOSZ.TOML into a source directory
 
 Usage: doszer init [options] SOURCE
 
 Options:
+      --audio FMT         CD audio encoding: ogg or wav (keeps every track verifiable)
+      --boot MODEL        boot model: dos, shell or os (default: from the programs)
       --exec PATH         plain model: DOS program to run at startup
   -f, --force             overwrite an existing manifest
       --name NAME         canonical name (default: source directory name)
@@ -326,16 +331,37 @@ Options:
 			}
 		}
 		o.Media = media
+		audio := 0
+		for _, m := range media {
+			for _, t := range m.Tracks {
+				if t.Type == "audio" {
+					audio++
+				}
+			}
+		}
+		if audio > 0 && o.Audio != "wav" {
+			fmt.Printf("%s will be Ogg Vorbis, lossy: verify can't check their hashes (--audio wav keeps them checkable)\n", plural(audio, "audio track"))
+		}
 	}
 
+	if o.Audio != "" && o.Audio != "ogg" && o.Audio != "wav" {
+		return fmt.Errorf("--audio %q: want ogg or wav", o.Audio)
+	}
+	switch *boot {
+	case "", "dos", "shell", "os":
+	default:
+		return fmt.Errorf("--boot %q: want dos, shell or os", *boot)
+	}
 	if o.Exec == "" && o.Shell == "" && o.OS == "" {
 		cfg, err := config.Load(source)
 		if err != nil {
 			return err
 		}
-		if err := chooseBoot(&o, source, stringOr(*systemDir, cfg.SystemDir), cfg); err != nil {
+		if err := chooseBoot(&o, source, stringOr(*systemDir, cfg.SystemDir), *boot, cfg); err != nil {
 			return err
 		}
+	} else if *boot != "" {
+		return errors.New("--boot chooses a model when --exec, --shell and --os don't")
 	}
 
 	content := manifest.Template(o)
@@ -1502,11 +1528,14 @@ func describeBoot(b manifest.Boot) string {
 }
 
 // chooseBoot sets init's boot model from what the source's programs need
-// (platform.Needs): nothing for DOS, or for a game with a DOS version, a
-// shell for Windows 3.x, an OS image for Windows 9x. The shell or image is default_shell or
+// (platform.Needs), or the model boot forces ("dos", "shell", "os"): DOS
+// for a DOS game or one with a DOS version, a shell for Windows 3.x, an
+// OS image for Windows 9x. The shell or image is default_shell or
 // default_os if configured, else the first well-known name found in the
-// system directory. It prints one line saying what it chose and why.
-func chooseBoot(o *manifest.TemplateOptions, source, systemDir string, cfg config.Config) error {
+// system directory here, which init says, since the archive may be played
+// elsewhere. A DOS game with exactly one program to start gets exec. It
+// prints one line saying what it chose and why.
+func chooseBoot(o *manifest.TemplateOptions, source, systemDir, boot string, cfg config.Config) error {
 	status.Step("Looking at the programs")
 	progs, err := platform.Scan(source)
 	endSteps(err)
@@ -1519,48 +1548,106 @@ func chooseBoot(o *manifest.TemplateOptions, source, systemDir string, cfg confi
 		systemDir = install.FindSystemDir()
 	}
 	why := fmt.Sprintf("The game needs %s (%d programs found)", need, len(progs))
-	if need.Setup.Platform != platform.NotProgram {
+	switch {
+	case boot != "":
+		why = fmt.Sprintf("--boot %s (the game needs %s)", boot, need)
+	case game.Platform == platform.NotProgram:
+		why = "No programs found"
+	case need.Setup.Platform != platform.NotProgram:
 		why += fmt.Sprintf(" (setup: %s)", need.Setup)
 	}
-	if need.DOS {
-		key := "--shell"
-		if game.Platform == platform.Win32 {
-			key = "--os"
-		}
-		fmt.Printf("%s: plain DOS model (%s for the Windows version)\n", why, key)
-		return nil
-	}
+	win98 := platform.Target{Platform: platform.Win32, Major: 4, Minor: 10}
 	pick := func(key, configured string, shell bool, names []string) (string, string) {
 		if configured != "" {
-			return configured, key + " = " + configured + " (configured)"
+			return configured, key + " = " + configured + " (default_" + key + ")"
 		}
 		if p := install.FindSystemFile(systemDir, shell, names); p != "" {
-			return p, key + " = " + p + " (found in the system directory)"
+			return p, key + " = " + p + " (found here; default_" + key + " picks one everywhere)"
 		}
-		return "", "no " + key + " found: set --" + key + " or default_" + key
+		msg := "no " + key + " found here: set boot." + key + " in the manifest, --" + key + " or default_" + key
+		if !shell && game.Platform == platform.Win32 && !game.Less(win98) {
+			if p := install.FindSystemFile(systemDir, false, install.Win95Names); p != "" {
+				msg += " (" + p + " is Windows 95, too old)"
+			}
+		}
+		return "", msg
 	}
-	switch game.Platform {
-	case platform.NotProgram:
-		fmt.Println("No programs found: plain DOS model")
-	case platform.DOS:
-		fmt.Printf("%s: plain DOS model\n", why)
-	case platform.Win16:
-		var msg string
+	model := boot
+	if model == "" {
+		switch {
+		case need.DOS, game.Platform == platform.DOS, game.Platform == platform.NotProgram:
+			model = "dos"
+		case game.Platform == platform.Win16:
+			model = "shell"
+		case game.Platform == platform.Win32:
+			model = "os"
+		case game.Platform == platform.OS2:
+			fmt.Printf("%s: no boot model for OS/2\n", why)
+			return nil
+		}
+	}
+	var msg string
+	switch model {
+	case "dos":
+		msg = "plain DOS model"
+		if need.DOS && boot == "" {
+			key := "--shell"
+			if game.Platform == platform.Win32 {
+				key = "--os"
+			}
+			msg += " (" + key + " for the Windows version)"
+		}
+		starters := platform.Starters(progs)
+		start := ""
+		switch {
+		case len(starters) == 1:
+			start = starters[0].Path
+		case len(starters) > 1:
+			if p := platform.Likely(starters, o.Name); p != nil {
+				start = p.Path
+			}
+		}
+		via := ""
+		if start != "" {
+			if bat := platform.Launcher(source, start); bat != "" {
+				start, via = bat, path.Base(start)
+			}
+		}
+		if p, ok := platform.DOSPath(start); ok && start != "" {
+			o.Exec = p
+			msg += ", exec = " + p
+			var notes []string
+			if via != "" {
+				notes = append(notes, "runs "+strings.ToUpper(via))
+			}
+			if len(starters) > 1 {
+				notes = append(notes, fmt.Sprintf("named like the game, of %d programs", len(starters)))
+			}
+			if len(notes) > 0 {
+				msg += " (" + strings.Join(notes, "; ") + ")"
+			}
+			break
+		}
+		switch {
+		case len(starters) > 1 && len(starters) <= 5:
+			var names []string
+			for _, p := range starters {
+				names = append(names, p.Path)
+			}
+			msg += "; " + strings.Join(names, ", ") + " could start it (--exec)"
+		}
+	case "shell":
 		o.Shell, msg = pick("shell", cfg.DefaultShell, true, install.ShellNames)
-		fmt.Printf("%s: %s\n", why, msg)
-	case platform.Win32:
+	case "os":
 		names := install.Win95Names
-		if win98 := (platform.Target{Platform: platform.Win32, Major: 4, Minor: 10}); !game.Less(win98) {
+		if game.Platform == platform.Win32 && !game.Less(win98) {
 			names = install.Win98Names // a Windows 95 image won't do
 		}
-		var msg string
 		o.OS, msg = pick("os", cfg.DefaultOS, false, names)
-		fmt.Printf("%s: %s\n", why, msg)
-		if winME := (platform.Target{Platform: platform.Win32, Major: 4, Minor: 90}); winME.Less(game) {
-			fmt.Fprintf(os.Stderr, "[WARN] %s programs may not run under Windows 9x\n", game)
-		}
-	case platform.OS2:
-		fmt.Printf("%s: no boot model for OS/2\n", why)
+	}
+	fmt.Printf("%s: %s\n", why, msg)
+	if winME := (platform.Target{Platform: platform.Win32, Major: 4, Minor: 90}); model == "os" && game.Platform == platform.Win32 && winME.Less(game) {
+		fmt.Fprintf(os.Stderr, "[WARN] %s programs may not run under Windows 9x\n", game)
 	}
 	return nil
 }

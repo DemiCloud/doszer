@@ -45,7 +45,7 @@ make help    # every target
 ```
 doszer dump    DIR [--drive DRIVE] [--dat FILE]
 doszer redump  [SHA1|FILE...] [--update] [--dat FILE]
-doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH] [--name NAME] [--no-media] [--system-dir DIR] [-f]
+doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH | --boot MODEL] [--audio FMT] [--name NAME] [--no-media] [--system-dir DIR] [-f]
 doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [-n] [--strict] [--ogg-quality N]
 doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FILE]] [-f] [-n] [--keep]
                [--os PATH] [--drive c|d] [--system-dir DIR] [--save-dir DIR]
@@ -149,8 +149,24 @@ found in the system directory (any folder, as DOSBox Pure finds them):
 `Windows 3.1`, `Windows 3.11`, `Win31`, `Win311`, `WFW311` for a shell;
 `Windows 98 (games)`, `Windows 98`, `Win98`, `Windows 98 SE`, `Win98SE`,
 then (if the programs don't need Windows 98) `Windows 95 (games)`,
-`Windows 95`, `Win95` for an image. It prints one line saying what it
-chose and why.
+`Windows 95`, `Win95` for an image. A configured name is used as it is,
+whether or not this machine has it; a found one is said to be found
+here, since the archive may be played elsewhere. `--boot dos`, `shell`
+or `os` sets the model instead of the programs, still picking the shell
+or image as above. It prints one line saying what it chose and why.
+
+For the plain model, `init` also sets `exec` when one program stands out:
+the only DOS program installed in the source once helpers (also DOS
+extenders, sound setup, VESA tools, archivers) are set aside, or of
+several, the only one named like its folder or the game
+(`DESCENT2/DESCENT2.EXE`). If the game's own batch file runs it (the
+shallowest batch file naming it, e.g. one passing it arguments, as
+Sierra's `sierra -o resource.cfg` does), `exec` is the batch file. Every
+part of the path must be an 8.3 name.
+
+`--audio wav` writes `[pack] audio = "wav"`: larger than Ogg Vorbis, but
+every track's hash stays verifiable. For a disc with audio tracks, `init`
+says so on one line.
 
 `init` also hashes every disc image (CUE sheet) in the source into
 `[[source.media]]` entries (spec §7.2), labelled with the CUE sheet's name;

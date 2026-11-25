@@ -21,10 +21,11 @@ type Program struct {
 
 // helperName matches programs that set a game up or come with it rather
 // than run it: installers, uninstallers, AutoRun menus, README viewers,
-// registration cards, DirectX setup, Acrobat Reader. A DOS game often
+// registration cards, DirectX setup, Acrobat Reader, DOS extenders a game
+// loads itself (DOS/4GW, PMODE/W), sound setup, archivers. A DOS game often
 // ships a Windows setup program or the reverse, and they say nothing
 // about what the game itself needs.
-var helperName = regexp.MustCompile(`(?i)^(setup|install|instal|inst|_inst|_isdel|uninst|unins\d*|uninstal|isuninst|autorun|setupw|setup32|winsetup|dxsetup\w*|directx|dsetup|ddhelp|readme|e?regcard|regist\w*|register|ar(16|32)e\d+|acrord\w*|checknt|winarj)\.(exe|com)$`)
+var helperName = regexp.MustCompile(`(?i)^(setup|install|instal|inst|_inst|_isdel|uninst|unins\d*|uninstal|isuninst|autorun|setupw|setup32|winsetup|dxsetup\w*|directx|dsetup|ddhelp|readme|e?regcard|regist\w*|register|ar(16|32)e\d+|acrord\w*|checknt|winarj|dos4gw|dos32a|pmodew|cwsdpmi|rtm|rtmres|dpmi16bi|sndsetup|setsound|setsnd|soundset|setblast|mssetup|pkunzip|pkzip|lha|arj|unzip|vesatest|univbe|uvconfig|vbetest)\.(exe|com)$`)
 
 // helperDir matches directories that hold only such helpers.
 var helperDir = regexp.MustCompile(`(?i)^(directx|dx\d*|acrobat|acroread|redist)$`)
@@ -106,6 +107,106 @@ func Needs(progs []Program) Need {
 		n.Setup = Target{}
 	}
 	return n
+}
+
+// Starters returns the programs a plain DOS game could start with: DOS
+// programs installed in the source (not only on a disc), helpers aside.
+func Starters(progs []Program) []Program {
+	var out []Program
+	for _, p := range progs {
+		if p.Target.Platform == DOS && !strings.Contains(p.Path, ":") && !IsHelper(p.Path) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// Likely returns the one starter named after its folder or after the game
+// (name, compared by letters and digits only), e.g. DESCENT2/DESCENT2.EXE,
+// or nil if there isn't exactly one.
+func Likely(starters []Program, name string) *Program {
+	norm := func(s string) string {
+		var b strings.Builder
+		for _, r := range strings.ToLower(s) {
+			if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+				b.WriteRune(r)
+			}
+		}
+		return b.String()
+	}
+	var hit *Program
+	for i, p := range starters {
+		base := norm(strings.TrimSuffix(path.Base(p.Path), path.Ext(p.Path)))
+		dir := path.Base(path.Dir(p.Path))
+		if base != "" && (base == norm(dir) || base == norm(name)) {
+			if hit != nil {
+				return nil
+			}
+			hit = &starters[i]
+		}
+	}
+	return hit
+}
+
+// Launcher returns the batch file in dir, the source, that starts the
+// program at rel: of the batch files whose text runs it by name (a game's
+// own, often passing it arguments, e.g. Sierra's "sierra -o
+// resource.cfg"), the shallowest, if only one is that shallow. "" if
+// there's none.
+func Launcher(dir, rel string) string {
+	base := strings.TrimSuffix(path.Base(rel), path.Ext(rel))
+	runs := regexp.MustCompile(`(?im)^[^\r\n]*?(^|[\s\\/:@])` + regexp.QuoteMeta(base) + `(\.(exe|com))?(\s|$)`)
+	best, depth, tie := "", 1<<30, false
+	filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.EqualFold(filepath.Ext(p), ".bat") {
+			return nil
+		}
+		r, _ := filepath.Rel(dir, p)
+		r = filepath.ToSlash(r)
+		if IsHelper(strings.TrimSuffix(r, path.Ext(r)) + ".exe") {
+			return nil
+		}
+		fi, err := d.Info()
+		if err != nil || fi.Size() > 64<<10 {
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil || !runs.Match(data) {
+			return nil
+		}
+		n := strings.Count(r, "/")
+		switch {
+		case n < depth:
+			best, depth, tie = r, n, false
+		case n == depth:
+			tie = true
+		}
+		return nil
+	})
+	if tie {
+		return ""
+	}
+	return best
+}
+
+// DOSPath returns rel, a slash-separated path in the source, as the path
+// DOS sees on C:, if every part of it is a valid 8.3 name: a longer name
+// would only be reachable by the short name DOSBox Pure makes up for it.
+func DOSPath(rel string) (string, bool) {
+	parts := strings.Split(rel, "/")
+	for i, p := range parts {
+		base, ext, _ := strings.Cut(p, ".")
+		if base == "" || len(base) > 8 || len(ext) > 3 || strings.Contains(ext, ".") {
+			return "", false
+		}
+		for _, r := range base + ext {
+			if r >= 0x80 || r <= ' ' || strings.ContainsRune(`"*+,/:;<=>?[\]|`, r) {
+				return "", false
+			}
+		}
+		parts[i] = strings.ToUpper(p)
+	}
+	return `C:\` + strings.Join(parts, `\`), true
 }
 
 // Scan finds the programs in a source directory: its files, and the files

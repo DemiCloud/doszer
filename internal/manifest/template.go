@@ -11,6 +11,7 @@ type TemplateOptions struct {
 	Exec  string
 	Shell string
 	OS    string
+	Audio string // [pack] audio, "" to leave it commented out
 	Media []Media // [[source.media]] entries to write, from build.IdentifyMedia;
 	// a single disc is labelled with Name rather than its file name
 }
@@ -76,9 +77,11 @@ func Template(o TemplateOptions) string {
 # compressing it only costs time on first launch, not every launch.
 # store = ["bin"]
 
-# CD audio encoding: "ogg" (default) or "wav".
-# audio = "ogg"
-
+# CD audio encoding: "ogg" (default) or "wav". WAV is larger, but keeps
+# every track's hash verifiable (Ogg Vorbis is lossy).
+`)
+	b.WriteString(line("audio", o.Audio, `"ogg"`))
+	b.WriteString(`
 # Gamepad mapping, one [[input.pad]] per controller port (spec §5.9).
 # RetroPad layout: b/a/y/x are the bottom/right/left/top face buttons.
 # Value: up to 4 actions joined by +, then an optional label.
