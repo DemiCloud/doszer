@@ -217,6 +217,17 @@ func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.
 		errs = append(errs, checkGenerated(byName, "DOS.YML", func(got []byte) []byte { return build.BuildDOSYML(m, got) })...)
 	}
 
+	// §6.8: no parent marker but the manifest's; DOSBox Pure refuses an
+	// archive with two (src/dos/drive_zip.cpp, "DOSZ file has multiple
+	// parents").
+	for _, name := range names {
+		f := byName[name]
+		if !strings.Contains(name, "/") && strings.HasSuffix(strings.ToLower(name), ".parent") &&
+			f.UncompressedSize64 == 0 && !strings.EqualFold(name, m.Boot.Parent+".parent") {
+			errs = append(errs, fmt.Errorf("%s: a parent marker the manifest doesn't name (§6.8)", name))
+		}
+	}
+
 	if m.Boot.Parent != "" {
 		name := m.Boot.Parent + ".parent"
 		f, ok := findFold(byName, name)

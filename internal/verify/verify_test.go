@@ -730,3 +730,42 @@ func testWrongDiscDate(t *testing.T, cueFile string) {
 		t.Fatalf("Verify = %v, want a disc date error", err)
 	}
 }
+
+// TestStrayParentMarker: build leaves out an empty root .parent file the
+// manifest doesn't name, and verify rejects an archive that has one, since
+// DOSBox Pure refuses an archive with two parent markers (§6.8).
+func TestStrayParentMarker(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "DOSZ.TOML", `
+format = 1
+name   = "Child Game"
+
+[boot]
+exec   = 'C:\GAME.EXE'
+parent = "Shared.shell"
+`)
+	writeFile(t, dir, "GAME.EXE", "binary")
+	writeFile(t, dir, "Old.dosz.parent", "")
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := build.Run(build.Options{SourceDir: dir, OutputPath: out}); err != nil {
+		t.Fatalf("build.Run: %v", err)
+	}
+	if err := verify.Verify(out); err != nil {
+		t.Fatalf("build kept the stray marker: %v", err)
+	}
+
+	rewriteZip(t, out, func(w *zip.Writer, f *zip.File) error {
+		if f.Name == "Shared.shell.parent" {
+			fh := f.FileHeader
+			fh.Name = "Old.dosz.parent"
+			if _, err := w.CreateHeader(&fh); err != nil {
+				return err
+			}
+		}
+		return copyEntry(w, f)
+	})
+	err := verify.Verify(out)
+	if err == nil || !contains(err.Error(), "Old.dosz.parent: a parent marker the manifest doesn't name") {
+		t.Fatalf("Verify() = %v, want a stray-marker error", err)
+	}
+}

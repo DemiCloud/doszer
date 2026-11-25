@@ -83,6 +83,15 @@ func addRuntimeFiles(fs *fileSet, m *manifest.Manifest, effectiveName string) er
 		fs.set("AUTOBOOT.DBP", dataEntry(BuildAutoboot(&m.Boot), Epoch))
 	}
 
+	// §6.8: no parent marker but the manifest's. DOSBox Pure refuses an
+	// archive with two (src/dos/drive_zip.cpp, zipDriveImpl and Open:
+	// "DOSZ file has multiple parents"), so one left over from an earlier
+	// parent would make the archive unplayable.
+	for _, p := range fs.paths() {
+		if isParentMarker(p, fs) {
+			fs.delete(p)
+		}
+	}
 	if m.Boot.Parent != "" {
 		fs.set(m.Boot.Parent+".parent", dataEntry([]byte{}, Epoch))
 	}
@@ -110,4 +119,19 @@ func addRuntimeFiles(fs *fileSet, m *manifest.Manifest, effectiveName string) er
 	fs.set(manifest.FileName, dataEntry(data, Epoch))
 
 	return nil
+}
+
+// isParentMarker reports whether p is an empty file at the archive root
+// whose name ends in ".parent" (case-insensitively): what DOSBox Pure reads
+// as a parent marker (§6.8).
+func isParentMarker(p string, fs *fileSet) bool {
+	if strings.Contains(p, "/") || !strings.HasSuffix(strings.ToLower(p), ".parent") {
+		return false
+	}
+	e, ok := fs.get(p)
+	if !ok {
+		return false
+	}
+	n, err := e.size()
+	return err == nil && n == 0
 }

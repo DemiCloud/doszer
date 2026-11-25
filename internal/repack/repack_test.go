@@ -876,3 +876,60 @@ func TestRepackNormalizesLegacyEntryNames(t *testing.T) {
 		})
 	}
 }
+
+// TestRepackParent: --parent replaces the parent marker (and the
+// manifest's boot.parent), or removes it, and never leaves the old marker
+// behind: DOSBox Pure refuses an archive with two (§6.8).
+func TestRepackParent(t *testing.T) {
+	in := buildArchive(t, plainManifest+"parent = 'Base Game.dosz'\n", map[string]string{"GAME.EXE": "x", "NOTES.parent": "not empty: ordinary content"})
+	markers := func(p string) []string {
+		var out []string
+		for name, f := range readZip(t, p) {
+			if !strings.Contains(name, "/") && strings.HasSuffix(strings.ToLower(name), ".parent") && f.UncompressedSize64 == 0 {
+				out = append(out, name)
+			}
+		}
+		sort.Strings(out)
+		return out
+	}
+	if got := markers(in); len(got) != 1 || got[0] != "Base Game.dosz.parent" {
+		t.Fatalf("fixture markers %q", got)
+	}
+
+	tests := []struct {
+		parent      string
+		wantMarkers []string
+	}{
+		{"Base Game (v2).dosz", []string{"Base Game (v2).dosz.parent"}},
+		{"", nil},
+	}
+	for _, tt := range tests {
+		out := filepath.Join(t.TempDir(), "out.dosz")
+		p := tt.parent
+		if _, err := repack.Run(repack.Options{InputPath: in, OutputPath: out, Parent: &p}); err != nil {
+			t.Fatalf("parent %q: %v", tt.parent, err)
+		}
+		if got := markers(out); strings.Join(got, "|") != strings.Join(tt.wantMarkers, "|") {
+			t.Errorf("parent %q: markers %q, want %q", tt.parent, got, tt.wantMarkers)
+		}
+		entries := readZip(t, out)
+		if _, ok := entries["NOTES.parent"]; !ok {
+			t.Errorf("parent %q: a non-empty .parent file was removed", tt.parent)
+		}
+		m, err := manifest.Parse([]byte(readZipFile(t, entries[manifest.FileName])), "x")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m.Boot.Parent != tt.parent {
+			t.Errorf("parent %q: embedded boot.parent = %q", tt.parent, m.Boot.Parent)
+		}
+		if _, err := verify.Check(out); err != nil {
+			t.Errorf("parent %q: verify: %v", tt.parent, err)
+		}
+	}
+
+	bad := "dir/Base.dosz"
+	if _, err := repack.Run(repack.Options{InputPath: in, OutputPath: filepath.Join(t.TempDir(), "x.dosz"), Parent: &bad}); err == nil || !strings.Contains(err.Error(), "bare file name") {
+		t.Errorf("parent %q: err = %v", bad, err)
+	}
+}

@@ -458,6 +458,15 @@ func CheckPath(p string) error {
 	return nil
 }
 
+// Validate checks m against §11's manifest rules, as Parse does: for a
+// manifest changed after parsing.
+func (m *Manifest) Validate() error {
+	if errs := m.validate(); len(errs) > 0 {
+		return joinErrors(errs)
+	}
+	return nil
+}
+
 func joinErrors(errs []error) error {
 	wrapped := make([]error, len(errs))
 	for i, e := range errs {

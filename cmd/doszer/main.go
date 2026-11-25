@@ -900,6 +900,7 @@ func runRepack(args []string) error {
 	fs := newFlags("repack")
 	dryRun := fs.BoolP("dry-run", "n", false, "")
 	manifestPath := fs.String("manifest", "", "")
+	parent := fs.String("parent", "", "")
 	oggQuality := fs.Int("ogg-quality", 0, "")
 	strict := fs.Bool("strict", false, "")
 	const help = `doszer repack - rebuild an archive from its embedded manifest
@@ -909,6 +910,7 @@ Usage: doszer repack [options] INPUT.dosz [OUTPUT.dosz]
 Options:
   -n, --dry-run           print the rebuild plan without writing an archive
       --manifest FILE     use this manifest instead of the archive's embedded one
+      --parent FILE       set the parent archive, '' for none
 ` + flagOggQuality + flagStrict + flagHelp
 	if ok, err := parse(fs, args, help, 1, 2); !ok {
 		return err
@@ -927,6 +929,9 @@ Options:
 	}
 	if fs.NArg() == 2 {
 		opts.OutputPath = fs.Arg(1)
+	}
+	if fs.Changed("parent") {
+		opts.Parent = parent
 	}
 	if opts.Provenance, err = provenance(); err != nil {
 		return err

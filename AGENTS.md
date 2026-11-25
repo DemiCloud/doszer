@@ -184,7 +184,7 @@ pointer to it).
 | `AUTOBOOT.DBP` line 3 | Disc image label to mount at startup; works without a startup mode | `ReadAutoBoot` |
 | `O*`/`S*` paths | Relative to the system directory, extension omitted, exact case-sensitive match | `ReadAutoBoot` |
 | OS image and shell discovery | Recursive scan of the system directory; `DOSBoxPureMidiCache.txt` caches the list | `dosbox_pure_libretro.cpp` |
-| Parent marker | Zero-byte root entry `<name>.parent`; parent resolved in the archive's directory; chains allowed | `src/dos/drive_zip.cpp` |
+| Parent marker | Zero-byte root entry `<name>.parent`; parent resolved in the archive's directory; chains allowed. Two or more markers: the archive is refused ("DOSZ file has multiple parents"); a non-empty `.parent` file is ordinary content | `src/dos/drive_zip.cpp`, `zipDriveImpl`, `Open` |
 | `DOSBOX.BAT` | Run instead of the start menu; bypasses `AUTOBOOT.DBP` | `dosbox_pure_libretro.cpp` |
 | Shell startup | `WINDOWS.BAT`, then `AUTOEXEC.BAT`, then `WINDOWS\WIN.COM` (the first that exists, only it: a `WINDOWS.BAT` sets `PATH` itself). When it ends, `PUREMENU -FINISH` closes the core under `menu_time` `0` with an `AUTOBOOT.DBP` startup mode | `dosbox_pure_run.h`, `RunShell`, `BatchFileExec`; `dosbox_pure_osd.h`, `Menu::Run` |
 | OS image model | Archive content is a synthesized FAT disk (D:); CD images appear as E: | `src/ints/bios_disk.cpp`, `fatFromDOSDrive` |

@@ -310,7 +310,12 @@ The following files are generated at the archive root:
 | `DOSZ.TOML` | Always | The manifest (§8.3) |
 
 A generated file replaces any file of the same name in the build, except
-`DOS.YML` (§6.8.3).
+`DOS.YML` (§6.8.3). No other empty file at the archive root whose name ends
+in `.parent` (compared case-insensitively) MAY be included.
+
+> DOSBox Pure reads every empty root `.parent` file as a parent marker, and
+> refuses to open an archive that has more than one. A marker left over from
+> an earlier `parent` would name a parent the manifest does not.
 
 > DOSBox Pure applies `PADMAP.DBP` as the controller mapping, ahead of any
 > other. The mapping in `DOS.YML` supplies the labels shown for bindings

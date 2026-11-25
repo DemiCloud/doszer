@@ -51,7 +51,7 @@ doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FIL
                [--os PATH] [--drive c|d] [--system-dir DIR] [--save-dir DIR]
 doszer run     FILE.dosz [--option KEY=VALUE...] [--system-dir DIR] [--save-dir DIR]
 doszer FILE.dosz
-doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
+doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [--parent FILE] [-n] [--strict] [--ogg-quality N]
 doszer verify  FILE.dosz
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
@@ -109,6 +109,13 @@ a legacy archive's entry names as paths: `GAME\X.TXT` (written by some
 Windows tools), `./GAME/X.TXT` and `/GAME/X.TXT` become `GAME/X.TXT`,
 and an entry outside the archive (`../X.TXT`) or two entries naming the
 same path are an error.
+
+`repack --parent FILE` changes the archive's parent (`boot.parent`, e.g.
+after renaming the parent archive), and `--parent ''` removes it. Only
+the embedded manifest and the parent marker change; every other entry is
+copied through. Neither `build` nor `repack` writes an empty root
+`.parent` file other than the manifest's parent marker: DOSBox Pure
+refuses an archive with two.
 
 The default output is `<name>.dosz` in the current directory. `--name`
 overrides the manifest's `name`, which defaults to the source directory name.
