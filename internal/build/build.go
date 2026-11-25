@@ -205,26 +205,12 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, pathWarnings, 
 	// next to the output, which needs room for them anyway, rather than to a
 	// possibly RAM-backed /tmp; the directory lives until the archive is
 	// renamed into place.
-	var tmp string
-	unregister := func() {}
+	tmpDir, cleanup := tempDirFor(outputPath)
 	defer func() {
-		if tmp != "" {
-			if rmErr := os.RemoveAll(tmp); err == nil {
-				err = rmErr
-			}
-			unregister()
+		if cerr := cleanup(); err == nil {
+			err = cerr
 		}
 	}()
-	tmpDir := func() (string, error) {
-		var mkErr error
-		if tmp == "" {
-			tmp, mkErr = os.MkdirTemp(filepath.Dir(outputPath), ".doszer-build-")
-			if mkErr == nil {
-				unregister = interrupt.Remove(tmp)
-			}
-		}
-		return tmp, mkErr
-	}
 	if opts.OggQuality < -1 || opts.OggQuality > 10 {
 		return nil, fmt.Errorf("ogg_quality %d is out of range (-1 to 10)", opts.OggQuality)
 	}
@@ -276,39 +262,101 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, pathWarnings, 
 	if opts.DryRun {
 		return res, nil
 	}
+	return res, writeOutput(fs, m, opts, res, tmpDir)
+}
 
-	// Written beside the output and renamed into place only once complete:
-	// a failed build never leaves a partial archive or destroys an
-	// existing one - including the input, when repack writes over it.
+// writeOutput writes fs to res.OutputPath. The archive is written beside
+// the output and renamed into place only once complete: a failed build
+// never leaves a partial archive or destroys an existing one - including
+// the input, when repack or Refresh writes over it.
+func writeOutput(fs *fileSet, m *manifest.Manifest, opts Options, res *Result, tmpDir func() (string, error)) error {
 	dir, err := tmpDir()
 	if err != nil {
-		return res, err
+		return err
 	}
 	partial := filepath.Join(dir, "output.dosz")
 	out, err := os.Create(partial)
 	if err != nil {
-		return res, err
+		return err
 	}
 	comment := ""
 	if opts.Provenance != nil {
 		comment = opts.Provenance.Comment(res.EffectiveName, m.Format)
 	}
-	status.Step("Writing %s", filepath.Base(outputPath))
+	status.Step("Writing %s", filepath.Base(res.OutputPath))
 	if err := writeArchive(fs, m, out, dir, comment); err != nil {
 		out.Close()
-		return res, err
+		return err
 	}
 	if err := out.Close(); err != nil {
-		return res, err
+		return err
 	}
 	if opts.BeforeRename != nil {
 		opts.BeforeRename()
 	}
-	if err := os.Rename(partial, outputPath); err != nil {
-		return res, err
-	}
+	return os.Rename(partial, res.OutputPath)
+}
 
-	return res, nil
+// tempDirFor returns a function creating, once, a temporary directory
+// beside outputPath, and a cleanup removing it.
+func tempDirFor(outputPath string) (get func() (string, error), cleanup func() error) {
+	var tmp string
+	unregister := func() {}
+	get = func() (string, error) {
+		var err error
+		if tmp == "" {
+			tmp, err = os.MkdirTemp(filepath.Dir(outputPath), ".doszer-build-")
+			if err == nil {
+				unregister = interrupt.Remove(tmp)
+			}
+		}
+		return tmp, err
+	}
+	cleanup = func() error {
+		if tmp == "" {
+			return nil
+		}
+		defer unregister()
+		return os.RemoveAll(tmp)
+	}
+	return get, cleanup
+}
+
+// Refresh regenerates only §6.8's runtime files from m - AUTOBOOT.DBP,
+// the parent marker, PADMAP.DBP, DOS.YML and DOSZ.TOML - and writes
+// entries with them to opts.OutputPath: for changing an archive's boot
+// settings in place. Every other entry is written as it is, copied
+// through in its compressed form when its store decision (§8.1) allows,
+// so the result is the archive repack would produce from m.
+func Refresh(entries map[string]Entry, m *manifest.Manifest, opts Options) (_ *Result, err error) {
+	fs := newFileSet()
+	for _, p := range sortedKeys(entries) {
+		e := entries[p]
+		fe := dataEntry(e.Data, e.Modified)
+		if e.Source != nil {
+			fe = sourceEntry(e.Source, e.Modified)
+		}
+		fs.collected(p, fe)
+	}
+	name := effectiveName(m, opts)
+	res := &Result{Manifest: m, EffectiveName: name, OutputPath: opts.OutputPath, fs: fs}
+	if err := ValidateArchiveContent(fs.paths(), m.Model()); err != nil {
+		return nil, err
+	}
+	if err := addRuntimeFiles(fs, m, name); err != nil {
+		return nil, err
+	}
+	res.Entries = fs.paths()
+	if opts.DryRun {
+		return res, nil
+	}
+	tmpDir, cleanup := tempDirFor(res.OutputPath)
+	defer func() {
+		if cerr := cleanup(); err == nil {
+			err = cerr
+		}
+	}()
+	return res, writeOutput(fs, m, opts, res, tmpDir)
 }
 
 // effectiveName is the manifest's name, or opts.Name if set (§8.3).

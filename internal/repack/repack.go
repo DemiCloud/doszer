@@ -35,7 +35,6 @@ type Options struct {
 	InputPath    string
 	OutputPath   string  // defaults to "<effective name>.dosz" in the working directory
 	ManifestPath string  // use this manifest instead of the archive's embedded one
-	Parent       *string // if set, replaces the manifest's boot.parent ("" removes it)
 	OggQuality   int     // libvorbis quality for Ogg audio tracks (build.Options.OggQuality)
 	DryRun       bool    // compute and report the plan without writing an archive
 	Strict       bool    // fail if any §11 warning condition occurs
@@ -109,12 +108,6 @@ func Run(opts Options) (*build.Result, error) {
 	m, err := manifest.Parse(data, defaultName)
 	if err != nil {
 		return nil, fmt.Errorf("%s is invalid: %w", manifestSource, err)
-	}
-	if opts.Parent != nil {
-		m.Boot.Parent = *opts.Parent
-		if err := m.Validate(); err != nil {
-			return nil, fmt.Errorf("--parent: %w", err)
-		}
 	}
 
 	// §6.1's final layering step: [[file]] entries replace a collected

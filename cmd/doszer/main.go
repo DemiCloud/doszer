@@ -63,6 +63,7 @@ func init() {
 		{"install", "run an installer and extract the result into a source", runInstall},
 		{"run", "play an archive in DOSBox Pure", runRun},
 		{"repack", "rebuild an archive from its embedded manifest", runRepack},
+		{"set", "change archives' parent, OS image or shell in place", runSet},
 		{"prepare", "make a game-ready copy of a Windows shell or OS image", runPrepare},
 		{"info", "show what an archive holds", runInfo},
 		{"verify", "check an archive against its manifest and the specification", runVerify},
@@ -921,7 +922,6 @@ func runRepack(args []string) error {
 	fs := newFlags("repack")
 	dryRun := fs.BoolP("dry-run", "n", false, "")
 	manifestPath := fs.String("manifest", "", "")
-	parent := fs.String("parent", "", "")
 	oggQuality := fs.Int("ogg-quality", 0, "")
 	strict := fs.Bool("strict", false, "")
 	const help = `doszer repack - rebuild an archive from its embedded manifest
@@ -931,7 +931,6 @@ Usage: doszer repack [options] INPUT.dosz [OUTPUT.dosz]
 Options:
   -n, --dry-run           print the rebuild plan without writing an archive
       --manifest FILE     use this manifest instead of the archive's embedded one
-      --parent FILE       set the parent archive, '' for none
 ` + flagOggQuality + flagStrict + flagHelp
 	if ok, err := parse(fs, args, help, 1, 2); !ok {
 		return err
@@ -950,9 +949,6 @@ Options:
 	}
 	if fs.NArg() == 2 {
 		opts.OutputPath = fs.Arg(1)
-	}
-	if fs.Changed("parent") {
-		opts.Parent = parent
 	}
 	if opts.Provenance, err = provenance(); err != nil {
 		return err
@@ -1056,6 +1052,117 @@ Options:
 		info.Print(os.Stdout, r)
 	}
 	return nil
+}
+
+func runSet(args []string) error {
+	fs := newFlags("set")
+	dryRun := fs.BoolP("dry-run", "n", false, "")
+	parent := fs.String("parent", "", "")
+	noParent := fs.Bool("no-parent", false, "")
+	osName := fs.String("os", "", "")
+	shell := fs.String("shell", "", "")
+	const help = `doszer set - change archives' parent, OS image or shell in place
+
+Usage: doszer set [options] FILE.dosz...
+
+Options:
+  -n, --dry-run           print the changes without writing
+      --parent [OLD:]NEW  set the parent archive, only where it is OLD
+      --no-parent         remove the parent
+      --os [OLD:]NEW      set the OS image, only where it is OLD
+      --shell [OLD:]NEW   set the shell, only where it is OLD
+` + flagHelp
+	if ok, err := parse(fs, args, help, 1, 1<<20); !ok {
+		return err
+	}
+	opts := repack.SetOptions{DryRun: *dryRun}
+	if fs.Changed("parent") && *noParent {
+		return errors.New("--parent and --no-parent are exclusive")
+	}
+	if fs.Changed("parent") {
+		opts.Parent = new(repack.Change)
+		*opts.Parent = repack.ParseChange(*parent)
+		if opts.Parent.To == "" {
+			return errors.New("--parent: empty name (--no-parent removes it)")
+		}
+	}
+	if *noParent {
+		opts.Parent = &repack.Change{}
+	}
+	for _, f := range []struct {
+		name string
+		val  *string
+		dst  **repack.Change
+	}{{"os", osName, &opts.OS}, {"shell", shell, &opts.Shell}} {
+		if !fs.Changed(f.name) {
+			continue
+		}
+		c := repack.ParseChange(*f.val)
+		if c.To == "" {
+			return fmt.Errorf("--%s: empty name", f.name)
+		}
+		*f.dst = &c
+	}
+	show := opts.Parent == nil && opts.OS == nil && opts.Shell == nil
+	var err error
+	if opts.Provenance, err = provenance(); err != nil {
+		return err
+	}
+
+	failed := 0
+	for _, p := range fs.Args() {
+		name := filepath.Base(p)
+		o := opts
+		o.Path = p
+		if show {
+			o.DryRun = true
+		}
+		res, err := repack.Set(o)
+		if err != nil {
+			logError(err)
+			failed++
+			continue
+		}
+		switch {
+		case show:
+			fmt.Printf("%s: %s\n", name, describeBoot(res.Before))
+		case res.Changed():
+			verb := "Changed"
+			if opts.DryRun {
+				verb = "Would change"
+			}
+			fmt.Printf("%s %s: %s, was %s\n", verb, name, describeBoot(res.After), describeBoot(res.Before))
+		default:
+			why := "already set"
+			if len(res.Skipped) > 0 {
+				why = strings.Join(res.Skipped, "; ")
+			}
+			fmt.Printf("Left %s: %s\n", name, why)
+		}
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d of %d archives failed", failed, fs.NArg())
+	}
+	return nil
+}
+
+// describeBoot is a boot section in a few words, for set's output.
+func describeBoot(b manifest.Boot) string {
+	var parts []string
+	switch {
+	case b.OS != "":
+		parts = append(parts, "OS image "+b.OS)
+	case b.Shell != "":
+		parts = append(parts, "shell "+b.Shell)
+	case b.Exec != "":
+		parts = append(parts, "starts "+b.Exec)
+	default:
+		parts = append(parts, "start menu")
+	}
+	if b.Parent != "" {
+		parts = append(parts, "parent "+b.Parent)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // chooseBoot sets init's boot model from what the source's programs need

@@ -37,7 +37,7 @@ internal/padmap/     [[input.pad]] (§5.9): PADMAP.DBP and DOS.YML encoding (§6
 internal/verify/     doszer verify: an archive against its manifest and spec §8/§11
 internal/platform/   what a program needs (MZ/NE/PE headers, NE expected and PE subsystem versions), a game's programs together (installed over disc, helpers aside, DOS versions), source scanning incl. disc images; for info and init
 internal/info/       doszer info: an archive's hashes, boot, parents, programs by platform (MZ/NE/PE headers), compression, discs
-internal/repack/     doszer repack: rebuild an archive from its own embedded manifest
+internal/repack/     doszer repack: rebuild an archive from its own embedded manifest; doszer set: change boot settings in place (build.Refresh)
 internal/prepare/    doszer prepare: game-ready copy of a Windows 3.x shell (RunExit) or Windows 9x image (STARTRUN.VBS, PRESSKEY, Program Manager .GRP writer, line-preserving INI editor)
 internal/vhd/        VHD reader (fixed, dynamic), for install
 internal/w9xreg/     Windows 9x registry (SYSTEM.DAT/USER.DAT) reader, diff, REGEDIT4 writer, for install
@@ -256,6 +256,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `install` | Implemented; live plain and OS image (`--drive c`) sessions passed under standalone DOSBox Pure (before its support was removed); built-in frontend checked with the real core (headless test on Linux and on Windows via WSL interop, and a window under WSLg), no full live install yet; `--from` checked on a real D: save (Next steps) |
 | `run` | Implemented; not yet played live |
 | `repack` | Implemented |
+| `set` | Implemented |
 | `verify` | Implemented |
 | `prepare` | Implemented. `shell`: a prepared real Win3.1 shell ran a program through RunExit and closed DOSBox Pure (headless probe). `os`: a prepared real Win98 image booted to Program Manager's generated Tools group (icons re-extracted) and ran a `WINDOWS.BAT` with PRESSKEY (headless probe); its shutdown didn't close the probe session, as with the hand-made reference image (Next steps) |
 | `info` | Implemented |

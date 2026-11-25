@@ -51,7 +51,8 @@ doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FIL
                [--os PATH] [--drive c|d] [--system-dir DIR] [--save-dir DIR]
 doszer run     FILE.dosz [--option KEY=VALUE...] [--system-dir DIR] [--save-dir DIR]
 doszer FILE.dosz
-doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [--parent FILE] [-n] [--strict] [--ogg-quality N]
+doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
+doszer set     FILE.dosz... [--parent [OLD:]NEW | --no-parent] [--os [OLD:]NEW] [--shell [OLD:]NEW] [-n]
 doszer verify  FILE.dosz
 doszer info    FILE.dosz...
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
@@ -161,12 +162,25 @@ Windows tools), `./GAME/X.TXT` and `/GAME/X.TXT` become `GAME/X.TXT`,
 and an entry outside the archive (`../X.TXT`) or two entries naming the
 same path are an error.
 
-`repack --parent FILE` changes the archive's parent (`boot.parent`, e.g.
-after renaming the parent archive), and `--parent ''` removes it. Only
-the embedded manifest and the parent marker change; every other entry is
-copied through. Neither `build` nor `repack` writes an empty root
-`.parent` file other than the manifest's parent marker: DOSBox Pure
-refuses an archive with two.
+`set` changes archives' parent, OS image or shell in place, e.g. after
+renaming a parent archive or an image in the system directory:
+
+```
+doszer set --os 'dosbox_pure/Win98:dosbox_pure/Windows 98' *.dosz
+doszer set --parent 'Base Game (v2).dosz' 'Expansion.dosz'
+doszer set *.dosz        # show each archive's settings
+```
+
+`OLD:NEW` changes only archives where the setting is `OLD` now (exactly,
+as DOSBox Pure matches names); a bare `NEW` changes every archive the
+setting applies to: `--os` only those booting an OS image, `--shell`
+only those booting a shell. Only the embedded manifest and the files that
+follow from it (`AUTOBOOT.DBP`, the parent marker) are rewritten; every
+other entry is copied through, so it takes seconds whatever the archive's
+size, and the result is what `repack` would make from the edited manifest.
+Neither `build`, `repack` nor `set` writes an empty root `.parent` file
+other than the manifest's parent marker: DOSBox Pure refuses an archive
+with two.
 
 The default output is `<name>.dosz` in the current directory. `--name`
 overrides the manifest's `name`, which defaults to the source directory name.
