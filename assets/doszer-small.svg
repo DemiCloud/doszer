@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="5 20 248 248" width="256" height="256">
+  <!-- doszer.svg simplified for 16 and 24 pixel icons: thicker outlines,
+       no small details. -->
+  <g stroke="#141414" stroke-width="12" stroke-linejoin="round">
+    <polygon points="126,88 222,88 222,224 126,224" fill="#ececec"/>
+    <polygon points="222,88 248,66 248,202 222,224" fill="#ff55ff"/>
+    <polygon points="126,88 152,66 248,66 222,88" fill="#ffffff"/>
+    <rect x="10" y="186" width="98" height="38" rx="19" fill="#2a2a2a"/>
+    <rect x="10" y="146" width="96" height="44" rx="6" fill="#ffb400"/>
+    <polygon points="42,146 48,100 96,100 102,146" fill="#ffb400"/>
+    <rect x="104" y="128" width="20" height="98" fill="#c8c8c8"/>
+  </g>
+  <polygon points="146,110 204,110 204,128 170,182 204,182 204,202 142,202 142,184 176,130 146,130" fill="#141414"/>
+</svg>

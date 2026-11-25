@@ -774,7 +774,7 @@ Options:
 	if err != nil {
 		return err
 	}
-	status.Step("DOSBox Pure is running %s: close its window to end", filepath.Base(fs.Arg(0)))
+	status.Step("DOSBox Pure is running %s: click to capture the mouse, Ctrl+F10 releases it, Alt+Enter toggles fullscreen", filepath.Base(fs.Arg(0)))
 	env, err := install.Play(fs.Arg(0), stringOr(*systemDir, cfg.SystemDir), stringOr(*saveDir, cfg.SaveDir))
 	endSteps(err)
 	if err == nil {

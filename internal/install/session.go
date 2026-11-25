@@ -93,7 +93,7 @@ func Prepare(source string, m *manifest.Manifest) (*Session, error) {
 		Dir:         dir,
 		Model:       m.Model(),
 		OS:          m.Boot.OS,
-		Title:       "doszer install",
+		Title:       "Doszer (installing " + m.Name + ")",
 		CoreOptions: coreOptions,
 	}
 	s.Content = filepath.Join(dir, s.Name+".dosz")

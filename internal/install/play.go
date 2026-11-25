@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DemiCloud/doszer/internal/interrupt"
+	"github.com/DemiCloud/doszer/internal/manifest"
 )
 
 // Play runs archive in DOSBox Pure and returns when its window closes.
@@ -21,7 +22,8 @@ func Play(archive, systemDir, saveDir string) (Env, error) {
 	if err != nil {
 		return Env{}, err
 	}
-	boot, err := autobootLine(abs)
+	name := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
+	boot, title, err := readArchive(abs, name)
 	if err != nil {
 		return Env{}, err
 	}
@@ -44,43 +46,57 @@ func Play(archive, systemDir, saveDir string) (Env, error) {
 	if err != nil {
 		return env, err
 	}
-	name := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
 	s := &Session{
 		unregister:  interrupt.Remove(dir),
 		Name:        name,
 		Content:     abs,
 		Dir:         dir,
-		Title:       "doszer run - " + name,
+		Title:       "Doszer (" + title + ")",
 		CoreOptions: playOptions,
 	}
 	defer s.Close()
 	return env, launch(env, s)
 }
 
-// autobootLine returns the first line of archive's AUTOBOOT.DBP (what
+// readArchive returns the first line of archive's AUTOBOOT.DBP (what
 // DOSBox Pure starts: dosbox_pure_run.h, ReadAutoBoot), or "" if it has
-// none. It also checks that archive is a ZIP at all.
-func autobootLine(archive string) (string, error) {
+// none, and the game's name from its embedded manifest, else fallback.
+// It also checks that archive is a ZIP at all.
+func readArchive(archive, fallback string) (boot, name string, err error) {
 	zr, err := zip.OpenReader(archive)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", archive, err)
+		return "", "", fmt.Errorf("%s: %w", archive, err)
 	}
 	defer zr.Close()
+	name = fallback
 	for _, f := range zr.File {
-		if !strings.EqualFold(f.Name, "AUTOBOOT.DBP") {
-			continue
+		switch {
+		case strings.EqualFold(f.Name, "AUTOBOOT.DBP"):
+			data, err := readSmall(f)
+			if err != nil {
+				return "", "", fmt.Errorf("%s: AUTOBOOT.DBP: %w", archive, err)
+			}
+			line, _, _ := strings.Cut(string(data), "\n")
+			boot = strings.TrimRight(line, "\r")
+		case f.Name == manifest.FileName:
+			// Only for the title: a manifest that doesn't parse leaves
+			// the fallback.
+			if data, err := readSmall(f); err == nil {
+				if m, err := manifest.Parse(data, fallback); err == nil {
+					name = m.Name
+				}
+			}
 		}
-		rc, err := f.Open()
-		if err != nil {
-			return "", err
-		}
-		defer rc.Close()
-		data, err := io.ReadAll(io.LimitReader(rc, 4096))
-		if err != nil {
-			return "", fmt.Errorf("%s: AUTOBOOT.DBP: %w", archive, err)
-		}
-		line, _, _ := strings.Cut(string(data), "\n")
-		return strings.TrimRight(line, "\r"), nil
 	}
-	return "", nil
+	return boot, name, nil
+}
+
+// readSmall reads an archive entry of at most 1 MiB.
+func readSmall(f *zip.File) ([]byte, error) {
+	rc, err := f.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return io.ReadAll(io.LimitReader(rc, 1<<20))
 }

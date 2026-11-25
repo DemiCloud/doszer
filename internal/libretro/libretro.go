@@ -221,12 +221,13 @@ func Run(cfg Config) error {
 	h.title = cfg.Title
 	// Hidden until the renderer exists: an OpenGL renderer recreates a
 	// window that wasn't made for it, which showed it twice.
-	window := sdl.CreateWindow(h.windowTitle(), sdl.WindowPosCentered, sdl.WindowPosCentered, w, ht, sdl.WindowHidden|sdl.WindowResizable|sdl.WindowAllowHighDPI)
+	window := sdl.CreateWindow(h.title, sdl.WindowPosCentered, sdl.WindowPosCentered, w, ht, sdl.WindowHidden|sdl.WindowResizable|sdl.WindowAllowHighDPI)
 	if window == 0 {
 		return sdl.Error("SDL_CreateWindow")
 	}
 	defer sdl.DestroyWindow(window)
 	h.window = window
+	setIcon(window)
 	if h.renderer = sdl.CreateRenderer(window, -1, sdl.RendererAccelerated); h.renderer == 0 {
 		if h.renderer = sdl.CreateRenderer(window, -1, 0); h.renderer == 0 {
 			return sdl.Error("SDL_CreateRenderer")
@@ -686,24 +687,9 @@ func (h *host) capture(on bool) {
 	}
 	h.captured = on
 	sdl.SetRelativeMouseMode(on)
-	sdl.SetWindowTitle(h.window, h.windowTitle())
 	if !on {
 		h.buttons = [8]bool{}
 	}
-}
-
-// windowTitle is the title with the mouse capture state: while the mouse
-// is captured the host cursor can't reach the window's close button, so
-// the title says how to release it.
-func (h *host) windowTitle() string {
-	state := "click to capture the mouse; close this window when done"
-	if h.captured {
-		state = "mouse captured: press Ctrl+F10 to release it"
-	}
-	if h.title == "" {
-		return state
-	}
-	return h.title + " - " + state
 }
 
 // retroMods converts SDL modifier bits to libretro's RETROKMOD_*.

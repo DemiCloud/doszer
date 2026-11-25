@@ -49,6 +49,7 @@ internal/dump/       doszer dump: a CD to BIN/CUE with redumper (Windows redumpe
 internal/redump/     Redump datfile: load (Logiqx XML/zip, compact), embedded snapshot (`make dat`), cached run-time copy, track matching; any CUE image (or zip of one) read in Redump's track layout, read-offset correction
 internal/interrupt/  removes registered temporary paths on SIGINT/SIGTERM
 internal/status/     terminal progress: current step with a spinner, finished steps
+assets/              the icon (doszer.svg; doszer-small.svg for 16/24 px), its .ico; `make icon` renders it into cmd/doszer's .syso and internal/libretro/icon.png
 examples/            complete example manifests (checked by internal/manifest's TestExamples)
 Makefile             build/test/vet/install/release (see `make help`)
 spec/MANIFEST.md     The specification (normative)

@@ -10,7 +10,9 @@ import (
 func TestPlay(t *testing.T) {
 	systemDir, saveDir := fakeDOSBoxPure(t)
 	old := launch
+	var title string
 	launch = func(e Env, s *Session) error {
+		title = s.Title
 		if s.CoreOptions["dosbox_pure_bootos_ramdisk"] != "true" || s.CoreOptions["dosbox_pure_menu_time"] != "0" {
 			t.Errorf("play core options %v", s.CoreOptions)
 		}
@@ -32,11 +34,14 @@ func TestPlay(t *testing.T) {
 		files   map[string]string
 		system  string
 		wantErr string
+		title   string
 	}{
-		{"plain", map[string]string{"GAME/GAME.EXE": "MZ", "AUTOBOOT.DBP": "C:\\GAME\\GAME.EXE\n"}, "", ""},
-		{"OS image", map[string]string{"GAME/GAME.EXE": "MZ", "AUTOBOOT.DBP": "O*dosbox_pure/Win98"}, systemDir, ""},
-		{"OS image missing", map[string]string{"AUTOBOOT.DBP": "O*dosbox_pure/Win95"}, systemDir, "not found"},
-		{"no system directory", map[string]string{"AUTOBOOT.DBP": "O*dosbox_pure/Win98\r\n0\r\n"}, "", "system directory"},
+		{"plain", map[string]string{"GAME/GAME.EXE": "MZ", "AUTOBOOT.DBP": "C:\\GAME\\GAME.EXE\n"}, "", "", "Doszer (Example Game)"},
+		{"OS image", map[string]string{"GAME/GAME.EXE": "MZ", "AUTOBOOT.DBP": "O*dosbox_pure/Win98"}, systemDir, "", "Doszer (Example Game)"},
+		{"manifest name", map[string]string{"DOSZ.TOML": "format = 1\nname = \"The Example Game\"\n", "GAME/GAME.EXE": "MZ"}, "", "", "Doszer (The Example Game)"},
+		{"manifest that doesn't parse", map[string]string{"DOSZ.TOML": "format = [", "GAME/GAME.EXE": "MZ"}, "", "", "Doszer (Example Game)"},
+		{"OS image missing", map[string]string{"AUTOBOOT.DBP": "O*dosbox_pure/Win95"}, systemDir, "not found", ""},
+		{"no system directory", map[string]string{"AUTOBOOT.DBP": "O*dosbox_pure/Win98\r\n0\r\n"}, "", "system directory", ""},
 	}
 	t.Setenv("HOME", t.TempDir()) // no RetroDECK
 	for _, tt := range tests {
@@ -53,6 +58,9 @@ func TestPlay(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatal(err)
+			}
+			if title != tt.title {
+				t.Errorf("title %q, want %q", title, tt.title)
 			}
 			// The save is named after the archive, and kept.
 			if _, err := os.Stat(filepath.Join(saveDir, "Example Game.pure.zip")); err != nil {

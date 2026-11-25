@@ -1,5 +1,7 @@
 # doszer
 
+<img src="assets/doszer.svg" alt="" width="128" align="right">
+
 Builds `.dosz` archives for [DOSBox Pure](https://github.com/libretro/dosbox-pure)
 from `DOSZ.TOML` manifests, so games run without per-game frontend
 configuration.

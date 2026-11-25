@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="5 20 248 248" width="256" height="256">
+  <!-- doszer: a bulldozer pushing a packing box (an archive). Original
+       artwork; the box's stripes use the CGA palette. -->
+  <g stroke="#141414" stroke-width="5" stroke-linejoin="round">
+    <!-- the box -->
+    <polygon points="122,84 148,64 248,64 222,84" fill="#ffffff"/>
+    <polygon points="222,84 248,64 248,200 222,222" fill="#ff55ff"/>
+    <polygon points="222,129 248,109 248,155 222,176" fill="#55ffff"/>
+    <polygon points="122,84 222,84 222,222 122,222" fill="#ececec"/>
+    <polygon points="140,104 204,104 204,122 166,184 204,184 204,202 138,202 138,184 176,122 140,122" fill="#141414" stroke-width="2"/>
+    <!-- tracks -->
+    <rect x="10" y="186" width="96" height="36" rx="18" fill="#2a2a2a"/>
+    <!-- body and cab -->
+    <rect x="10" y="150" width="92" height="38" rx="5" fill="#ffb400"/>
+    <polygon points="44,150 50,104 94,104 100,150" fill="#ffb400"/>
+    <polygon points="57,114 87,114 90,142 54,142" fill="#3b5068" stroke-width="3"/>
+    <rect x="22" y="122" width="8" height="28" fill="#2a2a2a" stroke-width="3"/>
+    <!-- push arm and blade -->
+    <rect x="98" y="164" width="16" height="14" fill="#555555" stroke-width="3"/>
+    <path d="M104,132 Q126,178 104,224 L120,224 L120,132 Z" fill="#c8c8c8"/>
+  </g>
+  <!-- road wheels -->
+  <g fill="#8a8a8a" stroke="#141414" stroke-width="3">
+    <circle cx="28" cy="204" r="10"/>
+    <circle cx="51" cy="204" r="8"/>
+    <circle cx="70" cy="204" r="8"/>
+    <circle cx="89" cy="204" r="10"/>
+  </g>
+  <!-- glints -->
+  <polygon points="61,118 70,118 62,138 58,138" fill="#9fc4e8"/>
+</svg>

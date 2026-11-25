@@ -63,7 +63,7 @@ REDUMP_DAT     := internal/redump/data/pc.dat.gz
 # Every core build writes the same output file in $(DBP_SRC).
 .NOTPARALLEL:
 
-.PHONY: build test vet install release clean help core core-all redumper redumper-all dat
+.PHONY: build test vet install release clean help core core-all redumper redumper-all dat icon
 
 build: core redumper $(REDUMP_DAT) ## Development build → build/doszer (debug symbols; version = "dev" if no tags)
 	mkdir -p build
@@ -97,6 +97,23 @@ release: clean core-all redumper-all dat ## Stripped, trimpath, multi-arch relea
 
 clean: ## Remove build/ and dist/
 	rm -rf build dist
+
+# The icon, rendered from assets/doszer.svg (doszer-small.svg below 32
+# pixels) with ImageMagick: the Windows .ico, linked into doszer.exe as a
+# resource (windres, MinGW-w64), and the window icon the built-in
+# frontend sets. The outputs are committed, so building needs neither.
+ICON_SIZES := 32 48 64 128 256
+ICON_TMP   := build/icon
+PNGFLAGS   := -define png:exclude-chunks=date,time +set date:create +set date:modify
+
+icon: ## Render the icon (assets/) into the .exe resource and the window icon
+	mkdir -p $(ICON_TMP)
+	for n in 16 24; do magick -background none assets/doszer-small.svg -resize $${n}x$${n} $(PNGFLAGS) $(ICON_TMP)/$$n.png; done
+	for n in $(ICON_SIZES); do magick -background none assets/doszer.svg -resize $${n}x$${n} $(PNGFLAGS) $(ICON_TMP)/$$n.png; done
+	go run ./assets/icogen assets/doszer.ico $(foreach n,16 24 $(ICON_SIZES),$(ICON_TMP)/$(n).png)
+	cp $(ICON_TMP)/64.png internal/libretro/icon.png
+	echo '1 ICON "assets/doszer.ico"' > $(ICON_TMP)/doszer.rc
+	$(MINGW64)windres -O coff -i $(ICON_TMP)/doszer.rc -o cmd/doszer/rsrc_windows_amd64.syso
 
 core: $(call CORE_LINUX,$(HOST_ARCH)) ## Build and stage the DOSBox Pure core for this host (linux)
 
