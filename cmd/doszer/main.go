@@ -17,7 +17,6 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/config"
-	"github.com/DemiCloud/doszer/internal/cue"
 	"github.com/DemiCloud/doszer/internal/dump"
 	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/interrupt"
@@ -400,6 +399,8 @@ func runDump(args []string) error {
 	fs := newFlags("dump")
 	drive := fs.String("drive", "", "")
 	dat := fs.String("dat", "", "")
+	from := fs.String("from", "", "")
+	offset := fs.Int("offset", 0, "")
 	const help = `doszer dump - dump a CD to BIN/CUE into a source directory
 
 Usage: doszer dump [options] DIR
@@ -407,6 +408,8 @@ Usage: doszer dump [options] DIR
 Options:
       --dat FILE          datfile to verify against (default: redump_dat, else Redump's)
       --drive DRIVE       drive to read, e.g. E: or /dev/sg1 (default: first drive with a disc)
+      --from FILE         import this BIN/CUE image (.cue, or a .zip of one) instead of reading a drive
+      --offset SAMPLES    --from: drive read offset the image's audio wasn't corrected for
 ` + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
@@ -414,6 +417,23 @@ Options:
 	cfg, err := config.Load("")
 	if err != nil {
 		return err
+	}
+	dat2 := stringOr(*dat, cfg.RedumpDAT)
+	if *from != "" {
+		if *drive != "" {
+			return errors.New("--from and --drive exclude each other")
+		}
+		status.Step("Copying the image's tracks")
+		res, err := dump.Import(*from, fs.Arg(0), *offset)
+		endSteps(err)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Imported %s (%d track file(s))\n", res.Cue, len(res.Tracks))
+		return verifyImage(res.Cue, 0, dat2, false)
+	}
+	if *offset != 0 {
+		return errors.New("--offset needs --from")
 	}
 	res, err := dump.Run(dump.Options{Dir: fs.Arg(0), Drive: *drive})
 	if res != nil && res.Log != "" {
@@ -426,20 +446,33 @@ Options:
 	for _, e := range res.Errors {
 		fmt.Fprintf(os.Stderr, "[WARN] redumper: %s (left as read: zeros)\n", e)
 	}
-	return verifyTracks(res.Tracks, stringOr(*dat, cfg.RedumpDAT), len(res.Errors) > 0)
+	return verifyImage(res.Cue, 0, dat2, len(res.Errors) > 0)
+}
+
+// verifyImage reports whether a disc image's tracks, in Redump's layout
+// (redump.OpenImage, correcting offset), match a Redump disc.
+func verifyImage(cuePath string, offset int, dat string, readErrors bool) error {
+	return verifyTracks(func() ([]redump.Track, error) {
+		img, err := redump.OpenImage(cuePath, offset)
+		if err != nil {
+			return nil, err
+		}
+		defer img.Close()
+		return img.Hash()
+	}, dat, readErrors)
 }
 
 // verifyTracks reports whether a dump's tracks match a Redump disc. A
 // dump that doesn't is reported, not an error: it may be a disc nobody
 // has submitted yet.
-func verifyTracks(paths []string, dat string, readErrors bool) error {
+func verifyTracks(hash func() ([]redump.Track, error), dat string, readErrors bool) error {
 	status.Step("Checking the dump against Redump")
 	sel, err := redump.Select(dat)
 	if err != nil {
 		endSteps(err)
 		return err
 	}
-	tracks, err := redump.HashTracks(paths)
+	tracks, err := hash()
 	endSteps(err)
 	if err != nil {
 		return err
@@ -459,7 +492,7 @@ func verifyTracks(paths []string, dat string, readErrors bool) error {
 	default:
 		var differ []string
 		for _, i := range m.Differ {
-			differ = append(differ, filepath.Base(paths[i]))
+			differ = append(differ, filepath.Base(tracks[i].Path))
 		}
 		fmt.Printf("Not verified: closest Redump disc %q matches %d of its %d track(s) (%s)\n  %s\n", m.Disc.Name, m.Matching, len(m.Disc.Tracks), src, m.Link)
 		if len(differ) > 0 {
@@ -477,12 +510,14 @@ func runRedump(args []string) error {
 	fs := newFlags("redump")
 	dat := fs.String("dat", "", "")
 	update := fs.Bool("update", false, "")
+	offset := fs.Int("offset", 0, "")
 	const help = `doszer redump - show the Redump datfile in use, or check tracks against it
 
-Usage: doszer redump [options] [SHA1|FILE...]
+Usage: doszer redump [options] [SHA1|FILE|IMAGE...]
 
 Options:
       --dat FILE          datfile to use (default: redump_dat, else Redump's)
+      --offset SAMPLES    drive read offset a CUE image's audio wasn't corrected for
       --update            fetch Redump's current datfile now
 ` + flagHelp
 	if ok, err := parse(fs, args, help, 0, 1<<20); !ok {
@@ -506,17 +541,13 @@ Options:
 		return redumpStatus(external)
 	}
 
-	var shas, files []string
+	var shas, files, cues []string
 	for _, a := range fs.Args() {
 		switch {
 		case len(a) == 40 && isHex(a):
 			shas = append(shas, a)
-		case strings.EqualFold(filepath.Ext(a), ".cue"):
-			tracks, err := cueTracks(a)
-			if err != nil {
-				return err
-			}
-			files = append(files, tracks...)
+		case strings.EqualFold(filepath.Ext(a), ".cue"), strings.EqualFold(filepath.Ext(a), ".zip"):
+			cues = append(cues, a)
 		default:
 			files = append(files, a)
 		}
@@ -536,8 +567,13 @@ Options:
 			}
 		}
 	}
+	for _, c := range cues {
+		if err := verifyImage(c, *offset, external, false); err != nil {
+			return err
+		}
+	}
 	if len(files) > 0 {
-		return verifyTracks(files, external, false)
+		return verifyTracks(func() ([]redump.Track, error) { return redump.HashTracks(files) }, external, false)
 	}
 	return nil
 }
@@ -583,23 +619,6 @@ func isHex(s string) bool {
 		}
 	}
 	return true
-}
-
-// cueTracks lists the track files a CUE sheet names.
-func cueTracks(path string) ([]string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	sheet, err := cue.Parse(data)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	var out []string
-	for _, f := range sheet.Files {
-		out = append(out, filepath.Join(filepath.Dir(path), filepath.FromSlash(f.Name)))
-	}
-	return out, nil
 }
 
 // runInstall implements `doszer install <source>`.

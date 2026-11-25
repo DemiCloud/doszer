@@ -45,8 +45,8 @@ internal/libretro/   built-in frontend: hosts a libretro core in-process (enviro
 internal/sdl/        the few SDL2 functions internal/libretro uses, loaded at run time through purego
 internal/dl/         dlopen/LoadLibrary without cgo
 internal/builtin/    programs embedded at build time, extracted to the user cache: the DOSBox Pure core (and SDL DLLs on Windows, `make core`), redumper (`make redumper`)
-internal/dump/       doszer dump: a CD to BIN/CUE with redumper (Windows redumper through interop under WSL), resumable
-internal/redump/     Redump datfile: load (Logiqx XML/zip, compact), embedded snapshot (`make dat`), cached run-time copy, track matching
+internal/dump/       doszer dump: a CD to BIN/CUE with redumper (Windows redumper through interop under WSL), resumable; or --from an existing image (Import)
+internal/redump/     Redump datfile: load (Logiqx XML/zip, compact), embedded snapshot (`make dat`), cached run-time copy, track matching; any CUE image (or zip of one) read in Redump's track layout, read-offset correction
 internal/interrupt/  removes registered temporary paths on SIGINT/SIGTERM
 internal/status/     terminal progress: current step with a spinner, finished steps
 examples/            complete example manifests (checked by internal/manifest's TestExamples)

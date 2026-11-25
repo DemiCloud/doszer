@@ -129,7 +129,33 @@ datfile is, in order: `--dat`/`redump_dat` (any Logiqx datfile); a copy
 fetched from redump.org at most weekly and cached in the user cache
 directory; the snapshot built into doszer (`make dat`). `doszer redump`
 shows which is in use, `--update` fetches the current one, and given
-SHA-1s or track files (or a CUE sheet) it looks them up.
+SHA-1s, track files, or a disc image (a CUE sheet, or a zip of one) it
+looks them up.
+
+### From an existing image
+
+`dump --from FILE` takes a disc image you already have instead of a
+drive: a CUE sheet with its BIN (or WAV) files in any layout, or a zip
+holding them, as Redump-style downloads come. It writes the same
+`disc<N>.cue` and track files a dump of the disc would - one raw file per
+track, each from its pregap to the next track's, `PREGAP` silence filled
+in as zeros - and checks them against Redump the same way. The image
+itself is left alone. From there on, `init`, `install` and `build` can't
+tell an imported disc from a dumped one: two exact copies of a disc,
+however each was made, build byte-identical archives (§8.2 dates a disc
+image's files by the disc's own volume creation date, not the dump's).
+
+Rippers other than redumper (ImgBurn, for one) don't correct the drive's
+read offset, so every audio sample sits that many samples off and audio
+tracks don't match Redump; data tracks are unaffected. `--offset SAMPLES`
+corrects it: the drive's read offset, as redumper's log prints it for the
+same drive (`read offset: +6`) or AccurateRip's drive list gives it. `doszer
+redump --offset SAMPLES IMAGE` checks an image the same way without
+importing it.
+
+A worn disc that won't read cleanly in one drive may in another, or with
+another program: check each image with `doszer redump` and import the one
+that verifies.
 
 ## Media conversion
 
