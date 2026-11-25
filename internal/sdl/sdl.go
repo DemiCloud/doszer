@@ -137,6 +137,9 @@ var (
 	PollEvent              func(e *Event) int32
 	SetRelativeMouseMode   func(enabled bool) int32
 	ShowCursor             func(toggle int32) int32
+	CreateCursor           func(data, mask *byte, w, h, hotX, hotY int32) uintptr
+	SetCursor              func(c uintptr)
+	FreeCursor             func(c uintptr)
 	OpenAudioDevice        func(device unsafe.Pointer, iscapture int32, desired, obtained *AudioSpec, allowedChanges int32) uint32
 	CloseAudioDevice       func(dev uint32)
 	PauseAudioDevice       func(dev uint32, pause int32)
@@ -189,6 +192,9 @@ func Load(handle uintptr, sym func(uintptr, string) (uintptr, error)) (err error
 	bind(&PollEvent, "SDL_PollEvent")
 	bind(&SetRelativeMouseMode, "SDL_SetRelativeMouseMode")
 	bind(&ShowCursor, "SDL_ShowCursor")
+	bind(&CreateCursor, "SDL_CreateCursor")
+	bind(&SetCursor, "SDL_SetCursor")
+	bind(&FreeCursor, "SDL_FreeCursor")
 	bind(&OpenAudioDevice, "SDL_OpenAudioDevice")
 	bind(&CloseAudioDevice, "SDL_CloseAudioDevice")
 	bind(&PauseAudioDevice, "SDL_PauseAudioDevice")

@@ -240,6 +240,16 @@ func Run(cfg Config) error {
 			}
 		}
 	}()
+	// The host cursor is never shown over the window, as in RetroArch and
+	// standalone DOSBox Pure: the guest draws its own. A transparent
+	// cursor, not SDL_ShowCursor: WSLg ignored the latter.
+	var blank [8]byte
+	if c := sdl.CreateCursor(&blank[0], &blank[0], 8, 8, 0, 0); c != 0 {
+		sdl.SetCursor(c)
+		defer sdl.FreeCursor(c)
+	} else {
+		sdl.ShowCursor(0)
+	}
 	h.draw()
 	sdl.ShowWindow(window)
 	h.openAudio()
@@ -676,9 +686,6 @@ func (h *host) capture(on bool) {
 	}
 	h.captured = on
 	sdl.SetRelativeMouseMode(on)
-	// Relative mode should hide the cursor, but doesn't everywhere
-	// (WSLg).
-	sdl.ShowCursor(b2i32(!on))
 	sdl.SetWindowTitle(h.window, h.windowTitle())
 	if !on {
 		h.buttons = [8]bool{}
@@ -714,13 +721,6 @@ func retroMods(m uint16) uint16 {
 }
 
 func boolResult(b bool) uintptr {
-	if b {
-		return 1
-	}
-	return 0
-}
-
-func b2i32(b bool) int32 {
 	if b {
 		return 1
 	}
