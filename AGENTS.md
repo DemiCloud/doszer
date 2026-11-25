@@ -387,6 +387,9 @@ reads one byte past the end, since `archive/zip` checks only at
 
 ## Next steps
 
+Items 1-6 need someone at the machine (live sessions, RetroArch, a
+Steam Deck); they come first. Item 7 waits on a game that needs it.
+
 1. Play an archive with `doszer run` and run a live `install`: a
    plain CD install, and an OS image session (`bootos_ramdisk = diff`
    comes from `Config.Options`; check the image is untouched and C: lands
@@ -435,7 +438,16 @@ reads one byte past the end, since `archive/zip` checks only at
    Windows' unclean-shutdown marker in the image. Writing `USER.DAT`
    directly would need `w9xreg` to rewrite a real registry, not just
    encode test fixtures. (Done: `install_os` keeps a clean image for
-   `install`; `init` picks the boot model and image.)
+   `install`; `init` picks the boot model and image.) Other registry
+   presets would follow the same path.
+7. A 16-bit PRESSKEY for Windows 3.x launchers, only once a game needs
+   one. Open Watcom v2 builds Win16 programs from Linux and publishes
+   dated builds to pin (`2026-11-01-Build`'s `ow-snapshot.tar.xz`, 150
+   MB, SHA-256 `89e90b75...bb48`). The hard part is pressing keys:
+   Windows 3.1's `USER` exports `KEYBD_EVENT`, but as the keyboard
+   driver's register-based callback (no prototype in `win16.h`), and a
+   `WH_JOURNALPLAYBACK` hook must live in a DLL; `PostMessage` reaches
+   only programs reading their message queue.
 
 `internal/config` is implemented (README "Configuration"); `build` and
 `repack` consume `ogg_quality`, `install` and `run` the rest. With the OS image
@@ -443,6 +455,16 @@ session using "Save Difference Per Content", `templates` only matter for
 `install --from` a whole `.vhd`/`.img`.
 
 ## Resolved questions
+
+- **A database for what a game runs on.** Wikidata (CC0) was checked on
+  2026-11-25 as a second opinion to the executable headers
+  (`internal/platform`) and set aside: 2,535 games carry platform DOS
+  (Q170434) and 377 MS-DOS (Q47604), 146k plain Microsoft Windows
+  (Q1406), but Windows 3.x (Q737508) only 15 and Windows 95 (Q83370)
+  none, so it can't tell the versions apart, which the headers do, and
+  matching it by title would add false hits. MobyGames separates DOS,
+  Windows 3.x and Windows (not 95 from 98), behind a free non-commercial
+  API key: the better candidate, as an optional online lookup.
 
 Raised by a real retrofit attempt (repacking a legacy archive):
 
