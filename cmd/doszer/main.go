@@ -104,6 +104,11 @@ func run(args []string) error {
 			return c.run(args[1:])
 		}
 	}
+	// A file instead of a command is run, so doszer can be the program
+	// that opens .dosz files (doszer FILE).
+	if fi, err := os.Stat(args[0]); err == nil && !fi.IsDir() {
+		return runRun(args)
+	}
 
 	usage(os.Stderr)
 	return fmt.Errorf("unknown command %q", args[0])
@@ -111,7 +116,7 @@ func run(args []string) error {
 
 func usage(w io.Writer) {
 	fmt.Fprint(w, "doszer - build .dosz archives for DOSBox Pure from DOSZ.TOML manifests\n\n")
-	fmt.Fprint(w, "Usage: doszer COMMAND [options] [ARG...]\n\nCommands:\n")
+	fmt.Fprint(w, "Usage: doszer COMMAND [options] [ARG...]\n       doszer FILE.dosz\n\nCommands:\n")
 	for _, c := range commands {
 		fmt.Fprintf(w, "  %-8s %s\n", c.name, c.summary)
 	}

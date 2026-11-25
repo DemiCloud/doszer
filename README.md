@@ -47,6 +47,7 @@ doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [-n] [--strict] [--ogg-quality
 doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FILE]] [-f] [-n] [--keep]
                [--os PATH] [--drive c|d] [--system-dir DIR] [--save-dir DIR]
 doszer run     FILE.dosz [--system-dir DIR] [--save-dir DIR]
+doszer FILE.dosz
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
 doszer verify  FILE.dosz
 ```
@@ -534,6 +535,9 @@ or parent archives.
 frontend. Its saves are named after the archive in the save directory, so
 the next `run` continues from them. An archive that boots an OS image
 runs under "Save Difference Per Content": the image is never written to.
+
+`doszer FILE.dosz`, with no command, does the same, so doszer can be the
+program that opens `.dosz` files (`doszer "%1"` on Windows).
 
 ## DOSBox Pure in doszer
 
