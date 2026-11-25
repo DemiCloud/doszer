@@ -50,6 +50,7 @@ var schema = &node{
 		},
 		"extract": {leaves: leaves("media", "from", "to")},
 		"file":    {leaves: leaves("path", "text")},
+		"icon":    {leaves: leaves("path", "media", "index")},
 		"input": {
 			tables: map[string]*node{
 				"pad": {leaves: leaves(append(append([]string{}, padmap.Controls...), "wheel")...)},

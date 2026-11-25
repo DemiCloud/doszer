@@ -14,6 +14,8 @@ type TemplateOptions struct {
 	Audio string  // [pack] audio, "" to leave it commented out
 	Media []Media // [[source.media]] entries to write, from build.IdentifyMedia;
 	// a single disc is labelled with Name rather than its file name
+	Icon     *Icon  // [icon], nil to leave it commented out
+	IconFrom string // where init found Icon, for a comment
 }
 
 // Template returns a commented starting manifest for `init`.
@@ -81,6 +83,26 @@ func Template(o TemplateOptions) string {
 # every track's hash verifiable (Ogg Vorbis is lossy).
 `)
 	b.WriteString(line("audio", o.Audio, `"ogg"`))
+	b.WriteString(`
+# The archive's icon (DOSZ.ICO), for game lists: an ICO file or a Windows
+# program's icon, in the build or, with media, on a disc (e.g. the one its
+# AUTORUN.INF names). index picks one of a program's icons.
+`)
+	if ic := o.Icon; ic != nil {
+		if o.IconFrom != "" {
+			fmt.Fprintf(&b, "# Found: %s.\n", o.IconFrom)
+		}
+		b.WriteString("[icon]\n")
+		b.WriteString(line("path", ic.Path, ""))
+		if ic.Media != "" {
+			b.WriteString(line("media", ic.Media, ""))
+		}
+		if ic.Index != 0 {
+			fmt.Fprintf(&b, "index = %d\n", ic.Index)
+		}
+	} else {
+		b.WriteString("# [icon]\n# path  = \"GAME/GAME.EXE\"\n# media = \"disc1\"\n# index = 0\n")
+	}
 	b.WriteString(`
 # Gamepad mapping, one [[input.pad]] per controller port (spec §5.9).
 # RetroPad layout: b/a/y/x are the bottom/right/left/top face buttons.

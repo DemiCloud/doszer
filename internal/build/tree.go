@@ -299,6 +299,8 @@ func (e *fileEntry) rawPassthrough() *RawSource {
 type fileSet struct {
 	files map[string]*fileEntry // canonical-case path -> entry
 	index map[string]string     // lower-case path -> canonical-case path
+
+	mediaIcon []byte // DOSZ.ICO from [icon] media, made by collect (§6.8.4)
 }
 
 func newFileSet() *fileSet {

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DemiCloud/doszer/internal/build"
+	"github.com/DemiCloud/doszer/internal/icon"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/redump"
 	"github.com/DemiCloud/doszer/internal/status"
@@ -283,14 +284,40 @@ func checkWithManifest(names []string, byName map[string]*zip.File, m *manifest.
 	}
 
 	if want := build.BuildPadmap(m); want != nil {
-		errs = append(errs, checkGenerated(byName, "PADMAP.DBP", func([]byte) []byte { return want })...)
+		errs = append(errs, checkGenerated(byName, "PADMAP.DBP", "[[input.pad]]", func([]byte) []byte { return want })...)
 	}
 
 	// DOS.YML keeps its own lines other than input mappings (§6.8.3), so
 	// what it should be depends on what it is: regenerating a conforming
 	// one reproduces it.
 	if build.BuildDOSYML(m, nil) != nil {
-		errs = append(errs, checkGenerated(byName, "DOS.YML", func(got []byte) []byte { return build.BuildDOSYML(m, got) })...)
+		errs = append(errs, checkGenerated(byName, "DOS.YML", "[[input.pad]]", func(got []byte) []byte { return build.BuildDOSYML(m, got) })...)
+	}
+
+	// DOSZ.ICO (§6.8.4): regenerated from the program or ICO file in the
+	// archive; from [icon] media only checked to be an ICO file, since the
+	// media's file system needn't be readable here.
+	if m.Icon != nil {
+		errs = append(errs, checkGenerated(byName, build.IconName, "[icon]", func(got []byte) []byte {
+			if m.Icon.Media != "" {
+				if !icon.IsICO(got) {
+					errs = append(errs, fmt.Errorf("%s: not an ICO file (§6.8.4)", build.IconName))
+				}
+				return nil
+			}
+			want, err := build.BuildIcon(m, func(p string) ([]byte, error) {
+				f, ok := findFold(byName, p)
+				if !ok {
+					return nil, fmt.Errorf("not in the archive")
+				}
+				return readZipFile(f)
+			})
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w (§6.8.4)", build.IconName, err))
+				return nil
+			}
+			return want
+		})...)
 	}
 
 	// §6.8: no parent marker but the manifest's; DOSBox Pure refuses an
@@ -379,7 +406,7 @@ func checkContent(name string, f *zip.File, crcChecked map[string]error) []error
 
 // checkGenerated checks a §6.8 file the [[input.pad]] mapping implies:
 // present, at the fixed epoch, and with the content want returns for it.
-func checkGenerated(byName map[string]*zip.File, name string, want func(got []byte) []byte) []error {
+func checkGenerated(byName map[string]*zip.File, name, what string, want func(got []byte) []byte) []error {
 	f, ok := findFold(byName, name)
 	if !ok {
 		return []error{fmt.Errorf("missing %s (§6.8)", name)}
@@ -392,8 +419,12 @@ func checkGenerated(byName map[string]*zip.File, name string, want func(got []by
 	if err != nil {
 		return append(errs, fmt.Errorf("%s: %w", f.Name, err))
 	}
-	if w := want(content); !bytes.Equal(content, w) {
-		errs = append(errs, fmt.Errorf("%s: content does not match the manifest's [[input.pad]] (§6.8), got %q want %q", f.Name, content, w))
+	if w := want(content); w != nil && !bytes.Equal(content, w) {
+		if what == "[icon]" {
+			errs = append(errs, fmt.Errorf("%s: content does not match the manifest's %s (§6.8.4)", f.Name, what))
+		} else {
+			errs = append(errs, fmt.Errorf("%s: content does not match the manifest's %s (§6.8), got %q want %q", f.Name, what, content, w))
+		}
 	}
 	return errs
 }

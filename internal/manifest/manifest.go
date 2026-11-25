@@ -46,6 +46,7 @@ type Manifest struct {
 	Extract []Extract  `toml:"extract,omitempty"`
 	File    []FileSpec `toml:"file,omitempty"`
 	Input   Input      `toml:"input,omitempty"`
+	Icon    *Icon      `toml:"icon,omitempty"`
 }
 
 // Boot selects the boot model and startup behaviour (spec §5.3).
@@ -104,6 +105,13 @@ type Extract struct {
 	Media string `toml:"media"`
 	From  string `toml:"from"`
 	To    string `toml:"to"`
+}
+
+// Icon is the archive's icon (spec §5.11), written as DOSZ.ICO.
+type Icon struct {
+	Path  string `toml:"path"`
+	Media string `toml:"media,omitempty"`
+	Index int    `toml:"index,omitempty"`
 }
 
 // FileSpec is a file whose content is given in the manifest (spec §5.8).
@@ -397,6 +405,21 @@ func (m *Manifest) validate() []error {
 		}
 		if f.Text == nil {
 			add("file[%d].text: must be set", i)
+		}
+	}
+
+	// [icon]
+	if ic := m.Icon; ic != nil {
+		if ic.Media != "" && !ids[ic.Media] {
+			add("icon.media: unknown media id %q", ic.Media)
+		}
+		if ic.Path == "" {
+			add("icon.path: must be set")
+		} else if err := checkRelativePath(ic.Path); err != nil {
+			add("icon.path: %v", err)
+		}
+		if ic.Index < 0 {
+			add("icon.index: must not be negative")
 		}
 	}
 

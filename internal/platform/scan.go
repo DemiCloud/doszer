@@ -243,13 +243,24 @@ func Scan(dir string) ([]Program, error) {
 
 // scanCue scans a CUE sheet's first data track.
 func scanCue(rel, p string) []Program {
+	bin, base, size, off, ok := cueDataTrack(p)
+	if !ok {
+		return nil
+	}
+	return scanDisc(rel, bin, base, size, off)
+}
+
+// cueDataTrack finds a CUE sheet's first data track: the file holding it,
+// where it starts, its sector size and where in a sector its 2048 user
+// bytes are.
+func cueDataTrack(p string) (bin string, base int64, sectorSize, dataOff int, ok bool) {
 	data, err := os.ReadFile(p)
 	if err != nil {
-		return nil
+		return "", 0, 0, 0, false
 	}
 	sheet, err := cue.Parse(data)
 	if err != nil {
-		return nil
+		return "", 0, 0, 0, false
 	}
 	for _, f := range sheet.Files {
 		for _, t := range f.Tracks {
@@ -272,28 +283,81 @@ func scanCue(rel, p string) []Program {
 				}
 			}
 			bin := filepath.Join(filepath.Dir(p), filepath.FromSlash(strings.ReplaceAll(f.Name, `\`, "/")))
-			return scanDisc(rel, bin, start*int64(size), size, off)
+			return bin, start * int64(size), size, off, true
 		}
 	}
-	return nil
+	return "", 0, 0, 0, false
 }
 
-// scanDisc walks the ISO 9660 file system in the image file p, whose data
+// openDisc opens the ISO 9660 file system in the image file p, whose data
 // sectors are sectorSize bytes from base with 2048 user bytes at dataOff.
-func scanDisc(rel, p string, base int64, sectorSize, dataOff int) []Program {
+func openDisc(p string, base int64, sectorSize, dataOff int) (*iso9660.Image, *os.File, error) {
 	f, err := os.Open(p)
 	if err != nil {
-		return nil
+		return nil, nil, err
 	}
-	defer f.Close()
 	var r io.ReaderAt = f
 	if sectorSize != 2048 || base != 0 {
 		r = &sectors{f: f, base: base, size: int64(sectorSize), off: int64(dataOff)}
 	}
 	img, err := iso9660.Open(r)
 	if err != nil {
+		f.Close()
+		return nil, nil, err
+	}
+	return img, f, nil
+}
+
+// Disc is a disc image in a source directory, its first data track's
+// file system open.
+type Disc struct {
+	Path  string // slash-separated, relative to the source: the .iso or .cue
+	Image *iso9660.Image
+	f     *os.File
+}
+
+// Close closes the image file.
+func (d *Disc) Close() error { return d.f.Close() }
+
+// Discs opens every ISO 9660 disc image in dir: an .iso, or a CUE sheet's
+// first data track. The caller closes them.
+func Discs(dir string) []*Disc {
+	var out []*Disc
+	filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(dir, p)
+		var img *iso9660.Image
+		var f *os.File
+		switch strings.ToLower(filepath.Ext(p)) {
+		case ".iso":
+			img, f, err = openDisc(p, 0, 2048, 0)
+		case ".cue":
+			bin, base, size, off, ok := cueDataTrack(p)
+			if !ok {
+				return nil
+			}
+			img, f, err = openDisc(bin, base, size, off)
+		default:
+			return nil
+		}
+		if err == nil {
+			out = append(out, &Disc{Path: filepath.ToSlash(rel), Image: img, f: f})
+		}
+		return nil
+	})
+	return out
+}
+
+// scanDisc walks the ISO 9660 file system in the image file p, whose data
+// sectors are sectorSize bytes from base with 2048 user bytes at dataOff.
+func scanDisc(rel, p string, base int64, sectorSize, dataOff int) []Program {
+	img, f, err := openDisc(p, base, sectorSize, dataOff)
+	if err != nil {
 		return nil
 	}
+	defer f.Close()
 	var out []Program
 	var walk func(dir iso9660.Entry, prefix string, depth int)
 	walk = func(dir iso9660.Entry, prefix string, depth int) {

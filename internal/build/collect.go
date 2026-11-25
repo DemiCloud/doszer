@@ -69,12 +69,17 @@ func collect(sourceDir string, m *manifest.Manifest, outputPath string, tempFile
 		return nil, nil, nil, fmt.Errorf("collect: %w", err)
 	}
 
-	media, mediaWarnings, err := locateMedia(result, m.Source.Media, m.Extract, &teeTarget{dir: tempDir, files: tempFiles})
+	media, mediaWarnings, err := locateMedia(result, m.Source.Media, mediaUses(m), &teeTarget{dir: tempDir, files: tempFiles})
 	if err != nil {
 		return nil, pathWarnings, mediaWarnings, err
 	}
 	if err := applyExtracts(result, media, m.Extract, tempDir, tempFiles); err != nil {
 		return nil, pathWarnings, mediaWarnings, err
+	}
+	if m.Icon != nil && m.Icon.Media != "" {
+		if result.mediaIcon, err = iconFromMedia(media, m.Icon, tempDir, tempFiles); err != nil {
+			return nil, pathWarnings, mediaWarnings, err
+		}
 	}
 
 	for _, f := range m.File {

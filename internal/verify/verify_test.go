@@ -789,3 +789,46 @@ parent = "Shared.shell"
 		t.Fatalf("Verify() = %v, want a stray-marker error", err)
 	}
 }
+
+func TestVerifyIcon(t *testing.T) {
+	ico := "\x00\x00\x01\x00\x01\x00\x10\x10\x00\x00\x01\x00\x20\x00\x04\x00\x00\x00\x16\x00\x00\x00DATA"
+	build1 := func(t *testing.T) string {
+		dir := t.TempDir()
+		writeFile(t, dir, "DOSZ.TOML", plainManifest+"\n[icon]\npath = \"GAME.ICO\"\n")
+		writeFile(t, dir, "GAME.EXE", "binary")
+		writeFile(t, dir, "GAME.ICO", ico)
+		out := filepath.Join(t.TempDir(), "out.dosz")
+		if _, err := build.Run(build.Options{SourceDir: dir, OutputPath: out}); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	if err := verify.Verify(build1(t)); err != nil {
+		t.Fatalf("Verify() = %v", err)
+	}
+	for _, tt := range []struct {
+		name, entry, content, want string
+	}{
+		{"stale", "DOSZ.ICO", ico[:len(ico)-1] + "X", "DOSZ.ICO: content does not match the manifest's [icon]"},
+		{"source gone wrong", "GAME.ICO", "not an icon", "DOSZ.ICO: icon: GAME.ICO"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := build1(t)
+			rewriteZip(t, path, func(w *zip.Writer, f *zip.File) error {
+				if f.Name != tt.entry {
+					return copyEntry(w, f)
+				}
+				fh := f.FileHeader
+				fw, err := w.CreateHeader(&fh)
+				if err != nil {
+					return err
+				}
+				_, err = fw.Write([]byte(tt.content))
+				return err
+			})
+			if err := verify.Verify(path); err == nil || !contains(err.Error(), tt.want) {
+				t.Fatalf("Verify() = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}

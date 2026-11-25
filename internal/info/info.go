@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"github.com/DemiCloud/doszer/internal/cue"
+	"github.com/DemiCloud/doszer/internal/icon"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/platform"
 )
@@ -40,7 +41,8 @@ type Report struct {
 	Programs                 int
 	Need                     platform.Need // what the programs need (platform.Needs)
 	Discs                    []Disc
-	Padmap, DOSYML, Frontend bool // PADMAP.DBP, DOS.YML, FRONTEND.DBP present
+	Padmap, DOSYML, Frontend bool   // PADMAP.DBP, DOS.YML, FRONTEND.DBP present
+	Icon                     string // DOSZ.ICO's image sizes
 
 	Source bool // a source directory (ReadSource): no hashes, compression or parents
 }
@@ -123,6 +125,11 @@ func Read(p string) (*Report, error) {
 	_, r.Padmap = byName["PADMAP.DBP"]
 	_, r.DOSYML = byName["DOS.YML"]
 	_, r.Frontend = byName["FRONTEND.DBP"]
+	if e := byName["DOSZ.ICO"]; e != nil {
+		if data, err := readAll(e); err == nil {
+			r.Icon = iconSizes(data)
+		}
+	}
 
 	if e := byName[strings.ToUpper(manifest.FileName)]; e != nil {
 		data, err := readAll(e)
@@ -532,6 +539,9 @@ func Print(w io.Writer, r *Report) {
 	if len(extra) > 0 {
 		line("Gamepad", "%s", strings.Join(extra, ", "))
 	}
+	if r.Icon != "" {
+		line("Icon", "%s", r.Icon)
+	}
 
 	if m != nil && strings.TrimSpace(m.Notes) != "" {
 		fmt.Fprintln(w, "Notes:")
@@ -622,6 +632,7 @@ type Data struct {
 	Stored        BytesData    `json:"stored" yaml:"stored" toml:"stored"`
 	Discs         []DiscData   `json:"discs,omitempty" yaml:"discs,omitempty" toml:"discs,omitempty"`
 	Gamepad       []string     `json:"gamepad,omitempty" yaml:"gamepad,omitempty" toml:"gamepad,omitempty"`
+	Icon          string       `json:"icon,omitempty" yaml:"icon,omitempty" toml:"icon,omitempty"`
 	Notes         string       `json:"notes,omitempty" yaml:"notes,omitempty" toml:"notes,omitempty"`
 	Comment       string       `json:"comment,omitempty" yaml:"comment,omitempty" toml:"comment,omitempty"`
 }
@@ -712,6 +723,7 @@ func (r *Report) Data() Data {
 	if r.DOSYML {
 		d.Gamepad = append(d.Gamepad, "DOS.YML")
 	}
+	d.Icon = r.Icon
 	return d
 }
 
@@ -727,4 +739,17 @@ func (d Data) CSVRow() []string {
 	i := strconv.Itoa
 	i64 := func(n int64) string { return strconv.FormatInt(n, 10) }
 	return []string{d.File, i64(d.Size), d.SHA256, d.ContentSHA256, d.Name, d.Boot, d.Exec, d.Shell, d.OSImage, d.Disc, parent, i(d.Programs), d.OS, d.Setup, i(d.Files), i64(d.Bytes), i64(d.Packed), i(len(d.Discs))}
+}
+
+// iconSizes describes an ICO file's images: "DOSZ.ICO: 16, 32 px".
+func iconSizes(data []byte) string {
+	sizes := icon.Sizes(data)
+	if len(sizes) == 0 {
+		return "DOSZ.ICO: not an ICO file"
+	}
+	parts := make([]string, len(sizes))
+	for i, s := range sizes {
+		parts[i] = strconv.Itoa(s)
+	}
+	return "DOSZ.ICO: " + strings.Join(parts, ", ") + " px"
 }

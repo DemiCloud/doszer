@@ -51,6 +51,11 @@ to    = "GAME/RESOURCE"
 [[file]]
 path = "WINDOWS.BAT"
 text = "@ECHO OFF\nD:\\GAME\\GAME.EXE\n"
+
+[icon]
+media = "disc1"
+path  = "SETUP/GAME.EXE"
+index = 1
 `
 
 func TestParseValid(t *testing.T) {
@@ -144,6 +149,11 @@ func TestParseInvalid(t *testing.T) {
 		{"unknown pad action", "format = 1\n[[input.pad]]\nb = \"spcae Fire\"", `input.pad[0].b: unknown action "spcae"`},
 		{"too many pad actions", "format = 1\n[[input.pad]]\n[[input.pad]]\na = \"q+w+e+r+t\"", "input.pad[1].a: at most 4 actions"},
 		{"wheel in wheel item", "format = 1\n[[input.pad]]\nwheel = [\"f1\", \"wheel\"]", "input.pad[0].wheel[1]: must not contain"},
+		{"icon without path", "format = 1\n[icon]\nindex = 1", "icon.path: must be set"},
+		{"icon unknown media", "format = 1\n[icon]\npath = \"A.ICO\"\nmedia = \"x\"", `icon.media: unknown media id "x"`},
+		{"icon negative index", "format = 1\n[icon]\npath = \"A.EXE\"\nindex = -1", "icon.index: must not be negative"},
+		{"icon backslash", "format = 1\n[icon]\npath = 'GAME\\A.ICO'", "icon.path: must use / as separator"},
+		{"icon unknown key", "format = 1\n[icon]\npath = \"A.ICO\"\nfile = \"x\"", `unknown key "icon.file"`},
 		{"too many pads", "format = 1" + strings.Repeat("\n[[input.pad]]", 9), "input.pad: at most 8 entries"},
 	}
 

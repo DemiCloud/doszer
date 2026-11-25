@@ -237,6 +237,22 @@ Keys beginning with `x-` are reserved for implementation-specific extensions.
 Implementations MUST ignore `x-` keys they do not recognize. Any other
 unrecognized key MUST be treated as an error.
 
+### 5.11 `[icon]`
+
+The archive's icon, for a frontend to show (§12).
+
+| Key | Type | Meaning |
+|---|---|---|
+| `path` | string | Required. An ICO file, or a program (an MZ executable with an NE or PE header) that has an icon resource. A path within the build, or, with `media`, within that media's data track file system as `[[extract]]` `from` takes it (§5.7). |
+| `media` | string | `id` of a `[[source.media]]` entry to read `path` from. |
+| `index` | integer | Which of a program's icons: its icon groups in resource table order (§6.8.4), counted from `0`. Default `0`. Ignored for an ICO file. |
+
+`[icon]` reads its file without adding it to the build: an icon read from
+media needs no `[[extract]]`, and a file in the build stays as it is.
+
+> A disc's icon is often named by the `icon=` line of its `AUTORUN.INF`,
+> as an ICO file or a program and icon index.
+
 ## 6. Processing model
 
 An implementation MUST produce output equivalent (§9) to performing the
@@ -330,6 +346,7 @@ The following files are generated at the archive root:
 | `<parent>.parent` | `parent` set | Empty |
 | `PADMAP.DBP` | `[[input.pad]]` present | §6.8.2 |
 | `DOS.YML` | The first `[[input.pad]]` entry has a binding §6.8.3 can express | §6.8.3 |
+| `DOSZ.ICO` | `[icon]` present | §6.8.4 |
 | `DOSZ.TOML` | Always | The manifest (§8.3) |
 
 A generated file replaces any file of the same name in the build, except
@@ -402,6 +419,30 @@ If the build already contains a `DOS.YML` at its root, its lines (separated
 by CRLF, LF or CR) whose key begins with `input_pad_` or `input_wheel_` are
 removed. Its other lines are kept in order, each ending with CRLF, followed
 by the generated lines.
+
+#### 6.8.4 `DOSZ.ICO`
+
+An ICO file. If `[icon]` `path` names an ICO file - one beginning with the
+16-bit little-endian values `0`, `1` and an image count of at least `1` -
+`DOSZ.ICO` is that file unchanged. Otherwise `path` MUST name a program,
+and `DOSZ.ICO` is its icon group number `index` written as an ICO file.
+
+A program's icon groups are its resources of type `RT_GROUP_ICON` (14), in
+the order its resource table lists them: for NE, the order of the type's
+resource entries; for PE, the order of the type's entries in the resource
+directory (named entries first, then IDs in ascending order), each entry's
+first language. An icon group is a 6-byte header (`0`, `1`, count, as 16-bit
+little-endian values) followed by count 14-byte entries; each entry's first
+12 bytes describe an image and its last 2 bytes are the ID of the
+`RT_ICON` (3) resource holding it.
+
+The ICO file is the same 6-byte header, then one 16-byte entry per image,
+then the images' data in entry order with no gaps. An entry is the group
+entry's first 12 bytes, with the 32-bit size field at bytes 8-11 replaced
+by the length of the `RT_ICON` resource, followed by the 32-bit offset of
+the image's data from the start of the file. An image whose `RT_ICON`
+resource does not exist is left out, and the count reduced to match.
+Multi-byte values are little-endian.
 
 ## 7. Media identification
 
@@ -503,8 +544,8 @@ versions. A recipe requiring full equivalence SHOULD set `audio = "wav"`.
 
 | Level | Requirements |
 |---|---|
-| Builder | §5, §6 except `[[extract]]` and §7, §8, §9 |
-| Recipe | Builder, plus `[[extract]]`, `[[file]]` and §7 |
+| Builder | §5, §6 except `[[extract]]`, `[icon]` `media` and §7, §8, §9 |
+| Recipe | Builder, plus `[[extract]]`, `[[file]]`, `[icon]` `media` and §7 |
 
 An implementation MUST state the conformance level it supports.
 
@@ -527,12 +568,14 @@ An implementation MUST reject a manifest that violates any of the following:
 | `[[input.pad]]` has at most eight entries, and `wheel` at most 100 items. |
 | Every `[[input.pad]]` binding string has one to four action names defined in §5.9, and a label as §5.9 allows. |
 | A `wheel` item does not contain the action `wheel`. |
+| `[icon]` has a `path`; `[icon]` `media`, if set, refers to an existing `id`; `index` is not negative. |
 
 An implementation MUST reject an archive build that would contain, under the
 shell model, `WINDOWS/WIN.INI`, `WINDOWS/SYSTEM.INI`, `WINDOWS/PROGMAN.INI` or
 `WINDOWS/*.GRP`, or, under the shell or OS image model, `DOSBOX.BAT`.
 It MUST also reject a build in which flattening (§6.3) would give two entries
-the same path.
+the same path, and one whose `[icon]` `path` does not exist, or is neither an
+ICO file nor a program with an icon group numbered `index`.
 
 A `trim` pattern or `rewrite` rule that matches nothing SHOULD produce a
 warning, as SHOULD a media that is not found or a track that is not verified
@@ -571,3 +614,9 @@ it is mounted or the guest OS starts (e.g. Windows AutoRun).
 
 `WINDOWS.BAT` SHOULD NOT shut the guest OS down itself, and SHOULD finish
 only when the program it starts has ended.
+
+A frontend that shows archives in a list MAY show an archive's root
+`DOSZ.ICO` as its icon.
+
+> DOSBox Pure does not hide `DOSZ.ICO`: like `DOSZ.TOML`, it is an ordinary
+> file in the archive's root directory.

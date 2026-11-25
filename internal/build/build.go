@@ -167,9 +167,31 @@ func Repack(entries map[string]Entry, m *manifest.Manifest, opts Options) (*Resu
 	}
 	// The archive's disc images are verified as a source's would be (§7.3);
 	// [[extract]] already happened, so a missing media is only a warning.
-	_, mediaWarnings, err := locateMedia(fs, m.Source.Media, nil, nil)
+	media, mediaWarnings, err := locateMedia(fs, m.Source.Media, nil, nil)
 	if err != nil {
 		return nil, err
+	}
+	// [icon] media is read again if the archive has it; else addIcon
+	// keeps the archive's DOSZ.ICO.
+	if m.Icon != nil && m.Icon.Media != "" {
+		if _, ok := media[m.Icon.Media]; ok {
+			var tempFiles []*os.File
+			defer func() {
+				for _, f := range tempFiles {
+					f.Close()
+					os.Remove(f.Name())
+				}
+			}()
+			out := opts.OutputPath
+			if out == "" {
+				out = effectiveName(m, opts) + ".dosz"
+			}
+			if fs.mediaIcon, err = iconFromMedia(media, m.Icon, filepath.Dir(out), &tempFiles); err != nil {
+				return nil, err
+			}
+		} else {
+			mediaWarnings = append(mediaWarnings, fmt.Sprintf("icon: media %q not found: keeping the archive's %s", m.Icon.Media, IconName))
+		}
 	}
 	return runPipeline(fs, m, opts, pathWarnings, mediaWarnings)
 }
@@ -247,6 +269,9 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, pathWarnings, 
 		return nil, err
 	}
 
+	if err := addIcon(fs, m, fs.mediaIcon); err != nil {
+		return nil, err
+	}
 	if err := addRuntimeFiles(fs, m, effectiveName); err != nil {
 		return nil, err
 	}
@@ -323,7 +348,7 @@ func tempDirFor(outputPath string) (get func() (string, error), cleanup func() e
 }
 
 // Refresh regenerates only §6.8's runtime files from m - AUTOBOOT.DBP,
-// the parent marker, PADMAP.DBP, DOS.YML and DOSZ.TOML - and writes
+// the parent marker, PADMAP.DBP, DOS.YML, DOSZ.ICO and DOSZ.TOML - and writes
 // entries with them to opts.OutputPath: for changing an archive's boot
 // settings in place. Every other entry is written as it is, copied
 // through in its compressed form when its store decision (§8.1) allows,
@@ -341,6 +366,9 @@ func Refresh(entries map[string]Entry, m *manifest.Manifest, opts Options) (_ *R
 	name := effectiveName(m, opts)
 	res := &Result{Manifest: m, EffectiveName: name, OutputPath: opts.OutputPath, fs: fs}
 	if err := ValidateArchiveContent(fs.paths(), m.Model()); err != nil {
+		return nil, err
+	}
+	if err := addIcon(fs, m, nil); err != nil {
 		return nil, err
 	}
 	if err := addRuntimeFiles(fs, m, name); err != nil {

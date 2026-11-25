@@ -263,6 +263,7 @@ func runInit(args []string) error {
 	force := fs.BoolP("force", "f", false, "")
 	fs.StringVar(&o.Name, "name", "", "")
 	noMedia := fs.Bool("no-media", false, "")
+	noIcon := fs.Bool("no-icon", false, "")
 	fs.StringVar(&o.OS, "os", "", "")
 	fs.StringVar(&o.Shell, "shell", "", "")
 	systemDir := fs.String("system-dir", "", "")
@@ -278,6 +279,7 @@ Options:
       --exec PATH         plain model: DOS program to run at startup
   -f, --force             overwrite an existing manifest
       --name NAME         canonical name (default: source directory name)
+      --no-icon           don't look for the game's icon
       --no-media          don't identify disc images in the source
       --os PATH           OS image model: OS image path, without extension
       --shell PATH        shell model: system shell path, without extension
@@ -366,6 +368,10 @@ Options:
 		return errors.New("--boot chooses a model when --exec, --shell and --os don't")
 	}
 
+	if !*noIcon {
+		chooseIcon(&o, source)
+	}
+
 	content := manifest.Template(o)
 
 	// The generated manifest must itself be valid.
@@ -397,6 +403,37 @@ Options:
 
 	fmt.Printf("Created %s\n", path)
 	return nil
+}
+
+// chooseIcon sets o.Icon to the icon platform.SuggestIcon finds, if any:
+// one on a disc only if that disc is among o.Media, which [icon] media
+// must name.
+func chooseIcon(o *manifest.TemplateOptions, source string) {
+	status.Step("Looking for the game's icon")
+	progs, _ := platform.Scan(source)
+	c := platform.SuggestIcon(source, o.Name, progs)
+	status.Done()
+	if c == nil {
+		return
+	}
+	ic := &manifest.Icon{Path: c.Path, Index: c.Index}
+	if c.Disc != "" {
+		label := strings.TrimSuffix(path.Base(c.Disc), path.Ext(c.Disc))
+		for _, m := range o.Media {
+			if m.Label == label {
+				ic.Media = m.ID
+			}
+		}
+		if ic.Media == "" {
+			return
+		}
+	}
+	o.Icon, o.IconFrom = ic, c.From
+	where := c.Path
+	if c.Disc != "" {
+		where = c.Disc + ":" + c.Path
+	}
+	fmt.Printf("Icon: %s (%s)\n", where, c.From)
 }
 
 // runBuild implements `doszer build <source> [<output.dosz>]`.

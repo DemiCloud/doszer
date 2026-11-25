@@ -30,12 +30,13 @@ cmd/doszer/          CLI entry point and command dispatch
 internal/manifest/   DOSZ.TOML parsing, key checking, validation, init template
 internal/build/      build pipeline (spec §6), archive-content validation (§11)
 internal/zipw/       deterministic ZIP writer (spec §8)
+internal/icon/       DOSZ.ICO (spec §6.8.4): ICO file or NE/PE icon group to ICO; ICO decoding (PNG, DIB) for the window
 internal/config/     configuration layering (README "Configuration"), portable mode, default directories (system, saves, ROMs) and RetroDECK's
 internal/cue/        CUE parsing, track byte ranges, normalized track hash (§7.2)
 internal/iso9660/    ISO 9660 reader, for [[extract]] (§5.7)
 internal/padmap/     [[input.pad]] (§5.9): PADMAP.DBP and DOS.YML encoding (§6.8.2, §6.8.3)
 internal/verify/     doszer verify: an archive against its manifest and spec §8/§11
-internal/platform/   what a program needs (MZ/NE/PE headers, NE expected and PE subsystem versions), a game's programs together (installed over disc, helpers aside, DOS versions), source scanning incl. disc images; for info and init
+internal/platform/   AUTORUN.INF/program icon suggestion for init; what a program needs (MZ/NE/PE headers, NE expected and PE subsystem versions), a game's programs together (installed over disc, helpers aside, DOS versions), source scanning incl. disc images; for info and init
 internal/env/        doszer env: this machine's config files, system/save directories and where they came from, shells and images (fixed/dynamic), configured names, Redump datfiles, ffmpeg
 internal/info/       doszer info: an archive's hashes, boot, parents, programs by platform (MZ/NE/PE headers), compression, discs
 internal/repack/     doszer repack: rebuild an archive from its own embedded manifest; doszer set: change boot settings in place (build.Refresh)

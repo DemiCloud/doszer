@@ -45,7 +45,7 @@ make help    # every target
 ```
 doszer dump    DIR [--drive DRIVE] [--dat FILE]
 doszer redump  [SHA1|FILE|IMAGE|FILE.dosz...] [--update] [--dat FILE] [--offset SAMPLES]
-doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH | --boot MODEL] [--audio FMT] [--name NAME] [--no-media] [--system-dir DIR] [-f]
+doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH | --boot MODEL] [--audio FMT] [--name NAME] [--no-media] [--no-icon] [--system-dir DIR] [-f]
 doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [-n] [--strict] [--ogg-quality N]
 doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FILE]] [-f] [-n] [--keep]
                [--os PATH] [--drive c|d] [--system-dir DIR] [--save-dir DIR]
@@ -333,6 +333,24 @@ details:
   as it is, even if `[pack].audio` asks for the other encoding.
 - `verify` reports a CUE sheet that §6.4 would still change, and warns
   about a `[[source.media]]` entry the archive's disc images don't match.
+
+## Icon
+
+`[icon]` (spec §5.11) gives an archive an icon, written as `DOSZ.ICO` in
+its root: an ICO file, or a Windows program's icon (NE or PE resources;
+`index` picks one of several), from the build or, with `media`, straight
+from a disc without adding the file to the archive:
+
+```toml
+[icon]
+media = "disc1"
+path  = "AUTORUN.ICO"
+```
+
+`init` fills it in: the icon an `AUTORUN.INF` names (in the source's root
+or on a disc), else the icon of the Windows program named after its
+folder or the game. `--no-icon` leaves it out. `info` shows an archive's
+icon sizes, and doszer's window shows the icon in its game list.
 
 ## Gamepad mappings
 
