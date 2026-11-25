@@ -13,6 +13,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/vdisk"
 	"github.com/DemiCloud/doszer/internal/vhd"
@@ -299,7 +300,7 @@ func TestDiscover(t *testing.T) {
 	// RetroDECK's BIOS folder.
 	bios := filepath.Join(home, "retrodeck", "bios")
 	os.MkdirAll(bios, 0o755)
-	cfg := filepath.Join(home, retroDECKConfig)
+	cfg := filepath.Join(home, config.RetroDECKConfig)
 	os.MkdirAll(filepath.Dir(cfg), 0o755)
 	os.WriteFile(cfg, []byte(`{"version": "0.10.10b", "paths": {"bios_path": "`+bios+`", "saves_path": "/elsewhere"}}`), 0o644)
 	if e, err = Discover("", ""); err != nil || e.SystemDir != bios {

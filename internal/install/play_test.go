@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DemiCloud/doszer/internal/config"
 )
 
 func TestPlay(t *testing.T) {
@@ -133,7 +135,7 @@ func TestPlaySaveDir(t *testing.T) {
 				if !tt.layout.noSaves {
 					os.MkdirAll(filepath.Join(rd, "saves"), 0o755)
 				}
-				cfg := filepath.Join(home, retroDECKConfig)
+				cfg := filepath.Join(home, config.RetroDECKConfig)
 				os.MkdirAll(filepath.Dir(cfg), 0o755)
 				os.WriteFile(cfg, []byte(`{"paths": {"roms_path": "`+filepath.Join(rd, "roms")+`", "saves_path": "`+filepath.Join(rd, "saves")+`"}}`), 0o644)
 			}
@@ -172,7 +174,7 @@ func TestPlayUsesRetroDECKSaves(t *testing.T) {
 	roms, saves := filepath.Join(home, "roms"), filepath.Join(home, "saves")
 	os.MkdirAll(filepath.Join(roms, "dos"), 0o755)
 	os.MkdirAll(saves, 0o755)
-	cfg := filepath.Join(home, retroDECKConfig)
+	cfg := filepath.Join(home, config.RetroDECKConfig)
 	os.MkdirAll(filepath.Dir(cfg), 0o755)
 	os.WriteFile(cfg, []byte(`{"paths": {"roms_path": "`+roms+`", "saves_path": "`+saves+`"}}`), 0o644)
 	archive := filepath.Join(roms, "dos", "Example Game.dosz")

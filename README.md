@@ -552,14 +552,18 @@ Every setting can be given as a flag. Precedence, highest first:
 1. Command-line flags
 2. `<source>/DOSZ.TOML`'s `[x-doszer]` table (per-game settings)
 3. `./doszer.toml`
-4. `$XDG_CONFIG_HOME/doszer/config.toml` (default `~/.config/doszer/config.toml`)
+4. The user config file: `doszer.toml` beside the doszer executable if
+   there is one (portable mode), else `$XDG_CONFIG_HOME/doszer/config.toml`
+   (default `~/.config/doszer/config.toml`)
 5. Built-in defaults
 
-`doszer.toml` and the user config file take the settings at top level:
+`doszer.toml` and the user config file take the settings at top level.
+A relative path is relative to the file that sets it:
 
 ```toml
 system_dir  = "/path/to/system"      # DOSBox Pure's system directory (OS images, shells)
 save_dir    = "/path/to/saves"       # DOSBox Pure's save directory
+rom_dir     = "/path/to/roms"        # archives the window lists
 ogg_quality = 6
 
 [templates]                          # pristine OS images used by install
@@ -581,6 +585,16 @@ extension-key namespace, so the manifest schema doesn't reject it):
 [x-doszer]
 ogg_quality = 10
 ```
+
+Unset directories have defaults, the first that exists:
+
+| Setting | Defaults |
+|---|---|
+| `system_dir` | `./system`, `system/` beside doszer, RetroDECK's `bios_path` |
+| `save_dir` | `./saves`, `saves/` beside doszer, for `run` RetroDECK's `saves_path/<folder>` for an archive under its `roms_path`, doszer's cache |
+| `rom_dir` | `./roms`, `roms/` beside doszer, RetroDECK's `roms_path` |
+
+`doszer env` shows which applies, and where it came from.
 
 `templates` and `install_os` merge by key across layers; every other setting is replaced
 whole by the most specific layer that sets it. `repack` has no source

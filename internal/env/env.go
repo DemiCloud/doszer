@@ -26,6 +26,7 @@ type Report struct {
 	Config    []ConfigFile `json:"config" yaml:"config" toml:"config"`
 	SystemDir Dir          `json:"system_dir" yaml:"system_dir" toml:"system_dir"`
 	SaveDir   Dir          `json:"save_dir" yaml:"save_dir" toml:"save_dir"`
+	ROMDir    Dir          `json:"rom_dir" yaml:"rom_dir" toml:"rom_dir"`
 	RetroDECK *RetroDECK   `json:"retrodeck,omitempty" yaml:"retrodeck,omitempty" toml:"retrodeck,omitempty"`
 	Shells    []Image      `json:"shells,omitempty" yaml:"shells,omitempty" toml:"shells,omitempty"`
 	Images    []Image      `json:"images,omitempty" yaml:"images,omitempty" toml:"images,omitempty"`
@@ -36,16 +37,10 @@ type Report struct {
 }
 
 // ConfigFile is one configuration layer's file.
-type ConfigFile struct {
-	Path  string `json:"path" yaml:"path" toml:"path"`
-	Found bool   `json:"found" yaml:"found" toml:"found"`
-}
+type ConfigFile = config.Layer
 
 // Dir is a directory and where it came from.
-type Dir struct {
-	Path string `json:"path,omitempty" yaml:"path,omitempty" toml:"path,omitempty"`
-	From string `json:"from,omitempty" yaml:"from,omitempty" toml:"from,omitempty"`
-}
+type Dir = config.Dir
 
 // RetroDECK is RetroDECK's folders, when it is installed.
 type RetroDECK struct {
@@ -80,46 +75,20 @@ type Redump struct {
 	External string `json:"external,omitempty" yaml:"external,omitempty" toml:"external,omitempty"` // redump_dat
 }
 
-// Read gathers the report. systemDir and saveDir are what --system-dir
-// and --save-dir gave, "" if not given.
-func Read(cfg config.Config, systemDir, saveDir string) (*Report, error) {
-	r := &Report{}
-	if p, err := config.UserConfigPath(); err == nil {
-		r.Config = append(r.Config, ConfigFile{p, exists(p)})
-	}
-	if abs, err := filepath.Abs(config.FileName); err == nil {
-		r.Config = append(r.Config, ConfigFile{abs, exists(abs)})
-	}
+// Read gathers the report. systemDir, saveDir and romDir are what
+// --system-dir, --save-dir and --rom-dir gave, "" if not given.
+func Read(cfg config.Config, systemDir, saveDir, romDir string) (*Report, error) {
+	r := &Report{Config: config.Layers("")}
 
-	switch {
-	case systemDir != "":
-		r.SystemDir = Dir{systemDir, "--system-dir"}
-	case cfg.SystemDir != "":
-		r.SystemDir = Dir{cfg.SystemDir, "system_dir"}
-	default:
-		d, from := install.FindSystemDirFrom()
-		r.SystemDir = Dir{d, from}
-	}
+	r.SystemDir = config.SystemDirOf(cfg, systemDir)
 	if r.SystemDir.Path != "" && !isDir(r.SystemDir.Path) {
 		return nil, fmt.Errorf("system directory %s (%s): not a directory", r.SystemDir.Path, r.SystemDir.From)
 	}
-
-	bios, roms, saves := install.RetroDECK()
-	if bios != "" || roms != "" || saves != "" {
-		r.RetroDECK = &RetroDECK{bios, roms, saves}
+	if rd := config.RetroDECK(); rd != (config.RetroDECKDirs{}) {
+		r.RetroDECK = &RetroDECK{rd.BIOS, rd.ROMs, rd.Saves}
 	}
-	switch {
-	case saveDir != "":
-		r.SaveDir = Dir{saveDir, "--save-dir"}
-	case cfg.SaveDir != "":
-		r.SaveDir = Dir{cfg.SaveDir, "save_dir"}
-	default:
-		if d, from := install.LocalSaveDir(); d != "" {
-			r.SaveDir = Dir{d, from}
-		} else if cache, err := os.UserCacheDir(); err == nil {
-			r.SaveDir = Dir{filepath.Join(cache, "doszer", "saves"), "doszer's cache"}
-		}
-	}
+	r.SaveDir = config.SaveDirOf(cfg, saveDir)
+	r.ROMDir = config.ROMDirOf(cfg, romDir)
 
 	files := install.SystemFiles(r.SystemDir.Path)
 	for _, f := range files {
@@ -200,6 +169,9 @@ func Print(w io.Writer, r *Report) {
 		if c.Found {
 			state = "found"
 		}
+		if c.Kind == "portable" {
+			state += ", portable"
+		}
 		line(k, "%s (%s)", c.Path, state)
 	}
 	dir := func(k string, d Dir) {
@@ -211,8 +183,9 @@ func Print(w io.Writer, r *Report) {
 	}
 	dir("System dir", r.SystemDir)
 	dir("Save dir", r.SaveDir)
+	dir("ROM dir", r.ROMDir)
 	if rd := r.RetroDECK; rd != nil {
-		if rd.ROMs != "" && rd.Saves != "" && r.SaveDir.From != "--save-dir" && r.SaveDir.From != "save_dir" && r.SaveDir.From != "./saves" && r.SaveDir.From != "beside doszer" {
+		if rd.ROMs != "" && rd.Saves != "" && r.SaveDir.From == config.FromCache {
 			line("", "run: %s for archives under %s (RetroDECK)", filepath.Join(rd.Saves, "<folder>"), rd.ROMs)
 		}
 		line("RetroDECK", "BIOS %s, ROMs %s, saves %s", orNone(rd.BIOS), orNone(rd.ROMs), orNone(rd.Saves))
@@ -272,8 +245,6 @@ func Print(w io.Writer, r *Report) {
 		line("Cache", "%s", r.Cache)
 	}
 }
-
-func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 
 func isDir(p string) bool { fi, err := os.Stat(p); return err == nil && fi.IsDir() }
 

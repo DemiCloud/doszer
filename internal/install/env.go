@@ -5,7 +5,6 @@
 package install
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/DemiCloud/doszer/internal/builtin"
+	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/libretro"
 )
 
@@ -27,8 +27,8 @@ type Env struct {
 // Discover settles DOSBox Pure's directories. A given directory must
 // exist. Otherwise the system directory is the first that exists of a
 // system/ folder in the working directory, one beside the doszer
-// executable (as standalone DOSBox Pure keeps it beside its own), and
-// RetroDECK's BIOS folder (retroDECKBIOS); the save directory is doszer's
+// executable and RetroDECK's BIOS folder (config.FindSystemDir); the save
+// directory is doszer's
 // own, in the user cache directory (Play searches further first:
 // PlaySaveDir).
 func Discover(systemDir, saveDir string) (Env, error) {
@@ -42,122 +42,19 @@ func Discover(systemDir, saveDir string) (Env, error) {
 	}
 	e := Env{SystemDir: systemDir, SaveDir: saveDir}
 	if e.SystemDir == "" {
-		e.SystemDir = FindSystemDir()
+		e.SystemDir = config.FindSystemDir().Path
 	}
 	if e.SaveDir == "" {
-		cache, err := os.UserCacheDir()
-		if err != nil {
+		var err error
+		if e.SaveDir, err = config.CacheSaveDir(); err != nil {
 			return Env{}, err
 		}
-		e.SaveDir = filepath.Join(cache, "doszer", "saves")
 		if err := os.MkdirAll(e.SaveDir, 0o755); err != nil {
 			return Env{}, err
 		}
 	}
 	return e, nil
 }
-
-// FindSystemDir returns the system directory Discover uses when none is
-// given, or "" if there is none.
-func FindSystemDir() string {
-	d, _ := FindSystemDirFrom()
-	return d
-}
-
-// FindSystemDirFrom is FindSystemDir, also saying where the directory
-// came from: "./system", "beside doszer" or "RetroDECK".
-func FindSystemDirFrom() (dir, from string) {
-	if d := existingDir("system"); d != "" {
-		return d, "./system"
-	}
-	if exe, err := os.Executable(); err == nil {
-		if d := existingDir(filepath.Join(filepath.Dir(exe), "system")); d != "" {
-			return d, "beside doszer"
-		}
-	}
-	if d := retroDECKBIOS(); d != "" {
-		return d, "RetroDECK"
-	}
-	return "", ""
-}
-
-// existingDir returns d made absolute if it is a directory, else "".
-func existingDir(d string) string {
-	if fi, err := os.Stat(d); err == nil && fi.IsDir() {
-		if abs, err := filepath.Abs(d); err == nil {
-			return abs
-		}
-	}
-	return ""
-}
-
-// RetroDECK returns the folders RetroDECK's settings name - its BIOS
-// (system), ROM and save folders - each "" if RetroDECK isn't installed
-// or the folder doesn't exist.
-func RetroDECK() (bios, roms, saves string) {
-	d := retroDECK()
-	return d.BIOS, d.ROMs, d.Saves
-}
-
-// LocalSaveDir returns the save directory Play uses before RetroDECK's,
-// and where it came from: a saves/ folder in the working directory
-// ("./saves") or beside the doszer executable ("beside doszer"), or "".
-func LocalSaveDir() (dir, from string) {
-	if d := existingDir("saves"); d != "" {
-		return d, "./saves"
-	}
-	if exe, err := os.Executable(); err == nil {
-		if d := existingDir(filepath.Join(filepath.Dir(exe), "saves")); d != "" {
-			return d, "beside doszer"
-		}
-	}
-	return "", ""
-}
-
-// retroDECKConfig is RetroDECK's settings file, under the home directory.
-var retroDECKConfig = filepath.Join(".var", "app", "net.retrodeck.retrodeck", "config", "retrodeck", "retrodeck.json")
-
-// retroDECKDirs are the folders RetroDECK's settings name (paths.bios_path,
-// roms_path and saves_path), each "" if unset or not an existing folder.
-type retroDECKDirs struct{ BIOS, ROMs, Saves string }
-
-// retroDECK reads RetroDECK's folders from its settings, or returns none
-// if RetroDECK isn't installed.
-func retroDECK() retroDECKDirs {
-	var d retroDECKDirs
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return d
-	}
-	data, err := os.ReadFile(filepath.Join(home, retroDECKConfig))
-	if err != nil {
-		return d
-	}
-	var cfg struct {
-		Paths struct {
-			BIOS  string `json:"bios_path"`
-			ROMs  string `json:"roms_path"`
-			Saves string `json:"saves_path"`
-		} `json:"paths"`
-	}
-	if json.Unmarshal(data, &cfg) != nil {
-		return d
-	}
-	isDir := func(p string) string {
-		if p == "" {
-			return ""
-		}
-		if fi, err := os.Stat(p); err != nil || !fi.IsDir() {
-			return ""
-		}
-		return p
-	}
-	return retroDECKDirs{BIOS: isDir(cfg.Paths.BIOS), ROMs: isDir(cfg.Paths.ROMs), Saves: isDir(cfg.Paths.Saves)}
-}
-
-// retroDECKBIOS returns RetroDECK's BIOS folder, where archives' OS images
-// live in production, or "".
-func retroDECKBIOS() string { return retroDECK().BIOS }
 
 // PlaySaveDir returns the save directory Play uses for archive when none
 // is given: the first that exists of a saves/ folder in the working
@@ -169,10 +66,10 @@ func retroDECKBIOS() string { return retroDECK().BIOS }
 // Discover's default. install doesn't search: its sessions' throwaway
 // saves stay in doszer's cache.
 func PlaySaveDir(archive string) (string, error) {
-	if d, _ := LocalSaveDir(); d != "" {
-		return d, nil
+	if d := config.FindSaveDir(); d.Path != "" {
+		return d.Path, nil
 	}
-	rd := retroDECK()
+	rd := config.RetroDECK()
 	if rd.ROMs == "" || rd.Saves == "" {
 		return "", nil
 	}

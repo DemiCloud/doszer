@@ -30,7 +30,7 @@ cmd/doszer/          CLI entry point and command dispatch
 internal/manifest/   DOSZ.TOML parsing, key checking, validation, init template
 internal/build/      build pipeline (spec §6), archive-content validation (§11)
 internal/zipw/       deterministic ZIP writer (spec §8)
-internal/config/     configuration layering (README "Configuration")
+internal/config/     configuration layering (README "Configuration"), portable mode, default directories (system, saves, ROMs) and RetroDECK's
 internal/cue/        CUE parsing, track byte ranges, normalized track hash (§7.2)
 internal/iso9660/    ISO 9660 reader, for [[extract]] (§5.7)
 internal/padmap/     [[input.pad]] (§5.9): PADMAP.DBP and DOS.YML encoding (§6.8.2, §6.8.3)
@@ -94,7 +94,8 @@ README.md            doszer usage, configuration, install workflow
   at its directories. doszer reads no frontend's configuration, with one
   exception: RetroDECK's `retrodeck.json` (`paths.bios_path`, `roms_path`,
   `saves_path`), read-only, as the last fallback for the system directory
-  (after `system_dir`, `./system` and `system/` beside the executable) and
+  (after `system_dir`, `./system` and `system/` beside the executable),
+  for the ROM directory (after `rom_dir`, `./roms`, `roms/` beside it) and
   for `run`'s save directory (after `save_dir`, `./saves` and `saves/`
   beside the executable): `<saves_path>/<archive's folder>` for an archive
   under `roms_path`, matching RetroArch's sort-by-content-directory, so

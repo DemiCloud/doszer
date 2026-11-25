@@ -179,6 +179,7 @@ const (
 	flagStrict     = "      --strict            fail on any warning\n"
 	flagSaveDir    = "      --save-dir DIR      DOSBox Pure save directory (default: save_dir, else doszer's)\n"
 	flagSystemDir  = "      --system-dir DIR    DOSBox Pure system directory (default: system_dir, else ./system, else RetroDECK's)\n"
+	flagROMDir     = "      --rom-dir DIR       archive directory (default: rom_dir, else ./roms, else RetroDECK's)\n"
 )
 
 // newFlags returns a command's flag set: GNU-style (pflag), options
@@ -465,7 +466,7 @@ func warnMissingImage(b *manifest.Boot, systemDir string) {
 		return
 	}
 	if systemDir == "" {
-		systemDir = install.FindSystemDir()
+		systemDir = config.FindSystemDir().Path
 	}
 	if systemDir == "" {
 		return
@@ -1312,12 +1313,13 @@ func runEnv(args []string) error {
 	fs := newFlags("env")
 	systemDir := fs.String("system-dir", "", "")
 	saveDir := fs.String("save-dir", "", "")
+	romDir := fs.String("rom-dir", "", "")
 	const help = `doszer env - show the directories, images and tools doszer finds here
 
 Usage: doszer env [options]
 
 Options:
-` + flagSystemDir + flagSaveDir + flagFormatData + flagHelp
+` + flagSystemDir + flagSaveDir + flagROMDir + flagFormatData + flagHelp
 	if ok, err := parse(fs, args, help, 0, 0); !ok {
 		return err
 	}
@@ -1325,7 +1327,7 @@ Options:
 	if err != nil {
 		return err
 	}
-	r, err := env.Read(cfg, *systemDir, *saveDir)
+	r, err := env.Read(cfg, *systemDir, *saveDir, *romDir)
 	if err != nil {
 		return err
 	}
@@ -1337,6 +1339,8 @@ Options:
 		add("system_dir_from", r.SystemDir.From)
 		add("save_dir", r.SaveDir.Path)
 		add("save_dir_from", r.SaveDir.From)
+		add("rom_dir", r.ROMDir.Path)
+		add("rom_dir_from", r.ROMDir.From)
 		for _, i := range r.Shells {
 			add("shell", i.Name)
 		}
@@ -1583,7 +1587,7 @@ func chooseBoot(o *manifest.TemplateOptions, source, systemDir, boot string, cfg
 	need := platform.Needs(progs)
 	game := need.Game
 	if systemDir == "" {
-		systemDir = install.FindSystemDir()
+		systemDir = config.FindSystemDir().Path
 	}
 	why := fmt.Sprintf("The game needs %s (%s found)", need, plural(len(progs), "program"))
 	switch {

@@ -39,11 +39,11 @@ func TestRead(t *testing.T) {
 	cfg.DefaultOS = "dosbox_pure/Win95"
 	cfg.InstallOS = map[string]string{"dosbox_pure/Win98": "dosbox_pure/Win98"}
 
-	r, err := Read(cfg, sys, "")
+	r, err := Read(cfg, sys, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.SystemDir != (Dir{sys, "--system-dir"}) {
+	if r.SystemDir != (Dir{Path: sys, From: "--system-dir"}) {
 		t.Errorf("system dir = %+v", r.SystemDir)
 	}
 	if len(r.Shells) != 1 || r.Shells[0].Name != "dosbox_pure/Win31" {
@@ -74,7 +74,7 @@ func TestRead(t *testing.T) {
 		}
 	}
 
-	if _, err := Read(config.Default(), filepath.Join(sys, "missing"), ""); err == nil {
+	if _, err := Read(config.Default(), filepath.Join(sys, "missing"), "", ""); err == nil {
 		t.Error("a missing --system-dir was accepted")
 	}
 }

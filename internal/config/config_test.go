@@ -150,7 +150,10 @@ c = "cwd-c"
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	want := map[string]string{"a": "user-a", "b": "cwd-b", "c": "cwd-c"}
+	// Relative template paths are relative to the file that sets them.
+	cwd, _ := os.Getwd()
+	userDir := filepath.Dir(userPath)
+	want := map[string]string{"a": filepath.Join(userDir, "user-a"), "b": filepath.Join(cwd, "cwd-b"), "c": filepath.Join(cwd, "cwd-c")}
 	if !reflect.DeepEqual(cfg.Templates, want) {
 		t.Errorf("Templates = %v, want %v", cfg.Templates, want)
 	}
@@ -200,5 +203,106 @@ func TestUserConfigPathFallsBackToHome(t *testing.T) {
 	}
 	if want := filepath.Join("/home/example", ".config", "doszer", "config.toml"); got != want {
 		t.Errorf("UserConfigPath() = %q, want %q", got, want)
+	}
+}
+
+func TestLoadResolvesRelativePaths(t *testing.T) {
+	isolate(t)
+	userPath, _ := UserConfigPath()
+	abs := filepath.Join(t.TempDir(), "saves")
+	writeFile(t, userPath, "system_dir = \"system\"\nsave_dir = '"+abs+"'\nrom_dir = \"../roms\"\ndefault_os = \"dosbox_pure/Win98\"\n")
+
+	cfg, origins, err := LoadOrigins("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Dir(userPath)
+	tests := []struct{ got, want string }{
+		{cfg.SystemDir, filepath.Join(dir, "system")},
+		{cfg.SaveDir, abs},
+		{cfg.ROMDir, filepath.Join(filepath.Dir(dir), "roms")},
+		{cfg.DefaultOS, "dosbox_pure/Win98"}, // a system directory path, not a host one
+	}
+	for _, tt := range tests {
+		if tt.got != tt.want {
+			t.Errorf("got %q, want %q", tt.got, tt.want)
+		}
+	}
+	for _, k := range []string{"system_dir", "save_dir", "rom_dir", "default_os"} {
+		if origins[k] != userPath {
+			t.Errorf("origins[%s] = %q, want %q", k, origins[k], userPath)
+		}
+	}
+	if _, ok := origins["ogg_quality"]; ok {
+		t.Error("ogg_quality has an origin but no file sets it")
+	}
+}
+
+func TestPortable(t *testing.T) {
+	isolate(t)
+	exeDir := t.TempDir()
+	executable = func() (string, error) { return filepath.Join(exeDir, "doszer"), nil }
+	t.Cleanup(func() { executable = os.Executable })
+
+	xdg, _ := XDGConfigPath()
+	writeFile(t, xdg, "ogg_quality = 2")
+	if Portable() {
+		t.Fatal("portable without a doszer.toml beside the executable")
+	}
+	if p, _ := UserConfigPath(); p != xdg {
+		t.Fatalf("UserConfigPath = %q, want %q", p, xdg)
+	}
+
+	portable := filepath.Join(exeDir, FileName)
+	writeFile(t, portable, "ogg_quality = 4")
+	if !Portable() {
+		t.Fatal("not portable with a doszer.toml beside the executable")
+	}
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.OggQuality != 4 {
+		t.Errorf("OggQuality = %d, want the portable file's 4 (XDG's ignored)", cfg.OggQuality)
+	}
+
+	// Run from the executable's directory, ./doszer.toml is the same file:
+	// one layer, not two.
+	t.Chdir(exeDir)
+	if l := Layers(""); len(l) != 1 || l[0].Kind != "portable" {
+		t.Errorf("Layers = %+v, want the portable file only", l)
+	}
+
+	// Directories beside the executable are defaults.
+	os.MkdirAll(filepath.Join(exeDir, "roms"), 0o755)
+	t.Chdir(t.TempDir())
+	if d := FindROMDir(); d.From != FromExe || filepath.Base(d.Path) != "roms" {
+		t.Errorf("FindROMDir = %+v", d)
+	}
+	os.MkdirAll("roms", 0o755)
+	if d := FindROMDir(); d.From != "./roms" {
+		t.Errorf("FindROMDir = %+v, want ./roms first", d)
+	}
+}
+
+func TestDirOf(t *testing.T) {
+	isolate(t)
+	t.Setenv("HOME", t.TempDir())
+	cfg := Default()
+	if d := ROMDirOf(cfg, ""); d != (Dir{}) {
+		t.Errorf("ROMDirOf with nothing = %+v", d)
+	}
+	rd := t.TempDir()
+	home, _ := os.UserHomeDir()
+	writeFile(t, filepath.Join(home, RetroDECKConfig), `{"paths": {"roms_path": "`+rd+`"}}`)
+	if d := ROMDirOf(cfg, ""); d != (Dir{Path: rd, From: FromRetroDECK}) {
+		t.Errorf("ROMDirOf = %+v, want RetroDECK's", d)
+	}
+	cfg.ROMDir = "/r"
+	if d := ROMDirOf(cfg, ""); d != (Dir{Path: "/r", From: "rom_dir"}) {
+		t.Errorf("ROMDirOf = %+v, want rom_dir", d)
+	}
+	if d := ROMDirOf(cfg, "/f"); d != (Dir{Path: "/f", From: "--rom-dir"}) {
+		t.Errorf("ROMDirOf = %+v, want the flag", d)
 	}
 }

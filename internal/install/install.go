@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/fat"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/status"
@@ -449,7 +450,7 @@ func runFrom(opts Options, m *manifest.Manifest) (*Report, error) {
 		}
 		systemDir := opts.SystemDir
 		if systemDir == "" {
-			systemDir = FindSystemDir()
+			systemDir = config.FindSystemDir().Path
 		}
 		img, err := osImagePath(systemDir, m.Boot.OS)
 		if err != nil {
