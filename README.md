@@ -109,6 +109,8 @@ same path are an error.
 
 The default output is `<name>.dosz` in the current directory. `--name`
 overrides the manifest's `name`, which defaults to the source directory name.
+An output inside the source (a build run from the source directory) is not
+collected into the next build: it is replaced.
 
 `build --dry-run` prints the planned trim, flatten, media conversion and
 rewrite operations without writing anything. For every path changed by flattening, it searches

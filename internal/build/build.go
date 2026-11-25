@@ -114,9 +114,14 @@ func Run(opts Options) (*Result, error) {
 			os.Remove(f.Name())
 		}
 	}()
+	if opts.OutputPath == "" {
+		opts.OutputPath = effectiveName(m, opts) + ".dosz"
+	}
 	// Beside the output, like runPipeline's temporary files: an extracted
 	// data track can be hundreds of megabytes, and /tmp may be RAM-backed.
-	fs, pathWarnings, mediaWarnings, err := collect(opts.SourceDir, m, filepath.Dir(opts.OutputPath), &tempFiles)
+	// The output itself is left out, should it be in the source (a build
+	// run from the source directory): it is replaced, not packed.
+	fs, pathWarnings, mediaWarnings, err := collect(opts.SourceDir, m, opts.OutputPath, &tempFiles)
 	if err != nil {
 		return nil, err
 	}
@@ -173,11 +178,7 @@ func Repack(entries map[string]Entry, m *manifest.Manifest, opts Options) (*Resu
 // pathWarnings are collect's (fileSet.collected), mediaWarnings §7.3's,
 // from verifying fs's media.
 func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, pathWarnings, mediaWarnings []string) (_ *Result, err error) {
-	effectiveName := m.Name
-	if opts.Name != "" {
-		effectiveName = opts.Name
-	}
-
+	effectiveName := effectiveName(m, opts)
 	outputPath := opts.OutputPath
 	if outputPath == "" {
 		outputPath = effectiveName + ".dosz"
@@ -308,6 +309,14 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, pathWarnings, 
 	}
 
 	return res, nil
+}
+
+// effectiveName is the manifest's name, or opts.Name if set (§8.3).
+func effectiveName(m *manifest.Manifest, opts Options) string {
+	if opts.Name != "" {
+		return opts.Name
+	}
+	return m.Name
 }
 
 // writeArchive writes every file in fs to w as a deterministic ZIP (§8). An

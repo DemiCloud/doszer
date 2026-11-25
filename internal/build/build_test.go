@@ -247,6 +247,39 @@ func TestRunDefaultOutputPath(t *testing.T) {
 	}
 }
 
+func TestRunLeavesOutOwnOutput(t *testing.T) {
+	// Built from inside the source, the archive lands in the source: the
+	// next build must replace it, not pack it.
+	for _, tc := range []struct{ name, output string }{
+		{"default path", ""},
+		{"given path", "out.dosz"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := buildFixture(t)
+			wd, err := os.Getwd()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chdir(dir); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { os.Chdir(wd) })
+
+			for i := 0; i < 2; i++ {
+				res, err := build.Run(build.Options{SourceDir: ".", OutputPath: tc.output})
+				if err != nil {
+					t.Fatalf("Run %d: %v", i+1, err)
+				}
+				for _, e := range res.Entries {
+					if strings.HasSuffix(e, ".dosz") {
+						t.Fatalf("build %d packed %s", i+1, e)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestRunDryRunWritesNothing(t *testing.T) {
 	dir := buildFixture(t)
 	out := filepath.Join(t.TempDir(), "out.dosz")

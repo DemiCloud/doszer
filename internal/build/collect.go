@@ -17,16 +17,20 @@ import (
 // verifies [[source.media]] against the collected disc images (§7.3) and
 // returns that step's warnings.
 //
-// Files extracted from media stay in temporary images created in tempDir
-// and appended to *tempFiles, which the caller removes once the archive is
-// written.
+// Files extracted from media stay in temporary images created in
+// outputPath's directory and appended to *tempFiles, which the caller
+// removes once the archive is written. outputPath itself is never
+// collected: an earlier build's output in the source would otherwise be
+// packed into the next one.
 //
 // Two source files whose paths differ only in case (possible on a
 // case-sensitive file system) are one file to §2: the later in walk
 // order, which is lexical, is kept, and pathWarnings names both.
-func collect(sourceDir string, m *manifest.Manifest, tempDir string, tempFiles *[]*os.File) (_ *fileSet, pathWarnings, mediaWarnings []string, err error) {
+func collect(sourceDir string, m *manifest.Manifest, outputPath string, tempFiles *[]*os.File) (_ *fileSet, pathWarnings, mediaWarnings []string, err error) {
 	status.Step("Collecting files")
 	result := newFileSet()
+	tempDir := filepath.Dir(outputPath)
+	output, _ := os.Stat(outputPath) // nil if not built yet
 
 	err = filepath.WalkDir(sourceDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -52,6 +56,9 @@ func collect(sourceDir string, m *manifest.Manifest, tempDir string, tempFiles *
 		info, err := d.Info()
 		if err != nil {
 			return err
+		}
+		if output != nil && os.SameFile(info, output) {
+			return nil
 		}
 		if w := result.collected(rel, diskEntry(abs, info.ModTime())); w != "" {
 			pathWarnings = append(pathWarnings, w)
