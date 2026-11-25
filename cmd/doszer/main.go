@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -76,7 +77,7 @@ func main() {
 	redump.UserAgent = "doszer/" + version
 	interrupt.Handle()
 	status.Enable(os.Stderr)
-	if err := run(os.Args[1:]); err != nil {
+	if err := run(windowsPaths(os.Args[1:])); err != nil {
 		status.Stop()
 		if !errors.Is(err, errUsage) {
 			logError(err)
@@ -109,9 +110,46 @@ func run(args []string) error {
 	if fi, err := os.Stat(args[0]); err == nil && !fi.IsDir() {
 		return runRun(args)
 	}
+	if strings.ContainsAny(args[0], `/\.`) {
+		return fmt.Errorf("%s: no such file", args[0])
+	}
 
 	usage(os.Stderr)
 	return fmt.Errorf("unknown command %q", args[0])
+}
+
+// windowsPaths converts WSL paths (/mnt/<drive>/...) in args, or in an
+// option's =VALUE, to Windows ones when doszer runs on Windows: a
+// Windows doszer started from a WSL shell gets the shell's paths, which
+// mean nothing to it. Elsewhere args are returned unchanged.
+func windowsPaths(args []string) []string {
+	if runtime.GOOS != "windows" {
+		return args
+	}
+	out := make([]string, len(args))
+	for i, a := range args {
+		prefix, p := "", a
+		if strings.HasPrefix(a, "--") {
+			if k, v, ok := strings.Cut(a, "="); ok {
+				prefix, p = k+"=", v
+			}
+		}
+		out[i] = prefix + wslToWindows(p)
+	}
+	return out
+}
+
+// wslToWindows converts /mnt/d/x/y to D:\x\y; any other path is returned
+// unchanged.
+func wslToWindows(p string) string {
+	if len(p) < 6 || !strings.HasPrefix(p, "/mnt/") {
+		return p
+	}
+	d := p[5]
+	if !(d >= 'a' && d <= 'z' || d >= 'A' && d <= 'Z') || len(p) > 6 && p[6] != '/' {
+		return p
+	}
+	return strings.ToUpper(string(d)) + `:\` + strings.ReplaceAll(strings.TrimPrefix(p[6:], "/"), "/", `\`)
 }
 
 func usage(w io.Writer) {
