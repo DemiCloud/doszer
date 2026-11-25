@@ -291,7 +291,7 @@ func fakeDOSBoxPure(t *testing.T) (systemDir, saveDir string) {
 	old := launch
 	t.Cleanup(func() { launch = old })
 	launch = func(e Env, s *Session) error {
-		if s.CoreOptions["dosbox_pure_bootos_ramdisk"] != "diff" {
+		if s.CoreOptions["dosbox_pure_bootos_ramdisk"] != "diff" || s.CoreOptions["dosbox_pure_menu_time"] != "0" {
 			t.Errorf("session core options %v", s.CoreOptions)
 		}
 		data, err := os.ReadFile(os.Getenv("FAKE_SAVE"))

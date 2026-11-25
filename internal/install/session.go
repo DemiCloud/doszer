@@ -30,17 +30,22 @@ type Session struct {
 	Title   string // window title
 
 	// CoreOptions are the DOSBox Pure core options the session sets over
-	// the core's defaults (osCoreOptions).
+	// the core's defaults (coreOptions).
 	CoreOptions map[string]string
 }
 
-// osCoreOptions are the core options every session runs with. "Save
-// Difference Per Content" keeps an OS image untouched and puts C: changes
-// in <name>-CDRIVE.sav; the D: free space is pinned because it seeds the
-// D: save's hash. Neither affects content that boots no OS image.
-var osCoreOptions = map[string]string{
+// coreOptions are the core options every session runs with: specification
+// §12's, which archives assume. "Save Difference Per Content" keeps an OS
+// image untouched and puts C: changes in <name>-CDRIVE.sav; the D: free
+// space is pinned because it seeds the D: save's hash. A start menu time
+// of 0 skips the menu and closes DOSBox Pure when the game it started
+// ends - e.g. when Windows shuts down after the game - which the libretro
+// core does only for menu_time 0-98 (dosbox_pure_libretro.cpp, retro_run,
+// DBPSTATE_EXITED).
+var coreOptions = map[string]string{
 	"dosbox_pure_bootos_ramdisk":    "diff",
 	"dosbox_pure_bootos_dfreespace": "1024",
+	"dosbox_pure_menu_time":         "0",
 }
 
 // sessionExcluded are source files left out of the session's content:
@@ -73,7 +78,7 @@ func Prepare(source string, m *manifest.Manifest) (*Session, error) {
 		Model:       m.Model(),
 		OS:          m.Boot.OS,
 		Title:       "doszer install",
-		CoreOptions: osCoreOptions,
+		CoreOptions: coreOptions,
 	}
 	s.Content = filepath.Join(dir, s.Name+".dosz")
 	if err := s.writeContent(abs, m); err != nil {

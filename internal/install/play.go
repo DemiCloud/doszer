@@ -15,7 +15,7 @@ import (
 // Its saves are named after it, in the save directory Discover settles on,
 // so a later Play of the same archive continues from them. An archive that
 // boots an OS image runs it under "Save Difference Per Content"
-// (osCoreOptions): the image is never written to.
+// (coreOptions): the image is never written to.
 func Play(archive, systemDir, saveDir string) (Env, error) {
 	abs, err := filepath.Abs(archive)
 	if err != nil {
@@ -51,7 +51,7 @@ func Play(archive, systemDir, saveDir string) (Env, error) {
 		Content:     abs,
 		Dir:         dir,
 		Title:       "doszer run - " + name,
-		CoreOptions: osCoreOptions,
+		CoreOptions: coreOptions,
 	}
 	defer s.Close()
 	return env, launch(env, s)
