@@ -422,6 +422,14 @@ func (f *FS) lookup(name string) (*entry, error) {
 		return nil, nil // the root
 	}
 	var cur *entry
+	// The directories passed through, by first cluster (0: FAT12/16's
+	// fixed root; "." and ".." are never entries). A damaged directory
+	// pointing back at one of them would make a walk of the file system
+	// descend forever.
+	seen := map[uint32]bool{0: true}
+	if f.kind == FAT32 {
+		seen[f.rootCluster] = true
+	}
 	for _, part := range strings.Split(name, "/") {
 		if cur != nil && !cur.isDir() {
 			return nil, fs.ErrNotExist
@@ -444,6 +452,12 @@ func (f *FS) lookup(name string) (*entry, error) {
 		}
 		if found == nil {
 			return nil, fs.ErrNotExist
+		}
+		if found.isDir() {
+			if seen[found.cluster] {
+				return nil, fmt.Errorf("directory %s loops back to cluster %d (a damaged file system)", part, found.cluster)
+			}
+			seen[found.cluster] = true
 		}
 		cur = found
 	}

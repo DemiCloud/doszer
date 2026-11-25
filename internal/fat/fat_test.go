@@ -3,6 +3,7 @@ package fat
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"io/fs"
 	"strings"
@@ -432,4 +433,52 @@ func TestConcurrentWalk(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestRejectDirectoryLoop(t *testing.T) {
+	// A damaged directory entry pointing back at the root or at an
+	// ancestor must end a walk with an error, not descend forever.
+	tree := func() []*node {
+		return []*node{{short: "SUB        ", dir: true, children: []*node{
+			{short: "INNER      ", dir: true, children: []*node{{short: "A       TXT", data: []byte("a")}}},
+		}}}
+	}
+	for _, kind := range []Kind{FAT16, FAT32} {
+		for _, tc := range []struct {
+			name   string
+			target func(f *FS) uint32 // cluster INNER is made to point at
+		}{
+			{"to the root", func(f *FS) uint32 {
+				if f.kind == FAT32 {
+					return f.rootCluster
+				}
+				return 0
+			}},
+			{"to its parent", func(f *FS) uint32 { return f.lookupCluster(t, "SUB") }},
+		} {
+			t.Run(fmt.Sprintf("FAT%d %s", kind, tc.name), func(t *testing.T) {
+				f, err := Open(bytes.NewReader(buildFAT(t, kind, tree())))
+				if err != nil {
+					t.Fatal(err)
+				}
+				inner, err := f.lookup("SUB/INNER")
+				if err != nil {
+					t.Fatal(err)
+				}
+				inner.cluster = tc.target(f) // entries are cached and shared
+				done := make(chan error, 1)
+				go func() {
+					done <- fs.WalkDir(f, ".", func(p string, d fs.DirEntry, err error) error { return err })
+				}()
+				select {
+				case err := <-done:
+					if err == nil || !strings.Contains(err.Error(), "loops back") {
+						t.Fatalf("WalkDir = %v, want a loop error", err)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("WalkDir didn't finish: the loop wasn't caught")
+				}
+			})
+		}
+	}
 }
