@@ -4,8 +4,9 @@ package libretro
 // scancodes (SDL_scancode.h, the USB HID usage IDs), so DOS sees physical
 // key positions whatever the host keyboard layout.
 const (
-	retrokF10  = 291
-	retrokLast = 324
+	retrokReturn = 13
+	retrokF10    = 291
+	retrokLast   = 324
 )
 
 var scancodeKeys = func() map[int32]uint32 {

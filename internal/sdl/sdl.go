@@ -22,13 +22,20 @@ const (
 
 	WindowPosCentered  = 0x2FFF0000
 	WindowShown        = 0x00000004
+	WindowHidden       = 0x00000008
 	WindowResizable    = 0x00000020
 	WindowAllowHighDPI = 0x00002000
 
 	RendererAccelerated = 0x00000002
 
+	WindowFullscreenDesktop = 0x00001001
+
+	ScaleModeNearest = 0
+	ScaleModeLinear  = 1
+
 	PixelFormatRGB888      = 0x16161804 // XRGB8888, libretro's RETRO_PIXEL_FORMAT_XRGB8888
 	TextureAccessStreaming = 1
+	TextureAccessTarget    = 2
 
 	AudioS16LSB = 0x8010
 )
@@ -86,6 +93,9 @@ func (e *Event) Motion() (xrel, yrel int32) { return e.i32(28), e.i32(32) }
 // Wheel is a mouse wheel event's vertical movement (SDL_MouseWheelEvent).
 func (e *Event) Wheel() int32 { return e.i32(20) }
 
+// Rect is SDL_Rect.
+type Rect struct{ X, Y, W, H int32 }
+
 // AudioSpec is SDL_AudioSpec.
 type AudioSpec struct {
 	Freq     int32
@@ -101,30 +111,38 @@ type AudioSpec struct {
 
 // The SDL functions used, bound by Load.
 var (
-	Init                 func(flags uint32) int32
-	Quit                 func()
-	GetError             func() string
-	SetHint              func(name, value string) bool
-	CreateWindow         func(title string, x, y, w, h int32, flags uint32) uintptr
-	DestroyWindow        func(w uintptr)
-	SetWindowTitle       func(w uintptr, title string)
-	CreateRenderer       func(w uintptr, index int32, flags uint32) uintptr
-	DestroyRenderer      func(r uintptr)
-	RenderSetLogicalSize func(r uintptr, w, h int32) int32
-	RenderClear          func(r uintptr) int32
-	RenderCopy           func(r uintptr, t uintptr, src, dst unsafe.Pointer) int32
-	RenderPresent        func(r uintptr)
-	CreateTexture        func(r uintptr, format uint32, access, w, h int32) uintptr
-	DestroyTexture       func(t uintptr)
-	UpdateTexture        func(t uintptr, rect unsafe.Pointer, pixels unsafe.Pointer, pitch int32) int32
-	PollEvent            func(e *Event) int32
-	SetRelativeMouseMode func(enabled bool) int32
-	OpenAudioDevice      func(device unsafe.Pointer, iscapture int32, desired, obtained *AudioSpec, allowedChanges int32) uint32
-	CloseAudioDevice     func(dev uint32)
-	PauseAudioDevice     func(dev uint32, pause int32)
-	QueueAudio           func(dev uint32, data unsafe.Pointer, len uint32) int32
-	GetQueuedAudioSize   func(dev uint32) uint32
-	ClearQueuedAudio     func(dev uint32)
+	Init                   func(flags uint32) int32
+	Quit                   func()
+	GetError               func() string
+	SetHint                func(name, value string) bool
+	CreateWindow           func(title string, x, y, w, h int32, flags uint32) uintptr
+	DestroyWindow          func(w uintptr)
+	SetWindowTitle         func(w uintptr, title string)
+	ShowWindow             func(w uintptr)
+	SetWindowFullscreen    func(w uintptr, flags uint32) int32
+	GetWindowFlags         func(w uintptr) uint32
+	GetDisplayUsableBounds func(display int32, r *Rect) int32
+	GetRendererOutputSize  func(r uintptr, w, h *int32) int32
+	SetRenderTarget        func(r uintptr, t uintptr) int32
+	SetRenderDrawColor     func(r uintptr, red, green, blue, alpha uint8) int32
+	SetTextureScaleMode    func(t uintptr, mode int32) int32
+	CreateRenderer         func(w uintptr, index int32, flags uint32) uintptr
+	DestroyRenderer        func(r uintptr)
+	RenderClear            func(r uintptr) int32
+	RenderCopy             func(r uintptr, t uintptr, src, dst unsafe.Pointer) int32
+	RenderPresent          func(r uintptr)
+	CreateTexture          func(r uintptr, format uint32, access, w, h int32) uintptr
+	DestroyTexture         func(t uintptr)
+	UpdateTexture          func(t uintptr, rect unsafe.Pointer, pixels unsafe.Pointer, pitch int32) int32
+	PollEvent              func(e *Event) int32
+	SetRelativeMouseMode   func(enabled bool) int32
+	ShowCursor             func(toggle int32) int32
+	OpenAudioDevice        func(device unsafe.Pointer, iscapture int32, desired, obtained *AudioSpec, allowedChanges int32) uint32
+	CloseAudioDevice       func(dev uint32)
+	PauseAudioDevice       func(dev uint32, pause int32)
+	QueueAudio             func(dev uint32, data unsafe.Pointer, len uint32) int32
+	GetQueuedAudioSize     func(dev uint32) uint32
+	ClearQueuedAudio       func(dev uint32)
 )
 
 var loaded bool
@@ -152,9 +170,16 @@ func Load(handle uintptr, sym func(uintptr, string) (uintptr, error)) (err error
 	bind(&CreateWindow, "SDL_CreateWindow")
 	bind(&DestroyWindow, "SDL_DestroyWindow")
 	bind(&SetWindowTitle, "SDL_SetWindowTitle")
+	bind(&ShowWindow, "SDL_ShowWindow")
+	bind(&SetWindowFullscreen, "SDL_SetWindowFullscreen")
+	bind(&GetWindowFlags, "SDL_GetWindowFlags")
+	bind(&GetDisplayUsableBounds, "SDL_GetDisplayUsableBounds")
+	bind(&GetRendererOutputSize, "SDL_GetRendererOutputSize")
+	bind(&SetRenderTarget, "SDL_SetRenderTarget")
+	bind(&SetRenderDrawColor, "SDL_SetRenderDrawColor")
+	bind(&SetTextureScaleMode, "SDL_SetTextureScaleMode")
 	bind(&CreateRenderer, "SDL_CreateRenderer")
 	bind(&DestroyRenderer, "SDL_DestroyRenderer")
-	bind(&RenderSetLogicalSize, "SDL_RenderSetLogicalSize")
 	bind(&RenderClear, "SDL_RenderClear")
 	bind(&RenderCopy, "SDL_RenderCopy")
 	bind(&RenderPresent, "SDL_RenderPresent")
@@ -163,6 +188,7 @@ func Load(handle uintptr, sym func(uintptr, string) (uintptr, error)) (err error
 	bind(&UpdateTexture, "SDL_UpdateTexture")
 	bind(&PollEvent, "SDL_PollEvent")
 	bind(&SetRelativeMouseMode, "SDL_SetRelativeMouseMode")
+	bind(&ShowCursor, "SDL_ShowCursor")
 	bind(&OpenAudioDevice, "SDL_OpenAudioDevice")
 	bind(&CloseAudioDevice, "SDL_CloseAudioDevice")
 	bind(&PauseAudioDevice, "SDL_PauseAudioDevice")

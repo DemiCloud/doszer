@@ -136,7 +136,14 @@ type host struct {
 	texture  uintptr
 	texW     uint32
 	texH     uint32
-	audio    uint32
+
+	// prescale is the frame scaled up by whole pixels (nearest), drawn
+	// to the window smoothed (linear) for the remaining fraction: sharp
+	// pixels without uneven ones at any window size.
+	prescale   uintptr
+	preW, preH int32
+	fullscreen bool
+	audio      uint32
 
 	keys                  [retrokLast]bool
 	captured              bool
@@ -199,13 +206,22 @@ func Run(cfg Config) error {
 	defer core.unloadGame()
 	core.getSystemAVInfo(&h.av)
 
+	// Per-monitor DPI aware, so Windows doesn't stretch (and blur) the
+	// window on a scaled display.
+	sdl.SetHint("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2")
 	if sdl.Init(sdl.InitVideo|sdl.InitAudio|sdl.InitEvents) != 0 {
 		return sdl.Error("SDL_Init")
 	}
 	defer sdl.Quit()
-	w, ht := windowSize(h.av.geometry)
+	var usable sdl.Rect
+	if sdl.GetDisplayUsableBounds(0, &usable) != 0 {
+		usable = sdl.Rect{W: 1600, H: 1000}
+	}
+	w, ht := windowSize(h.av.geometry, usable)
 	h.title = cfg.Title
-	window := sdl.CreateWindow(h.windowTitle(), sdl.WindowPosCentered, sdl.WindowPosCentered, w, ht, sdl.WindowShown|sdl.WindowResizable|sdl.WindowAllowHighDPI)
+	// Hidden until the renderer exists: an OpenGL renderer recreates a
+	// window that wasn't made for it, which showed it twice.
+	window := sdl.CreateWindow(h.windowTitle(), sdl.WindowPosCentered, sdl.WindowPosCentered, w, ht, sdl.WindowHidden|sdl.WindowResizable|sdl.WindowAllowHighDPI)
 	if window == 0 {
 		return sdl.Error("SDL_CreateWindow")
 	}
@@ -218,10 +234,14 @@ func Run(cfg Config) error {
 	}
 	defer sdl.DestroyRenderer(h.renderer)
 	defer func() {
-		if h.texture != 0 {
-			sdl.DestroyTexture(h.texture)
+		for _, t := range []uintptr{h.texture, h.prescale} {
+			if t != 0 {
+				sdl.DestroyTexture(t)
+			}
 		}
 	}()
+	h.draw()
+	sdl.ShowWindow(window)
 	h.openAudio()
 	defer func() {
 		if h.audio != 0 {
@@ -240,11 +260,7 @@ func Run(cfg Config) error {
 			break
 		}
 		core.run()
-		sdl.RenderClear(h.renderer)
-		if h.texture != 0 {
-			sdl.RenderCopy(h.renderer, h.texture, nil, nil)
-		}
-		sdl.RenderPresent(h.renderer)
+		h.draw()
 		if cfg.Frames > 0 {
 			if frame >= cfg.Frames {
 				break
@@ -323,17 +339,71 @@ func registerCallbacks() {
 }
 
 // windowSize is the window's starting size: the core's frame at its
-// aspect ratio, doubled while that still fits a 1080p screen.
-func windowSize(g geometry) (int32, int32) {
+// aspect ratio, at the largest whole multiple that fits 95% of the
+// display's usable area, or shrunk to fit it.
+func windowSize(g geometry, usable sdl.Rect) (int32, int32) {
 	ht := int32(g.BaseHeight)
 	if ht == 0 {
 		ht = 480
 	}
 	w := int32(math.Round(float64(ht) * aspect(g, uint32(ht))))
-	for w*2 <= 1600 && ht*2 <= 1000 {
-		w, ht = w*2, ht*2
+	maxW, maxH := usable.W*95/100, usable.H*95/100
+	if maxW <= 0 || maxH <= 0 {
+		return w, ht
+	}
+	n := int32(1)
+	for w*(n+1) <= maxW && ht*(n+1) <= maxH {
+		n++
+	}
+	w, ht = w*n, ht*n
+	if w > maxW || ht > maxH {
+		r := fit(maxW, maxH, float64(w)/float64(ht))
+		w, ht = r.W, r.H
 	}
 	return w, ht
+}
+
+// fit is the largest rectangle of aspect a centred in w x h.
+func fit(w, h int32, a float64) sdl.Rect {
+	fw, fh := w, int32(math.Round(float64(w)/a))
+	if fh > h {
+		fw, fh = int32(math.Round(float64(h)*a)), h
+	}
+	return sdl.Rect{X: (w - fw) / 2, Y: (h - fh) / 2, W: fw, H: fh}
+}
+
+// draw shows the current frame centred at the core's aspect ratio on
+// black: scaled up by whole pixels into prescale, then to the window.
+func (h *host) draw() {
+	r := h.renderer
+	sdl.SetRenderTarget(r, 0)
+	sdl.SetRenderDrawColor(r, 0, 0, 0, 255)
+	sdl.RenderClear(r)
+	if h.texture != 0 {
+		var ow, oh int32
+		sdl.GetRendererOutputSize(r, &ow, &oh)
+		dst := fit(ow, oh, aspect(h.av.geometry, h.texH))
+		kx, ky := max(1, dst.W/int32(h.texW)), max(1, dst.H/int32(h.texH))
+		pw, ph := int32(h.texW)*kx, int32(h.texH)*ky
+		if h.prescale == 0 || pw != h.preW || ph != h.preH {
+			if h.prescale != 0 {
+				sdl.DestroyTexture(h.prescale)
+			}
+			h.prescale = sdl.CreateTexture(r, sdl.PixelFormatRGB888, sdl.TextureAccessTarget, pw, ph)
+			if h.prescale != 0 {
+				sdl.SetTextureScaleMode(h.prescale, sdl.ScaleModeLinear)
+			}
+			h.preW, h.preH = pw, ph
+		}
+		src := h.texture
+		if h.prescale != 0 && sdl.SetRenderTarget(r, h.prescale) == 0 {
+			sdl.RenderCopy(r, h.texture, nil, nil)
+			sdl.SetRenderTarget(r, 0)
+			src = h.prescale
+		}
+		sdl.RenderCopy(r, src, nil, unsafe.Pointer(&dst))
+	}
+	sdl.RenderPresent(r)
 }
 
 func aspect(g geometry, height uint32) float64 {
@@ -461,9 +531,10 @@ func videoRefresh(data unsafe.Pointer, width, height uint32, pitch uintptr) uint
 			sdl.DestroyTexture(h.texture)
 		}
 		h.texture = sdl.CreateTexture(h.renderer, sdl.PixelFormatRGB888, sdl.TextureAccessStreaming, int32(width), int32(height))
+		if h.texture != 0 {
+			sdl.SetTextureScaleMode(h.texture, sdl.ScaleModeNearest)
+		}
 		h.texW, h.texH = width, height
-		lw := int32(math.Round(float64(height) * aspect(h.av.geometry, height)))
-		sdl.RenderSetLogicalSize(h.renderer, lw, int32(height))
 	}
 	if h.texture != 0 {
 		sdl.UpdateTexture(h.texture, nil, data, int32(pitch))
@@ -548,6 +619,12 @@ func (h *host) event(e *sdl.Event, window uintptr) {
 			return
 		}
 		key := retrokFromScancode(scancode)
+		if key == retrokReturn && mod&sdl.KmodAlt != 0 {
+			if down {
+				h.toggleFullscreen()
+			}
+			return
+		}
 		if key == retrokF10 && mod&sdl.KmodCtrl != 0 {
 			if down {
 				h.capture(false)
@@ -581,12 +658,27 @@ func (h *host) event(e *sdl.Event, window uintptr) {
 	}
 }
 
+// toggleFullscreen switches between the window and borderless
+// fullscreen on its display (Alt+Enter).
+func (h *host) toggleFullscreen() {
+	var flags uint32
+	if !h.fullscreen {
+		flags = sdl.WindowFullscreenDesktop
+	}
+	if sdl.SetWindowFullscreen(h.window, flags) == 0 {
+		h.fullscreen = !h.fullscreen
+	}
+}
+
 func (h *host) capture(on bool) {
 	if on == h.captured {
 		return
 	}
 	h.captured = on
 	sdl.SetRelativeMouseMode(on)
+	// Relative mode should hide the cursor, but doesn't everywhere
+	// (WSLg).
+	sdl.ShowCursor(b2i32(!on))
 	sdl.SetWindowTitle(h.window, h.windowTitle())
 	if !on {
 		h.buttons = [8]bool{}
@@ -622,6 +714,13 @@ func retroMods(m uint16) uint16 {
 }
 
 func boolResult(b bool) uintptr {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func b2i32(b bool) int32 {
 	if b {
 		return 1
 	}

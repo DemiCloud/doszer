@@ -560,7 +560,8 @@ changed.
 - Saves go to `save_dir` (`--save-dir`), else `doszer/saves` in the user
   cache directory, never a frontend's own.
 
-Click the window to capture the mouse; Ctrl+F10 releases it. It's built
+Click the window to capture the mouse; Ctrl+F10 releases it. Alt+Enter
+toggles fullscreen. It's built
 for linux/amd64 and linux/arm64 (glibc 2.28 or later and the system's
 SDL2; WSLg under WSL) and windows/amd64 (it carries SDL2).
 
