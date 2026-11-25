@@ -757,6 +757,30 @@ func verifyImage(cuePath string, offset int, dat string, readErrors bool) error 
 	}, dat, readErrors)
 }
 
+// verifyArchive checks the disc images in an archive against Redump: data
+// tracks rebuilt as raw Mode 1 sectors, WAV audio as it is, a PREGAP's
+// silence as zeros (redump.ArchiveImages).
+func verifyArchive(p, dat string) error {
+	images, skipped, closeAll, err := redump.ArchiveImages(p)
+	if err != nil {
+		return err
+	}
+	defer closeAll()
+	for _, s := range skipped {
+		fmt.Fprintf(os.Stderr, "[WARN] %s: %s\n", filepath.Base(p), s)
+	}
+	if len(images) == 0 && len(skipped) == 0 {
+		fmt.Printf("%s: no disc images\n", filepath.Base(p))
+	}
+	for _, img := range images {
+		fmt.Printf("%s: %s\n", filepath.Base(p), img.Cue)
+		if err := verifyTracks(img.Hash, dat, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // verifyTracks reports whether a dump's tracks match a Redump disc. A
 // dump that doesn't is reported, not an error: it may be a disc nobody
 // has submitted yet.
@@ -808,7 +832,7 @@ func runRedump(args []string) error {
 	offset := fs.Int("offset", 0, "")
 	const help = `doszer redump - show the Redump datfile in use, or check tracks against it
 
-Usage: doszer redump [options] [SHA1|FILE|IMAGE...]
+Usage: doszer redump [options] [SHA1|FILE|IMAGE|FILE.dosz...]
 
 Options:
       --dat FILE          datfile to use (default: redump_dat, else Redump's)
@@ -836,13 +860,15 @@ Options:
 		return redumpStatus(external)
 	}
 
-	var shas, files, cues []string
+	var shas, files, cues, archives []string
 	for _, a := range fs.Args() {
 		switch {
 		case len(a) == 40 && isHex(a):
 			shas = append(shas, a)
 		case strings.EqualFold(filepath.Ext(a), ".cue"), strings.EqualFold(filepath.Ext(a), ".zip"):
 			cues = append(cues, a)
+		case strings.EqualFold(filepath.Ext(a), ".dosz"):
+			archives = append(archives, a)
 		default:
 			files = append(files, a)
 		}
@@ -864,6 +890,11 @@ Options:
 	}
 	for _, c := range cues {
 		if err := verifyImage(c, *offset, external, false); err != nil {
+			return err
+		}
+	}
+	for _, a := range archives {
+		if err := verifyArchive(a, external); err != nil {
 			return err
 		}
 	}

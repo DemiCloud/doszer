@@ -52,6 +52,8 @@ type ImageTrack struct {
 type part struct {
 	name      string
 	off, size int64
+	mode1     bool  // 2048-byte sectors, read as raw Mode 1 sectors (Mode1)
+	lba       int64 // the first sector's address, for mode1
 }
 
 // Open streams the track's bytes. A file that can't seek (a zip entry) is
@@ -75,15 +77,20 @@ func (t ImageTrack) Open() (io.ReadCloser, error) {
 			return nil, err
 		}
 		files = append(files, f)
+		var r io.Reader
 		if ra, ok := f.(io.ReaderAt); ok {
-			readers = append(readers, io.NewSectionReader(ra, p.off, p.size))
-			continue
+			r = io.NewSectionReader(ra, p.off, p.size)
+		} else {
+			if _, err := io.CopyN(io.Discard, f, p.off); err != nil {
+				closeAll()
+				return nil, fmt.Errorf("%s: %w", p.name, err)
+			}
+			r = io.LimitReader(f, p.size)
 		}
-		if _, err := io.CopyN(io.Discard, f, p.off); err != nil {
-			closeAll()
-			return nil, fmt.Errorf("%s: %w", p.name, err)
+		if p.mode1 {
+			r = &mode1Reader{r: r, lba: p.lba}
 		}
-		readers = append(readers, io.LimitReader(f, p.size))
+		readers = append(readers, r)
 	}
 	return readCloser{io.MultiReader(readers...), closeAll}, nil
 }
@@ -110,8 +117,11 @@ func (r readCloser) Close() error {
 // (INDEX 01 if it has none) to the next track's, plus the silence a PREGAP
 // command declares, as zeros; the first track starts at INDEX 01, as on
 // the disc. Tracks must be raw sectors: BINARY files of 2352-byte frames,
-// or WAVE files' PCM data. A lossy (Ogg) or 2048-byte track can't
-// reproduce Redump's bytes.
+// or WAVE files' PCM data, or a Mode 1 data track's 2048-byte sectors (an
+// ISO, as an archive keeps it), rebuilt as raw sectors at their disc
+// address (Mode1). A lossy (Ogg) track can't reproduce Redump's bytes, nor
+// can a Mode 2 track kept as 2048-byte sectors (each sector's subheader is
+// lost): it is read as Mode 1, and won't match.
 //
 // offset corrects an image whose audio wasn't corrected for the drive's
 // read offset (ImgBurn's, for one): audio tracks are read offset samples
@@ -178,12 +188,15 @@ func readImage(fsys fs.FS, cueName string, offset int) (*Image, error) {
 	}
 
 	img := &Image{}
+	var lba int64 // the next track's first sector, in Redump's layout
 	for i, rt := range resolved {
 		t := rt.Track
 		if !rt.Verifiable() {
 			return nil, fmt.Errorf("track %d is in a %s file, which can't reproduce the disc's bytes", t.Number, rt.FileType)
 		}
-		if rt.FrameSize != 2352 {
+		fsize := int64(rt.FrameSize)
+		mode1 := fsize == 2048 && t.Mode != "AUDIO"
+		if fsize != 2352 && !mode1 {
 			return nil, fmt.Errorf("track %d has %d-byte sectors, not the disc's raw 2352", t.Number, rt.FrameSize)
 		}
 		start := rt.Start
@@ -191,7 +204,7 @@ func readImage(fsys fs.FS, cueName string, offset int) (*Image, error) {
 		if idx0, ok := t.Index00(); ok && i > 0 {
 			idx1, _ := t.Index01()
 			inFile = idx1.Frames - idx0.Frames
-			start -= int64(inFile) * 2352
+			start -= int64(inFile) * fsize
 		}
 		it := ImageTrack{Number: t.Number, Mode: t.Mode, fsys: fsys}
 		if t.Pregap > 0 && i > 0 {
@@ -199,18 +212,74 @@ func readImage(fsys fs.FS, cueName string, offset int) (*Image, error) {
 			it.parts = append(it.parts, part{size: n})
 			it.Size += n
 		}
-		it.parts = append(it.parts, part{name: rt.FilePath, off: start, size: rt.End - start})
-		it.Size += rt.End - start
+		frames := (rt.End - start) / fsize
+		it.parts = append(it.parts, part{name: rt.FilePath, off: start, size: frames * fsize, mode1: mode1, lba: lba + it.Size/2352})
+		it.Size += frames * 2352
 		it.Pregap = inFile
 		if i > 0 {
 			it.Pregap += t.Pregap
 		}
+		lba += it.Size / 2352
 		img.Tracks = append(img.Tracks, it)
 	}
 	if offset != 0 {
+		for _, t := range img.Tracks {
+			for _, p := range t.parts {
+				if p.mode1 {
+					return nil, fmt.Errorf("track %d has 2048-byte sectors: read offset correction needs raw sectors", t.Number)
+				}
+			}
+		}
 		shiftAudio(img.Tracks, int64(offset)*4)
 	}
 	return img, nil
+}
+
+// ArchiveImages opens the disc images in a .dosz archive (or any zip):
+// every CUE sheet, and every ISO no sheet refers to, as a disc of one
+// Mode 1 data track. Archives keep data tracks as 2048-byte sectors,
+// rebuilt here as raw ones, and audio as WAV or Ogg Vorbis; an image with
+// Ogg Vorbis tracks can't reproduce Redump's bytes and is left out, its
+// reason in skipped.
+func ArchiveImages(path string) (images []*Image, skipped []string, closeAll func() error, err error) {
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	used := map[string]bool{}
+	for _, f := range zr.File {
+		if !strings.EqualFold(pathpkg.Ext(f.Name), ".cue") {
+			continue
+		}
+		data, err := fs.ReadFile(zr, f.Name)
+		if err != nil {
+			zr.Close()
+			return nil, nil, nil, err
+		}
+		if sheet, err := cue.Parse(data); err == nil {
+			for _, cf := range sheet.Files {
+				used[strings.ToUpper(pathpkg.Join(pathpkg.Dir(f.Name), strings.ReplaceAll(cf.Name, `\`, "/")))] = true
+			}
+		}
+		img, err := readImage(zr, f.Name, 0)
+		if err != nil {
+			skipped = append(skipped, fmt.Sprintf("%s: %v", f.Name, err))
+			continue
+		}
+		img.Cue = f.Name
+		images = append(images, img)
+	}
+	for _, f := range zr.File {
+		if !strings.EqualFold(pathpkg.Ext(f.Name), ".iso") || used[strings.ToUpper(f.Name)] {
+			continue
+		}
+		frames := int64(f.UncompressedSize64) / 2048
+		images = append(images, &Image{Cue: f.Name, Tracks: []ImageTrack{{
+			Number: 1, Mode: "MODE1/2048", Size: frames * 2352, fsys: zr,
+			parts: []part{{name: f.Name, size: frames * 2048, mode1: true}},
+		}}})
+	}
+	return images, skipped, zr.Close, nil
 }
 
 // Hash hashes the image's tracks for Match. Each Track's Path names the

@@ -183,7 +183,6 @@ func TestOpenImageOffset(t *testing.T) {
 func TestOpenImageRejects(t *testing.T) {
 	tests := []struct{ name, cue, want string }{
 		{"lossy audio", "FILE \"a.ogg\" OGG\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n", "can't reproduce"},
-		{"cooked data", "FILE \"a.ogg\" BINARY\n  TRACK 01 MODE1/2048\n    INDEX 01 00:00:00\n", "2048-byte"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -194,6 +193,34 @@ func TestOpenImageRejects(t *testing.T) {
 				t.Errorf("err = %v, want %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// TestOpenImageCooked: a 2048-byte data track (an ISO, as an archive
+// keeps it) reads as raw Mode 1 sectors at its disc address, counting the
+// tracks before it.
+func TestOpenImageCooked(t *testing.T) {
+	dir := t.TempDir()
+	audio := bytes.Repeat([]byte{1, 2, 3, 4}, 2352/4*3)
+	iso := bytes.Repeat([]byte{0x5A}, 2048*2)
+	write(t, dir, "a.bin", audio)
+	write(t, dir, "d.iso", iso)
+	write(t, dir, "d.cue", []byte("FILE \"a.bin\" BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\nFILE \"d.iso\" BINARY\n  TRACK 02 MODE1/2048\n    INDEX 01 00:00:00\n"))
+	img, err := OpenImage(filepath.Join(dir, "d.cue"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc, _ := img.Tracks[1].Open()
+	got, _ := io.ReadAll(rc)
+	rc.Close()
+	want := make([]byte, 2*2352)
+	Mode1(want, 3, iso[:2048])
+	Mode1(want[2352:], 4, iso[2048:])
+	if !bytes.Equal(got, want) || img.Tracks[1].Size != 2*2352 {
+		t.Errorf("track 2: %d bytes, size %d; header %x, want %x", len(got), img.Tracks[1].Size, got[12:16], want[12:16])
+	}
+	if _, err := OpenImage(filepath.Join(dir, "d.cue"), 30); err == nil || !strings.Contains(err.Error(), "raw") {
+		t.Errorf("offset correction with a 2048-byte track: err = %v", err)
 	}
 }
 

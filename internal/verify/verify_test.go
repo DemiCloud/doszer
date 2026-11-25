@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DemiCloud/doszer/internal/build"
+	"github.com/DemiCloud/doszer/internal/redump"
 	"github.com/DemiCloud/doszer/internal/verify"
 )
 
@@ -492,19 +493,38 @@ func TestVerifyDetectsCorruptBinaryEntry(t *testing.T) {
 	}
 }
 
+func redumpKey(sha string) string {
+	if sha == "" {
+		return ""
+	}
+	return `, redump_sha1 = "` + sha + `"`
+}
+
 func TestCheckMedia(t *testing.T) {
 	iso := bytes.Repeat([]byte("ISO user data. "), 2048) // 15 sectors
 	sum := sha1.Sum(iso)
 	right := hex.EncodeToString(sum[:])
 	wrong := strings.Repeat("0", 40)
 
+	// Redump's hash: the raw Mode 1 sectors the ISO's user data rebuilds.
+	h := sha1.New()
+	sec := make([]byte, 2352)
+	for i := 0; i*2048 < len(iso); i++ {
+		redump.Mode1(sec, int64(i), iso[i*2048:(i+1)*2048])
+		h.Write(sec)
+	}
+	raw := hex.EncodeToString(h.Sum(nil))
+
 	tests := []struct {
 		name     string
 		sha1     string
+		redump   string
 		warnings int
 	}{
-		{"matching disc", right, 0},
-		{"different disc", wrong, 1},
+		{"matching disc", right, "", 0},
+		{"different disc", wrong, "", 1},
+		{"matching Redump hash", right, raw, 0},
+		{"different Redump hash", right, wrong, 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -512,7 +532,7 @@ func TestCheckMedia(t *testing.T) {
 			writeFile(t, dir, "DOSZ.TOML", plainManifest+`
 [[source.media]]
 id     = "disc1"
-tracks = [{ type = "data", sha1 = "`+tt.sha1+`" }]
+tracks = [{ type = "data", sha1 = "`+tt.sha1+`"`+redumpKey(tt.redump)+` }]
 `)
 			writeFile(t, dir, "GAME.EXE", "binary")
 			writeFile(t, dir, "Test Game.iso", string(iso))

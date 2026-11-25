@@ -50,7 +50,7 @@ internal/sdl/        the few SDL2 functions internal/libretro uses, loaded at ru
 internal/dl/         dlopen/LoadLibrary without cgo
 internal/builtin/    programs embedded at build time, extracted to the user cache: the DOSBox Pure core (and SDL DLLs on Windows, `make core`), redumper (`make redumper`); guest programs, the same on every platform: RunExit, PRESSKEY (`make guest`)
 internal/dump/       doszer dump: a CD to BIN/CUE with redumper (Windows redumper through interop under WSL), resumable; or --from an existing image (Import)
-internal/redump/     Redump datfile: load (Logiqx XML/zip, compact), embedded snapshot (`make dat`), cached run-time copy, track matching; any CUE image (or zip of one) read in Redump's track layout, read-offset correction
+internal/redump/     Redump datfile: load (Logiqx XML/zip, compact), embedded snapshot (`make dat`), cached run-time copy, track matching; any CUE image (or zip of one) read in Redump's track layout, read-offset correction; Mode 1 sector rebuild (EDC/ECC, sector.go) so an archive's ISO tracks hash as Redump's raw ones (ArchiveImages, for redump and verify)
 internal/interrupt/  removes registered temporary paths on SIGINT/SIGTERM
 internal/status/     terminal progress: current step with a spinner, finished steps
 internal/output/     --format (romctl's names): fancy/plain text, or a result as JSON/YAML/TOML/CSV

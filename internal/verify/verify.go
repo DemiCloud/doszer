@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/redump"
 	"github.com/DemiCloud/doszer/internal/status"
 	"github.com/DemiCloud/doszer/internal/zipw"
 )
@@ -79,8 +81,82 @@ func Check(archivePath string) (warnings []string, err error) {
 	if mediaErr != nil {
 		errs = append(errs, mediaErr)
 	}
+	if mediaErr == nil {
+		rw, err := checkRedump(archivePath, m.Source.Media)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		warnings = append(warnings, rw...)
+	}
 
 	return warnings, errors.Join(errs...)
+}
+
+// checkRedump checks each media's redump_sha1 values (§5.6) against its
+// disc image rebuilt in Redump's layout (redump.ArchiveImages): data
+// tracks as raw Mode 1 sectors, WAV audio as it is. A track that doesn't
+// rebuild to its value is a warning, not an error: Mode 2 tracks and
+// pregaps that weren't silent can't be rebuilt. An image with Ogg Vorbis
+// tracks can't be checked and is left alone.
+func checkRedump(archivePath string, media []manifest.Media) ([]string, error) {
+	var want []*manifest.Media
+	for i := range media {
+		for _, t := range media[i].Tracks {
+			if t.RedumpSHA1 != "" {
+				want = append(want, &media[i])
+				break
+			}
+		}
+	}
+	if len(want) == 0 {
+		return nil, nil
+	}
+	images, _, closeAll, err := redump.ArchiveImages(archivePath)
+	if err != nil {
+		return nil, err
+	}
+	defer closeAll()
+	var warnings []string
+	for _, md := range want {
+		img := pairImage(md, images)
+		if img == nil {
+			continue // not rebuildable (Ogg Vorbis), or not found: §7.3 reports that
+		}
+		status.Step("Rebuilding %s as Redump has it", path.Base(img.Cue))
+		tracks, err := img.Hash()
+		if err != nil {
+			return warnings, err
+		}
+		for i, t := range tracks {
+			r := md.Tracks[i].RedumpSHA1
+			if r != "" && t.SHA1 != r {
+				warnings = append(warnings, fmt.Sprintf("source.media %q: track %d doesn't rebuild to its redump_sha1 (a Mode 2 track, or a pregap that wasn't silent?)", md.ID, i+1))
+			}
+		}
+	}
+	return warnings, nil
+}
+
+// pairImage returns the image of md: of the images with as many tracks,
+// the only one, else the one named as §6.4 names a media's CUE sheet
+// ("<label>.cue" or "... (<id>).cue").
+func pairImage(md *manifest.Media, images []*redump.Image) *redump.Image {
+	var same []*redump.Image
+	for _, img := range images {
+		if len(img.Tracks) == len(md.Tracks) {
+			same = append(same, img)
+		}
+	}
+	if len(same) == 1 {
+		return same[0]
+	}
+	for _, img := range same {
+		base := strings.TrimSuffix(path.Base(img.Cue), path.Ext(img.Cue))
+		if strings.EqualFold(base, md.Label) || strings.HasSuffix(base, "("+md.ID+")") {
+			return img
+		}
+	}
+	return nil
 }
 
 // isEpoch reports whether t is the fixed 1980-01-01 00:00:00 timestamp

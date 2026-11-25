@@ -133,7 +133,7 @@ Zero or more entries identifying disc images.
 | `id` | string | yes | Identifier referenced by `[[extract]]`. Unique within the manifest. |
 | `label` | string | no | Human-readable name, e.g. the original file name. |
 | `redump` | string | no | Reference to the disc's [Redump](http://redump.org) entry, e.g. a disc page URL. Informational only; Redump hashes are not normalized track hashes (§7.2). |
-| `redump_name` | string | no | The disc's name in Redump's datfile, recorded when the dump's tracks matched that entry. Informational only. |
+| `redump_name` | string | no | The disc's name in Redump's datfile, recorded when the dump's tracks matched that entry. Informational. |
 | `tracks` | array of tables | yes | One entry per track, in track order. |
 
 Each `tracks` entry:
@@ -142,12 +142,22 @@ Each `tracks` entry:
 |---|---|---|---|
 | `type` | string | yes | `"data"` or `"audio"`. |
 | `sha1` | string | yes | Normalized track hash (§7.2), 40 lowercase hexadecimal characters. |
-| `redump_sha1` | string | no | The track's SHA-1 as Redump records it (the dumped track file: raw sectors, pregap included), 40 lowercase hexadecimal characters. Informational only. |
+| `redump_sha1` | string | no | The track's SHA-1 as Redump records it (the dumped track file: raw sectors, pregap included), 40 lowercase hexadecimal characters. |
 
-> A converted disc image (§6.4) cannot reproduce Redump's hashes, so they
-> cannot be checked against an archive. Recorded beside the normalized
-> hashes, which can, they say which Redump dump the archive's disc came
-> from.
+A converted disc image (§6.4) keeps a data track's user data and an audio
+track's samples from INDEX 01. Redump's hash can be reproduced from it for
+a Mode 1 data track, whose other sector bytes (sync, header, EDC and ECC,
+ECMA-130 §14) follow from the sector's address and user data, and for an
+audio track kept as WAV whose pregap was digital silence. An
+implementation MAY check `redump_sha1` by rebuilding the track's raw
+sectors so. A track that does not reproduce its value MUST NOT make the
+archive invalid, and SHOULD produce a warning: a Mode 2 track (whose
+subheaders conversion drops) or a pregap that was not silent cannot be
+reproduced, and an Ogg Vorbis track cannot be checked at all.
+
+> Recorded beside the normalized hashes (`sha1`), `redump_name` and
+> `redump_sha1` say which Redump dump the archive's disc came from; the
+> normalized hashes are what §7.3 verifies.
 
 ### 5.7 `[[extract]]`
 
@@ -520,7 +530,8 @@ the same path.
 
 A `trim` pattern or `rewrite` rule that matches nothing SHOULD produce a
 warning, as SHOULD a media that is not found or a track that is not verified
-(§7.3).
+(§7.3), and a track checked against its `redump_sha1` that does not
+reproduce it (§5.6).
 
 ## 12. Frontend requirements
 

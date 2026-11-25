@@ -44,7 +44,7 @@ make help    # every target
 
 ```
 doszer dump    DIR [--drive DRIVE] [--dat FILE]
-doszer redump  [SHA1|FILE...] [--update] [--dat FILE]
+doszer redump  [SHA1|FILE|IMAGE|FILE.dosz...] [--update] [--dat FILE] [--offset SAMPLES]
 doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH | --boot MODEL] [--audio FMT] [--name NAME] [--no-media] [--system-dir DIR] [-f]
 doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [-n] [--strict] [--ogg-quality N]
 doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FILE]] [-f] [-n] [--keep]
@@ -180,9 +180,17 @@ A CUE sheet with tracks in lossy audio files (Ogg) can't be hashed and is
 skipped. `--no-media` skips this. A CUE image whose raw tracks match a
 disc in Redump's datfile (the one `doszer redump` uses) also gets the
 disc's Redump name (`redump_name`), link (`redump`) and each track's
-Redump hash (`redump_sha1`). A converted image can't reproduce Redump's
-hashes, so they aren't checked later: they record which Redump dump the
-archive's disc is, and `info` shows them.
+Redump hash (`redump_sha1`): which Redump dump the archive's disc is,
+shown by `info`. A built archive keeps a data track as 2048-byte sectors
+and audio as WAV or Ogg Vorbis, but a Mode 1 data track's other sector
+bytes (sync, header, EDC, ECC) follow from its address and data, so
+`verify` rebuilds the raw tracks and checks them against `redump_sha1`,
+warning about any that differ (spec §5.6). That works for Mode 1 data and
+WAV audio whose pregap was silent: `--audio wav` keeps a disc checkable.
+Ogg Vorbis tracks can't be checked; a Mode 2 track (subheaders dropped)
+or a pregap that wasn't silent won't rebuild exactly. `doszer redump
+FILE.dosz` looks an archive's discs up in Redump's datfile the same way,
+whatever its manifest records.
 
 `build` and `repack` check each `[[source.media]]` entry against the disc
 images in the build (spec §7.3). Tracks stored as Ogg can't be checked and
@@ -268,8 +276,8 @@ datfile is, in order: `--dat`/`redump_dat` (any Logiqx datfile); a copy
 fetched from redump.org at most weekly and cached in the user cache
 directory; the snapshot built into doszer (`make dat`). `doszer redump`
 shows which is in use, `--update` fetches the current one, and given
-SHA-1s, track files, or a disc image (a CUE sheet, or a zip of one) it
-looks them up.
+SHA-1s, track files, a disc image (a CUE sheet, or a zip of one) or an
+archive (its discs rebuilt as Redump has them) it looks them up.
 
 ### From an existing image
 
