@@ -38,10 +38,16 @@ func TestProbe(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := every
+	ramdisk := os.Getenv("DOSZER_PROBE_RAMDISK") // dosbox_pure_bootos_ramdisk; default diff, to read C: back
+	if ramdisk == "" {
+		ramdisk = "diff"
+	}
+	last := 0
 	err = Run(Config{Core: corePath, SDL: sdlLibs, Content: content, SystemDir: os.Getenv("DOSZER_PROBE_SYSTEM"),
-		SaveDir: saves, Title: "probe", Frames: frames,
-		Options: map[string]string{"dosbox_pure_menu_time": "0", "dosbox_pure_bootos_ramdisk": "diff"},
+		SaveDir: saves, Title: "probe", Frames: frames, Paced: os.Getenv("DOSZER_PROBE_PACED") != "",
+		Options: map[string]string{"dosbox_pure_menu_time": "0", "dosbox_pure_bootos_ramdisk": ramdisk},
 		OnFrame: func(frame int, pix []byte, w, h, pitch int) {
+			last = frame
 			if frame < next {
 				return
 			}
@@ -52,6 +58,11 @@ func TestProbe(t *testing.T) {
 		}})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if last < frames {
+		t.Logf("the core closed the session at frame %d", last)
+	} else {
+		t.Logf("still running after %d frames", frames)
 	}
 }
 

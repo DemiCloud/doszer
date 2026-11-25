@@ -240,11 +240,22 @@ against DOSBox Pure 1.0 Preview 8 (`dosbox_pure_libretro.cpp`) and its
 
 `internal/libretro`'s `TestProbe` runs real content headless and saves a
 screenshot every few seconds (`DOSZER_PROBE_CONTENT`, `_SYSTEM`, `_OUT`,
-`_FRAMES`, `_EVERY`): how to see what a game does in an OS image session
-without a window, e.g. a startup script that leaves the screen black. Use
-a system directory of symlinks to the images, and `diff`, so nothing is
-written to them. Saves are kept in `<out>/saves`: a startup batch file can log to C:,
-read back through `vdisk.NewOverlay` over the image and the `-CDRIVE.sav`.
+`_FRAMES`, `_EVERY`; `_RAMDISK` for `bootos_ramdisk`, default `diff`;
+`_PACED` to run in real time): how to see what a game does in an OS image
+session without a window, e.g. a startup script that leaves the screen
+black. It logs the frame at which the core closed the session, if it did.
+Use a system directory of symlinks to the images, and `diff` or `true`,
+so nothing is written to them. Saves are kept in `<out>/saves`: a startup
+batch file can log to C:, read back through `vdisk.NewOverlay` over the
+image and the `-CDRIVE.sav`, or to D:, whose `.sav` holds the written
+sectors under any ramdisk setting (grep it for a marker).
+
+A Windows 98 DOS window that has shown any output stays open, finished,
+when its batch file ends, even hidden: `STARTRUN.VBS` waiting on
+`WINDOWS.BAT` then never shuts Windows down. One `ECHO`, or a batch file
+without `@ECHO OFF`, was enough (probe, 2026-11-25; silent batch files
+closed the session, and Antara's closed it live). `prepare os` runs it as
+`COMMAND.COM /C D:\WINDOWS.BAT >NUL`.
 
 Windows 98 ships Windows Script Host 1.0 (`WSHOM.OCX` 5.0), with no
 `SendKeys`/`AppActivate`; a startup script calling them fails behind the
@@ -387,16 +398,19 @@ reads one byte past the end, since `archive/zip` checks only at
 
 ## Next steps
 
-Items 1-6 need someone at the machine (live sessions, RetroArch, a
-Steam Deck); they come first. Item 7 waits on a game that needs it.
+Items 1-4 need someone at the machine (live sessions, RetroArch, a
+Steam Deck); they come first. Item 6 can be done headless now. Item 7
+waits on a game that needs it.
 
 1. Play an archive with `doszer run` and run a live `install`: a
    plain CD install, and an OS image session (`bootos_ramdisk = diff`
    comes from `Config.Options`; check the image is untouched and C: lands
    in `-CDRIVE.sav`), on Linux/WSLg and as `doszer.exe` on Windows.
    Check keyboard (scancode table in `internal/libretro/keys.go`), mouse
-   capture in Windows 9x, and audio. Not done yet: gamepads, fullscreen,
-   fast-forward.
+   capture in Windows 9x, and audio. Checked live (2026-11-24/25, Windows
+   build): Betrayal in Antara to its menu with audio and mouse, quitting
+   closed doszer; keyboard in Recoil. Not done yet: Ctrl+F10, gamepads,
+   fullscreen, fast-forward, a Linux/WSLg session, `install`.
 2. Finish the live `install` test against real DOSBox Pure. Passed
    (2026-11-13): a plain session (Descent II, 32 files from the
    `.pure.zip`), and an OS image session with `--drive c` on a fixed
@@ -425,17 +439,17 @@ Steam Deck); they come first. Item 7 waits on a game that needs it.
    Betrayal in Antara example has a mapping (from `ANTARA.HLP`'s hotkey
    list) to test with, under the OS image model.
 
-5. OS image shutdown under the built-in frontend: a headless probe of a
-   prepared Win98 image, and of the hand-made one that shut down and
-   closed DOSBox Pure live, both ran `WINDOWS.BAT` to the end (`STARTRUN.VBS`
-   then calls `SHExitWindowsEx`), and Windows saved its registry, but the
-   screen never changed again and the session never closed. Check live
-   (`doszer run`, standalone, RetroArch) before suspecting the image.
+5. (Resolved 2026-11-25.) OS image shutdown: `doszer run` closed after
+   quitting Betrayal in Antara live (Windows build), and headless probes
+   close too. The earlier probes hung because their `WINDOWS.BAT` printed
+   output (DOSBox Pure facts, below the table); `prepare os` now
+   redirects it.
 6. `prepare os` follow-up: a black desktop needs the registry
    (`HKCU\Control Panel\Colors`, `Background`; Windows 98 ignores
-   `WIN.INI [colors]`). Booting the new image once (Keep) to apply a
-   `.REG` waits on item 5: stopping a session mid-shutdown could leave
-   Windows' unclean-shutdown marker in the image. Writing `USER.DAT`
+   `WIN.INI [colors]`). Now unblocked: a session that applies a `.REG`
+   and shuts down closes by itself (item 5), so `prepare os` could boot
+   the new image once under Keep, headless, without risking Windows'
+   unclean-shutdown marker. Writing `USER.DAT`
    directly would need `w9xreg` to rewrite a real registry, not just
    encode test fixtures. (Done: `install_os` keeps a clean image for
    `install`; `init` picks the boot model and image.) Other registry

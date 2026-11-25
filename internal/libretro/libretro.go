@@ -37,7 +37,8 @@ type Config struct {
 	SaveDir   string            // RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY
 	Options   map[string]string // core option values; any other option takes the core's default
 	Title     string            // window title
-	Frames    int               // stop after this many frames, unpaced (tests); 0 runs until closed
+	Frames    int               // stop after this many frames, unpaced unless Paced (tests); 0 runs until closed
+	Paced     bool              // with Frames: run in real time, as a window does
 	// ScreenshotDir is where Ctrl+F5 saves screenshots; empty for
 	// Pictures/doszer in the home directory.
 	ScreenshotDir string
@@ -294,7 +295,9 @@ func Run(cfg Config) error {
 			if frame >= cfg.Frames {
 				break
 			}
-			continue
+			if !cfg.Paced {
+				continue
+			}
 		}
 		if h.fast {
 			next = time.Now()

@@ -858,14 +858,21 @@ first). The desktop colour lives in the registry, which it doesn't change.
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set sh  = CreateObject("WScript.Shell")
 If fso.FileExists("D:\WINDOWS.BAT") Then
-    sh.Run "D:\WINDOWS.BAT", 0, True
+    sh.Run "COMMAND.COM /C D:\WINDOWS.BAT >NUL", 0, True
     sh.Run "RUNDLL32.EXE SHELL32.DLL,SHExitWindowsEx 1", 0, False
 Else
     sh.Run "C:\WINDOWS\PROGMAN.EXE", 1, False
 End If
 ```
 
-Window style `0` hides `WINDOWS.BAT`'s console window. The fallback is
+Window style `0` hides `WINDOWS.BAT`'s console window. Its output goes
+to `NUL`: a hidden DOS window that has shown any output (one `ECHO`, a
+command echoed without `@ECHO OFF`) stays open, finished, when the batch
+file ends, so the script waiting on it never shuts Windows down and the
+session never closes. An image prepared before doszer did this, or a
+hand-made one running `D:\WINDOWS.BAT` directly, has that problem:
+prepare it again, or keep `WINDOWS.BAT` silent (`@ECHO OFF` first, and
+nothing it runs printing to the console). The fallback is
 Program Manager: Explorer started by a script that isn't the configured
 shell opens a folder window, not the desktop. AutoRun is Explorer's, so
 with Explorer never running as the shell, discs are not AutoRun.

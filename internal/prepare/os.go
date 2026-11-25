@@ -31,10 +31,14 @@ type OSOptions struct {
 // startRun is C:\WINDOWS\STARTRUN.VBS, the shell a prepared image starts
 // instead of Explorer (README "Windows 9x OS image"): the game's
 // D:\WINDOWS.BAT, hidden, then shut down; without one, Program Manager.
+// The batch file's output goes to NUL: a hidden DOS window that has shown
+// any output stays open, finished, when the batch file ends, so the
+// script waiting on it would never shut Windows down (headless probe,
+// 2026-11-25: one ECHO was enough).
 const startRun = `Set fso = CreateObject("Scripting.FileSystemObject")
 Set sh  = CreateObject("WScript.Shell")
 If fso.FileExists("D:\WINDOWS.BAT") Then
-    sh.Run "D:\WINDOWS.BAT", 0, True
+    sh.Run "COMMAND.COM /C D:\WINDOWS.BAT >NUL", 0, True
     sh.Run "RUNDLL32.EXE SHELL32.DLL,SHExitWindowsEx 1", 0, False
 Else
     sh.Run "C:\WINDOWS\PROGMAN.EXE", 1, False

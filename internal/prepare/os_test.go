@@ -168,7 +168,7 @@ func TestOS(t *testing.T) {
 	if s := read("WINDOWS/SYSTEM.INI"); s != "[boot]\r\nshell=wscript.exe C:\\WINDOWS\\STARTRUN.VBS\r\n" {
 		t.Errorf("SYSTEM.INI = %q", s)
 	}
-	if s := read("WINDOWS/STARTRUN.VBS"); !strings.Contains(s, "D:\\WINDOWS.BAT\", 0, True\r\n") {
+	if s := read("WINDOWS/STARTRUN.VBS"); !strings.Contains(s, "COMMAND.COM /C D:\\WINDOWS.BAT >NUL\", 0, True\r\n") {
 		t.Errorf("STARTRUN.VBS = %q", s)
 	}
 	if s := read("WINDOWS/PROGMAN.INI"); s != "[Groups]\r\nGroup1=C:\\WINDOWS\\TOOLS.GRP\r\n\r\n[Settings]\r\nOrder=1\r\n" && s != "[Groups]\nGroup1=C:\\WINDOWS\\TOOLS.GRP\n\n[Settings]\nOrder=1\n" {
