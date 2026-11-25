@@ -35,6 +35,7 @@ internal/cue/        CUE parsing, track byte ranges, normalized track hash (§7.
 internal/iso9660/    ISO 9660 reader, for [[extract]] (§5.7)
 internal/padmap/     [[input.pad]] (§5.9): PADMAP.DBP and DOS.YML encoding (§6.8.2, §6.8.3)
 internal/verify/     doszer verify: an archive against its manifest and spec §8/§11
+internal/info/       doszer info: an archive's hashes, boot, parents, programs by platform (MZ/NE/PE headers), compression, discs
 internal/repack/     doszer repack: rebuild an archive from its own embedded manifest
 internal/prepare/    doszer prepare: game-ready copy of a Windows 3.x shell (RunExit) or Windows 9x image (STARTRUN.VBS, PRESSKEY, Program Manager .GRP writer, line-preserving INI editor)
 internal/vhd/        VHD reader (fixed, dynamic), for install
@@ -256,6 +257,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `repack` | Implemented |
 | `verify` | Implemented |
 | `prepare` | Implemented. `shell`: a prepared real Win3.1 shell ran a program through RunExit and closed DOSBox Pure (headless probe). `os`: a prepared real Win98 image booted to Program Manager's generated Tools group (icons re-extracted) and ran a `WINDOWS.BAT` with PRESSKEY (headless probe); its shutdown didn't close the probe session, as with the hand-made reference image (Next steps) |
+| `info` | Implemented |
 | `version` | Implemented |
 
 Manifest parsing and every manifest rule in specification §11 are

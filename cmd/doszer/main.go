@@ -20,6 +20,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/builtin"
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/dump"
+	"github.com/DemiCloud/doszer/internal/info"
 	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/manifest"
@@ -72,6 +73,7 @@ func init() {
 		{"run", "play an archive in DOSBox Pure", runRun},
 		{"repack", "rebuild an archive from its embedded manifest", runRepack},
 		{"prepare", "make a game-ready copy of a Windows shell or OS image", runPrepare},
+		{"info", "show what an archive holds", runInfo},
 		{"verify", "check an archive against its manifest and the specification", runVerify},
 		{"version", "show the versions of doszer and the programs it embeds", runVersion},
 	}
@@ -1007,6 +1009,32 @@ Options:
 		fmt.Printf("Dry run: would write %s (%d entries)\n", rep.Output, rep.Entries)
 	} else {
 		fmt.Printf("Prepared %s (%d entries)\n", rep.Output, rep.Entries)
+	}
+	return nil
+}
+
+func runInfo(args []string) error {
+	fs := newFlags("info")
+	const help = `doszer info - show what an archive holds
+
+Usage: doszer info FILE.dosz...
+
+Options:
+` + flagHelp
+	if ok, err := parse(fs, args, help, 1, 1<<20); !ok {
+		return err
+	}
+	for i, p := range fs.Args() {
+		status.Step("Reading %s", filepath.Base(p))
+		r, err := info.Read(p)
+		endSteps(err)
+		if err != nil {
+			return err
+		}
+		if i > 0 {
+			fmt.Println()
+		}
+		info.Print(os.Stdout, r)
 	}
 	return nil
 }

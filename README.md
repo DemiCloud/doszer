@@ -53,6 +53,7 @@ doszer run     FILE.dosz [--option KEY=VALUE...] [--system-dir DIR] [--save-dir 
 doszer FILE.dosz
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [--parent FILE] [-n] [--strict] [--ogg-quality N]
 doszer verify  FILE.dosz
+doszer info    FILE.dosz...
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
 doszer version
@@ -75,7 +76,19 @@ results, warnings and errors are printed.
 | `install` | Run an installer under DOSBox Pure and extract the chosen folder into the source. |
 | `repack` | Rebuild an archive from its embedded manifest. |
 | `verify` | Check an archive against its embedded manifest and the specification. |
+| `info` | Show what an archive holds (below). |
 | `prepare` | Make a game-ready copy of a Windows 3.x shell or Windows 9x OS image (see "Preparing a shell", "Windows 9x OS image"). |
+
+`info` shows an archive's size and two SHA-256 hashes: of the whole file,
+and of everything but the archive comment, which two builds of the same
+source share (the comment records the build date, §8.4). Then its name,
+boot model, parent chain (each parent looked for beside the archive that
+names it), the programs in it by platform (DOS, Windows 3.x, Windows 95
+or later, from their executable headers), compression (deflated and
+stored files, sizes, ratio), each disc image's tracks (data, audio as WAV
+or Ogg Vorbis) with the `[[source.media]]` entry declaring it and its
+track hashes (§7.2), gamepad files, the manifest's `notes` and the archive
+comment. It reads; `verify` checks.
 
 `init` also hashes every disc image (CUE sheet) in the source into
 `[[source.media]]` entries (spec §7.2), labelled with the CUE sheet's name;
