@@ -16,7 +16,8 @@ import (
 // DOSZER_PROBE_EVERY frames (default 300, 5 seconds) to DOSZER_PROBE_OUT:
 // a way to see what a game does without a window. Skipped unless
 // DOSZER_PROBE_CONTENT is set; DOSZER_PROBE_SYSTEM is the system
-// directory, DOSZER_PROBE_FRAMES how long to run (default 7200).
+// directory, DOSZER_PROBE_FRAMES how long to run (default 7200). Saves
+// are kept in DOSZER_PROBE_OUT/saves.
 func TestProbe(t *testing.T) {
 	content := os.Getenv("DOSZER_PROBE_CONTENT")
 	if content == "" {
@@ -34,9 +35,13 @@ func TestProbe(t *testing.T) {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	saves := filepath.Join(out, "saves")
+	if err := os.MkdirAll(saves, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	next := every
 	err = Run(Config{Core: corePath, SDL: sdlLibs, Content: content, SystemDir: os.Getenv("DOSZER_PROBE_SYSTEM"),
-		SaveDir: t.TempDir(), Title: "probe", Frames: frames,
+		SaveDir: saves, Title: "probe", Frames: frames,
 		Options: map[string]string{"dosbox_pure_menu_time": "0", "dosbox_pure_bootos_ramdisk": "diff"},
 		OnFrame: func(frame int, pix []byte, w, h, pitch int) {
 			if frame < next {

@@ -210,7 +210,16 @@ screenshot every few seconds (`DOSZER_PROBE_CONTENT`, `_SYSTEM`, `_OUT`,
 `_FRAMES`, `_EVERY`): how to see what a game does in an OS image session
 without a window, e.g. a startup script that leaves the screen black. Use
 a system directory of symlinks to the images, and `diff`, so nothing is
-written to them.
+written to them. Saves are kept in `<out>/saves`: a startup batch file can log to C:,
+read back through `vdisk.NewOverlay` over the image and the `-CDRIVE.sav`.
+
+Windows 98 ships Windows Script Host 1.0 (`WSHOM.OCX` 5.0), with no
+`SendKeys`/`AppActivate`; a startup script calling them fails behind the
+hidden `WINDOWS.BAT` console and `START` waits on its unseen error box
+forever. To get past a launcher, ship `PRESSKEY.EXE`
+(`github.com/DemiCloud/presskey`) in the source and `START` it from
+`WINDOWS.BAT` (`%` is `%%` there). Programs run under DOSBox Pure's
+emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 
 ## RetroArch facts
 
