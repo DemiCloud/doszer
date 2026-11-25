@@ -419,13 +419,14 @@ reads one byte past the end, since `archive/zip` checks only at
    then calls `SHExitWindowsEx`), and Windows saved its registry, but the
    screen never changed again and the session never closed. Check live
    (`doszer run`, standalone, RetroArch) before suspecting the image.
-6. `prepare os` follow-ups: a black desktop needs the registry
+6. `prepare os` follow-up: a black desktop needs the registry
    (`HKCU\Control Panel\Colors`, `Background`; Windows 98 ignores
-   `WIN.INI [colors]`): apply a `.REG` by booting the new image once with
-   the built-in core (Keep). Keep a clean image for `install` beside the
-   prepared one archives name, and default `init`'s `shell`/`os` from the
-   system directory (argument, then config, then well-known names), with
-   the game's executable formats choosing between DOS, Win3.x and Win9x.
+   `WIN.INI [colors]`). Booting the new image once (Keep) to apply a
+   `.REG` waits on item 5: stopping a session mid-shutdown could leave
+   Windows' unclean-shutdown marker in the image. Writing `USER.DAT`
+   directly would need `w9xreg` to rewrite a real registry, not just
+   encode test fixtures. (Done: `install_os` keeps a clean image for
+   `install`; `init` picks the boot model and image.)
 
 `internal/config` is implemented (README "Configuration"); `build` and
 `repack` consume `ogg_quality`, `install` and `run` the rest. With the OS image
