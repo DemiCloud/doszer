@@ -200,7 +200,7 @@ func runSession(opts Options, m *manifest.Manifest) (*Report, error) {
 		return nil, err
 	}
 	defer s.Close()
-	status.Step("DOSBox Pure is running: install the game, then close its window (Ctrl+F10 releases the mouse)")
+	status.Step("DOSBox Pure is running: install the game, then close its window")
 	if err := launch(env, s); err != nil {
 		return nil, err
 	}

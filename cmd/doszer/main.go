@@ -723,6 +723,9 @@ Options:
 		Templates: cfg.Templates,
 	}
 
+	if opts.From == "" {
+		fmt.Fprintln(os.Stderr, windowHelp)
+	}
 	rep, err := install.Run(opts)
 	endSteps(err)
 	if rep != nil {
@@ -756,6 +759,9 @@ Options:
 	return nil
 }
 
+// windowHelp is printed when DOSBox Pure's window opens.
+const windowHelp = "Click the window to capture the mouse, Ctrl+F10 releases it, Alt+Enter toggles fullscreen."
+
 // runRun implements `doszer run <archive.dosz>`.
 func runRun(args []string) error {
 	fs := newFlags("run")
@@ -774,7 +780,8 @@ Options:
 	if err != nil {
 		return err
 	}
-	status.Step("DOSBox Pure is running %s: click to capture the mouse, Ctrl+F10 releases it, Alt+Enter toggles fullscreen", filepath.Base(fs.Arg(0)))
+	fmt.Fprintln(os.Stderr, windowHelp)
+	status.Step("Playing %s", filepath.Base(fs.Arg(0)))
 	env, err := install.Play(fs.Arg(0), stringOr(*systemDir, cfg.SystemDir), stringOr(*saveDir, cfg.SaveDir))
 	endSteps(err)
 	if err == nil {

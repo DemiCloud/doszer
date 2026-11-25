@@ -16,6 +16,7 @@ import (
 var (
 	mu       sync.Mutex
 	out      io.Writer // nil: disabled
+	outFile  *os.File
 	step     string
 	started  time.Time
 	n, total int
@@ -35,7 +36,7 @@ func Enable(f *os.File) {
 		return
 	}
 	mu.Lock()
-	out = f
+	out, outFile = f, f
 	mu.Unlock()
 }
 
@@ -118,15 +119,37 @@ func finish(ok bool) {
 	step = ""
 }
 
+// draw redraws the spinner line, cut to the terminal's width: a line that
+// wrapped would be redrawn on a new line every tick.
 func draw() {
-	line := frames[frame%len(frames)] + " " + step
+	var suffix string
 	if total > 0 {
-		line += fmt.Sprintf(" (%d/%d)", n, total)
+		suffix += fmt.Sprintf(" (%d/%d)", n, total)
 	}
 	if d := time.Since(started); d >= 2*time.Second {
-		line += fmt.Sprintf(" %ds", int(d.Seconds()))
+		suffix += fmt.Sprintf(" %ds", int(d.Seconds()))
 	}
-	fmt.Fprint(out, "\r\033[K"+line)
+	width := 0
+	if outFile != nil {
+		width = termWidth(outFile)
+	}
+	if width <= 0 {
+		width = 80
+	}
+	text := fit(step, width-1-2-len([]rune(suffix))) // spinner and space; the last column stays free
+	fmt.Fprint(out, "\r\033[K"+frames[frame%len(frames)]+" "+text+suffix)
+}
+
+// fit cuts s to at most n characters, ending it with "…" if cut.
+func fit(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	if n < 1 {
+		return ""
+	}
+	return string(r[:n-1]) + "…"
 }
 
 func spin(t *time.Ticker, stop chan struct{}) {
