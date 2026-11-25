@@ -36,6 +36,7 @@ internal/iso9660/    ISO 9660 reader, for [[extract]] (§5.7)
 internal/padmap/     [[input.pad]] (§5.9): PADMAP.DBP and DOS.YML encoding (§6.8.2, §6.8.3)
 internal/verify/     doszer verify: an archive against its manifest and spec §8/§11
 internal/repack/     doszer repack: rebuild an archive from its own embedded manifest
+internal/prepare/    doszer prepare: game-ready copy of a Windows 3.x shell (RunExit, INI edits, line-preserving INI editor)
 internal/vhd/        VHD reader (fixed, dynamic), for install
 internal/w9xreg/     Windows 9x registry (SYSTEM.DAT/USER.DAT) reader, diff, REGEDIT4 writer, for install
 internal/fat/        FAT12/16/32 reader with long names, as an io/fs.FS, for install
@@ -44,7 +45,7 @@ internal/install/    doszer install and run: session content, launching the buil
 internal/libretro/   built-in frontend: hosts a libretro core in-process (environment, directory-only VFS, SDL window/input/audio)
 internal/sdl/        the few SDL2 functions internal/libretro uses, loaded at run time through purego
 internal/dl/         dlopen/LoadLibrary without cgo
-internal/builtin/    programs embedded at build time, extracted to the user cache: the DOSBox Pure core (and SDL DLLs on Windows, `make core`), redumper (`make redumper`)
+internal/builtin/    programs embedded at build time, extracted to the user cache: the DOSBox Pure core (and SDL DLLs on Windows, `make core`), redumper (`make redumper`); guest programs, the same on every platform: RunExit (`make runexit`)
 internal/dump/       doszer dump: a CD to BIN/CUE with redumper (Windows redumper through interop under WSL), resumable; or --from an existing image (Import)
 internal/redump/     Redump datfile: load (Logiqx XML/zip, compact), embedded snapshot (`make dat`), cached run-time copy, track matching; any CUE image (or zip of one) read in Redump's track layout, read-offset correction
 internal/interrupt/  removes registered temporary paths on SIGINT/SIGTERM
@@ -104,6 +105,12 @@ README.md            doszer usage, configuration, install workflow
   isn't in redumper's database, matched exactly, `drive.ixx`
   `drive_find_in_database`) and from its work directory with relative
   paths, so nothing needs translating for the Windows build under WSL.
+- Embedded guest programs (`internal/builtin/data/guest`, run inside
+  DOSBox Pure, not on the host): RunExit for `prepare shell`, its
+  official release binary and licence pinned by tag and SHA-256
+  (`RUNEXIT_REF`, `RunExitVersion` must match). A 16-bit Windows 3.x
+  program; PRESSKEY is 32-bit (Windows 95+) and has no place in a 3.x
+  shell.
 - Redump's PC datfile is embedded as a snapshot (`make dat`, gitignored,
   converted to a compact gzipped size/SHA-1 list: 5 MB against Redump's
   14 MB zip) and refreshed at run time (weekly, cached). It isn't
@@ -179,7 +186,7 @@ pointer to it).
 | OS image and shell discovery | Recursive scan of the system directory; `DOSBoxPureMidiCache.txt` caches the list | `dosbox_pure_libretro.cpp` |
 | Parent marker | Zero-byte root entry `<name>.parent`; parent resolved in the archive's directory; chains allowed | `src/dos/drive_zip.cpp` |
 | `DOSBOX.BAT` | Run instead of the start menu; bypasses `AUTOBOOT.DBP` | `dosbox_pure_libretro.cpp` |
-| Shell startup | `WINDOWS.BAT`, then `AUTOEXEC.BAT`, then `WINDOWS\WIN.COM` | `dosbox_pure_run.h` |
+| Shell startup | `WINDOWS.BAT`, then `AUTOEXEC.BAT`, then `WINDOWS\WIN.COM` (the first that exists, only it: a `WINDOWS.BAT` sets `PATH` itself). When it ends, `PUREMENU -FINISH` closes the core under `menu_time` `0` with an `AUTOBOOT.DBP` startup mode | `dosbox_pure_run.h`, `RunShell`, `BatchFileExec`; `dosbox_pure_osd.h`, `Menu::Run` |
 | OS image model | Archive content is a synthesized FAT disk (D:); CD images appear as E: | `src/ints/bios_disk.cpp`, `fatFromDOSDrive` |
 | Save files | C: changes for ZIP content: `<save dir>/<content>.pure.zip`. OS image C: diff: `<content>-CDRIVE.sav`. D: disk: `<content>-<HASH>.sav` | `DBP_GetSaveFile` |
 | CD audio in CUE | PCM WAV and Ogg Vorbis only (`stb_vorbis`) | `src/dos/cdrom_image.cpp` |
@@ -247,6 +254,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `run` | Implemented; not yet played live |
 | `repack` | Implemented |
 | `verify` | Implemented |
+| `prepare` | `shell` implemented; a prepared copy of a real Win3.1 shell ran a game through RunExit and closed DOSBox Pure (headless probe). `os` (Windows 98 image) planned |
 | `version` | Implemented |
 
 Manifest parsing and every manifest rule in specification §11 are

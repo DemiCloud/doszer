@@ -2,12 +2,15 @@
 // the DOSBox Pure libretro core (and, on Windows, SDL2) for the built-in
 // frontend (internal/libretro, `make core`), and redumper for `doszer
 // dump` (`make redumper`). They're extracted to a cache directory named
-// after their content on first use.
+// after their content on first use. Guest programs, run inside DOSBox Pure
+// rather than on the host, are the same on every platform: RunExit for
+// `doszer prepare shell` (`make runexit`), copied into what it writes.
 package builtin
 
 import (
 	"bytes"
 	"crypto/sha256"
+	"embed"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -102,6 +105,25 @@ func Redumper(windows bool) (string, error) {
 	return filepath.Join(dir, name), nil
 }
 
+// RunExitVersion is the RunExit release `make runexit` embeds.
+const RunExitVersion = "v2.0"
+
+//go:embed data/guest
+var guest embed.FS
+
+// RunExit returns the embedded RUNEXIT.EXE (a Windows 3.x program) and its
+// licence text, which has to travel with it.
+func RunExit() (exe, license []byte, err error) {
+	exe, err = guest.ReadFile("data/guest/RUNEXIT.EXE")
+	if err == nil {
+		license, err = guest.ReadFile("data/guest/RUNEXIT-LICENSE")
+	}
+	if err != nil {
+		return nil, nil, errors.New("this doszer was built without RunExit (make runexit)")
+	}
+	return exe, license, nil
+}
+
 // extract writes the named embedded files to a cache directory named after
 // prefix and their content, unless already there, and returns it.
 func extract(prefix string, names []string) (string, error) {
@@ -183,6 +205,8 @@ func Programs() []Program {
 		{"DOSBox Pure", DOSBoxPureVersion, "https://codeberg.org/schelling/dosbox-pure", has(coreName())},
 		{"redumper", RedumperVersion, "https://github.com/superg/redumper", has("redumper", "redumper.exe")},
 	}
+	_, _, rerr := RunExit()
+	progs = append(progs, Program{"RunExit", RunExitVersion, "https://github.com/andshrew/RunExit", rerr == nil})
 	if runtime.GOOS == "windows" {
 		for _, s := range []struct{ name, file, url string }{
 			{"SDL", "SDL3.dll", "https://github.com/libsdl-org/SDL"},

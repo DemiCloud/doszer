@@ -15,7 +15,7 @@ Conformance level: Recipe.
 
 Early development. Every command is implemented: `init`, `build`
 (including `[[extract]]`, media identification (§7) and disc image
-conversion (§6.4)), `install`, `run`, `repack`, `verify` and `version`
+conversion (§6.4)), `install`, `run`, `repack`, `verify`, `prepare` and `version`
 (doszer's version and the programs it embeds, with their sources).
 
 ## Requirements
@@ -53,6 +53,7 @@ doszer run     FILE.dosz [--option KEY=VALUE...] [--system-dir DIR] [--save-dir 
 doszer FILE.dosz
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
 doszer verify  FILE.dosz
+doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer version
 ```
 
@@ -73,6 +74,7 @@ results, warnings and errors are printed.
 | `install` | Run an installer under DOSBox Pure and extract the chosen folder into the source. |
 | `repack` | Rebuild an archive from its embedded manifest. |
 | `verify` | Check an archive against its embedded manifest and the specification. |
+| `prepare` | Make a game-ready copy of a Windows 3.x shell (see "Preparing a shell"). |
 
 `init` also hashes every disc image (CUE sheet) in the source into
 `[[source.media]]` entries (spec §7.2), labelled with the CUE sheet's name;
@@ -612,6 +614,58 @@ however you like: a manifest's `shell` or `os` names the file by its path
 there (`dosbox_pure/<image>`), so archives that share one must use the
 same name.
 
+### Preparing a shell
+
+`doszer prepare shell` makes a copy of a Windows 3.x shell (a `.dosz`,
+`.zip` or directory of its files) that can start a game and close
+DOSBox Pure when the game quits:
+
+```bash
+doszer prepare shell Win31.dosz "Win31 (games).dosz"
+```
+
+The output is a new shell built for running games, not a copy of the
+original: files Windows can do without are left out and settings are
+changed, and nothing guarantees that anything else in the input is kept.
+Keep the original. The changes:
+
+- adds [RunExit](https://github.com/andshrew/RunExit) (embedded,
+  MIT license) as `C:\RUNEXIT\RUNEXIT.EXE`, with its licence;
+- removes swap files (`386SPART.PAR`, `WIN386.SWP`) and leftover
+  temporary files (`~*.TMP`), and the permanent swap file settings in
+  `SYSTEM.INI` (Windows would report the missing file at startup and
+  wait);
+- sets a black desktop in `WIN.INI`: no wallpaper or pattern, background
+  `0 0 0`;
+- lays each `--add DIR`'s files over the result, replacing files of the
+  same name.
+
+Every other file, and its date, is kept. `-n` prints the changes without
+writing anything.
+
+A game's `WINDOWS.BAT` (run instead of the shell's own `AUTOEXEC.BAT`,
+so it sets `PATH` and `TEMP` itself) then starts Windows with RunExit,
+which runs the game and exits Windows when it quits. The shell's startup
+then ends, and DOSBox Pure closes (with `dosbox_pure_menu_time` = `0`;
+`dosbox_pure_osd.h`, `PUREMENU -FINISH`). Without RunExit, as in an
+unprepared shell, it starts the game in a plain Windows session:
+
+```bat
+@ECHO OFF
+PATH C:\WINDOWS
+SET TEMP=C:\WINDOWS\TEMP
+IF NOT EXIST C:\RUNEXIT\RUNEXIT.EXE GOTO PLAIN
+WIN C:\RUNEXIT\RUNEXIT.EXE /show=3 C:\GAME\GAME.EXE
+GOTO END
+:PLAIN
+WIN C:\GAME\GAME.EXE
+:END
+```
+
+`/show=3` starts the game maximized; RunExit's README lists its other
+options. PRESSKEY (below) is a 32-bit Windows 95 program and doesn't run
+under Windows 3.x.
+
 ### Windows 9x OS image
 
 Specification §12's startup behaviour, for a Windows 98 image: in
@@ -673,6 +727,10 @@ release tag. Thank you to Bernhard Schelling and the DOSBox team.
 `dump` runs [redumper](https://github.com/superg/redumper) (GNU General
 Public License, version 3), embedded from its official release binaries;
 its source is at that link.
+
+`prepare shell` adds [RunExit](https://github.com/andshrew/RunExit) by
+Steven Don and andshrew (MIT license), embedded from its official release
+binary, with its licence.
 
 The built-in frontend also uses [SDL](https://www.libsdl.org/) (zlib
 license; its Windows DLLs are embedded) and

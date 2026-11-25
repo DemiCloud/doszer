@@ -23,6 +23,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/prepare"
 	"github.com/DemiCloud/doszer/internal/redump"
 	"github.com/DemiCloud/doszer/internal/repack"
 	"github.com/DemiCloud/doszer/internal/status"
@@ -70,6 +71,7 @@ func init() {
 		{"install", "run an installer and extract the result into a source", runInstall},
 		{"run", "play an archive in DOSBox Pure", runRun},
 		{"repack", "rebuild an archive from its embedded manifest", runRepack},
+		{"prepare", "make a game-ready copy of a Windows 3.x shell", runPrepare},
 		{"verify", "check an archive against its manifest and the specification", runVerify},
 		{"version", "show the versions of doszer and the programs it embeds", runVersion},
 	}
@@ -954,4 +956,48 @@ func flagOr(fs *pflag.FlagSet, name string, flagValue, configured int) int {
 		return flagValue
 	}
 	return configured
+}
+
+func runPrepare(args []string) error {
+	fs := newFlags("prepare")
+	dryRun := fs.BoolP("dry-run", "n", false, "")
+	force := fs.BoolP("force", "f", false, "")
+	add := fs.StringArray("add", nil, "")
+	const help = `doszer prepare - make a game-ready copy of a Windows 3.x shell
+
+Usage: doszer prepare shell [options] SHELL OUTPUT
+
+Options:
+      --add DIR           lay DIR's files over the result (repeatable)
+  -n, --dry-run           print the changes without writing OUTPUT
+  -f, --force             overwrite OUTPUT
+` + flagHelp
+	if ok, err := parse(fs, args, help, 3, 3); !ok {
+		return err
+	}
+	if fs.Arg(0) != "shell" {
+		fmt.Fprint(os.Stderr, help)
+		return fmt.Errorf("unknown prepare target %q", fs.Arg(0))
+	}
+
+	rep, err := prepare.Shell(prepare.ShellOptions{
+		Input:  fs.Arg(1),
+		Output: fs.Arg(2),
+		Add:    *add,
+		DryRun: *dryRun,
+		Force:  *force,
+	})
+	endSteps(err)
+	if err != nil {
+		return err
+	}
+	for _, c := range rep.Changes {
+		fmt.Printf("  %-8s  %s (%s)\n", c.Action, strings.ReplaceAll(c.Path, "/", `\`), c.Why)
+	}
+	if *dryRun {
+		fmt.Printf("Dry run: would write %s (%d entries)\n", rep.Output, rep.Entries)
+	} else {
+		fmt.Printf("Prepared %s (%d entries)\n", rep.Output, rep.Entries)
+	}
+	return nil
 }

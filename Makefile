@@ -53,6 +53,15 @@ REDUMPER_HOST := $(BUILTIN)/linux_$(HOST_ARCH)/redumper $(if $(filter amd64,$(HO
 REDUMPER_ALL  := $(BUILTIN)/linux_amd64/redumper $(BUILTIN)/linux_amd64/redumper.exe \
                  $(BUILTIN)/linux_arm64/redumper $(BUILTIN)/windows_amd64/redumper.exe
 
+# RunExit (github.com/andshrew/RunExit, MIT), embedded for `doszer prepare
+# shell`: a 16-bit Windows 3.x program, the same for every platform. Its
+# release binary and licence, checked against these SHA-256 sums.
+RUNEXIT_REF            := v2.0
+RUNEXIT_URL            := https://github.com/andshrew/RunExit
+RUNEXIT_SHA256_EXE     := 4ec227f841215607ad4a48516ad3af966a2e2f253a92d4a07f9551a76926f575
+RUNEXIT_SHA256_LICENSE := 1923951bbb31372ffd9b0569b2740458f76e48489107b1b5f3d6fd2afc01ba47
+RUNEXIT                := $(BUILTIN)/guest/RUNEXIT.EXE $(BUILTIN)/guest/RUNEXIT-LICENSE
+
 # Redump's IBM PC datfile, snapshotted at build time for `doszer dump`'s
 # verification (internal/redump; doszer fetches newer ones at run time).
 # Not pinned: it's a snapshot of a database that grows. `make dat` again
@@ -63,9 +72,9 @@ REDUMP_DAT     := internal/redump/data/pc.dat.gz
 # Every core build writes the same output file in $(DBP_SRC).
 .NOTPARALLEL:
 
-.PHONY: build test vet install release clean help core core-all redumper redumper-all dat icon
+.PHONY: build test vet install release clean help core core-all redumper redumper-all runexit dat icon
 
-build: core redumper $(REDUMP_DAT) ## Development build → build/doszer (debug symbols; version = "dev" if no tags)
+build: core redumper runexit $(REDUMP_DAT) ## Development build → build/doszer (debug symbols; version = "dev" if no tags)
 	mkdir -p build
 	go mod tidy
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o build/$(NAME) ./cmd/doszer
@@ -80,7 +89,7 @@ install: build ## Copy the built binary to $(DESTDIR)$(BINDIR) (default: /usr/lo
 	install -D -m 0755 build/$(NAME) $(DESTDIR)$(BINDIR)/$(NAME)
 	@echo "Binary installed to $(DESTDIR)$(BINDIR)/$(NAME)."
 
-release: clean core-all redumper-all dat ## Stripped, trimpath, multi-arch release archives → dist/ + checksums.txt
+release: clean core-all redumper-all runexit dat ## Stripped, trimpath, multi-arch release archives → dist/ + checksums.txt
 	mkdir -p dist
 	go mod tidy
 	@set -e; for platform in $(PLATFORMS); do \
@@ -148,6 +157,20 @@ $(BUILTIN)/%/redumper:
 $(BUILTIN)/%/redumper.exe:
 	mkdir -p $(@D)
 	unzip -p $< '*/bin/redumper.exe' > $@.tmp
+	mv $@.tmp $@
+
+runexit: $(RUNEXIT) ## Fetch and stage RunExit (for prepare shell)
+
+$(BUILTIN)/guest/RUNEXIT.EXE:
+	mkdir -p $(@D)
+	curl -fsSL -o $@.tmp $(RUNEXIT_URL)/releases/download/$(RUNEXIT_REF)/RUNEXIT.EXE
+	echo "$(RUNEXIT_SHA256_EXE)  $@.tmp" | sha256sum -c --quiet
+	mv $@.tmp $@
+
+$(BUILTIN)/guest/RUNEXIT-LICENSE:
+	mkdir -p $(@D)
+	curl -fsSL -o $@.tmp https://raw.githubusercontent.com/andshrew/RunExit/$(RUNEXIT_REF)/LICENSE
+	echo "$(RUNEXIT_SHA256_LICENSE)  $@.tmp" | sha256sum -c --quiet
 	mv $@.tmp $@
 
 $(DBP_SRC)/.fetched:

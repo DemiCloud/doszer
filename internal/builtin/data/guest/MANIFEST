@@ -1,0 +1,3 @@
+Programs for the guest (DOS/Windows), the same on every platform, embedded
+into doszer by `make runexit` (see internal/builtin).
+This placeholder stays tracked so go:embed always has a directory.
