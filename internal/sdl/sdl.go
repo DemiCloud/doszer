@@ -144,6 +144,7 @@ var (
 	CreateCursor                   func(data, mask *byte, w, h, hotX, hotY int32) uintptr
 	SetCursor                      func(c uintptr)
 	FreeCursor                     func(c uintptr)
+	GetDefaultCursor               func() uintptr
 	OpenAudioDevice                func(device unsafe.Pointer, iscapture int32, desired, obtained *AudioSpec, allowedChanges int32) uint32
 	CloseAudioDevice               func(dev uint32)
 	PauseAudioDevice               func(dev uint32, pause int32)
@@ -202,6 +203,7 @@ func Load(handle uintptr, sym func(uintptr, string) (uintptr, error)) (err error
 	bind(&CreateCursor, "SDL_CreateCursor")
 	bind(&SetCursor, "SDL_SetCursor")
 	bind(&FreeCursor, "SDL_FreeCursor")
+	bind(&GetDefaultCursor, "SDL_GetDefaultCursor")
 	bind(&OpenAudioDevice, "SDL_OpenAudioDevice")
 	bind(&CloseAudioDevice, "SDL_CloseAudioDevice")
 	bind(&PauseAudioDevice, "SDL_PauseAudioDevice")

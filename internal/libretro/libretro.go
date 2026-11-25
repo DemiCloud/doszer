@@ -159,6 +159,8 @@ type host struct {
 
 	keys                  [retrokLast]bool
 	captured              bool
+	blankCursor           uintptr // shown while captured
+	defaultCursor         uintptr // the system's arrow, shown while not
 	accX, accY, accWheel  int32
 	mouseX, mouseY, wheel int32
 	buttons               [8]bool
@@ -255,16 +257,16 @@ func Run(cfg Config) error {
 			}
 		}
 	}()
-	// The host cursor is never shown over the window, as in RetroArch and
-	// standalone DOSBox Pure: the guest draws its own. A transparent
-	// cursor, not SDL_ShowCursor: WSLg ignored the latter.
+	// The host cursor is hidden while the mouse is captured (the guest
+	// draws its own) and shown while it isn't, so a released mouse can be
+	// seen over the window. Hidden by a transparent cursor, not
+	// SDL_ShowCursor: WSLg ignored the latter.
 	var blank [8]byte
-	if c := sdl.CreateCursor(&blank[0], &blank[0], 8, 8, 0, 0); c != 0 {
-		sdl.SetCursor(c)
-		defer sdl.FreeCursor(c)
-	} else {
-		sdl.ShowCursor(0)
+	h.blankCursor = sdl.CreateCursor(&blank[0], &blank[0], 8, 8, 0, 0)
+	if h.blankCursor != 0 {
+		defer sdl.FreeCursor(h.blankCursor)
 	}
+	h.defaultCursor = sdl.GetDefaultCursor()
 	h.draw()
 	sdl.ShowWindow(window)
 	h.openAudio()
@@ -730,8 +732,26 @@ func (h *host) capture(on bool) {
 	}
 	h.captured = on
 	sdl.SetRelativeMouseMode(on)
+	h.showCursor(!on)
 	if !on {
 		h.buttons = [8]bool{}
+	}
+}
+
+// showCursor shows the system's arrow over the window, or hides it.
+func (h *host) showCursor(show bool) {
+	c := h.blankCursor
+	if show {
+		c = h.defaultCursor
+	}
+	if c != 0 {
+		sdl.SetCursor(c)
+		return
+	}
+	if show {
+		sdl.ShowCursor(1)
+	} else {
+		sdl.ShowCursor(0)
 	}
 }
 
