@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/DemiCloud/doszer/internal/build"
+	"github.com/DemiCloud/doszer/internal/builtin"
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/dump"
 	"github.com/DemiCloud/doszer/internal/install"
@@ -70,6 +71,7 @@ func init() {
 		{"run", "play an archive in DOSBox Pure", runRun},
 		{"repack", "rebuild an archive from its embedded manifest", runRepack},
 		{"verify", "check an archive against its manifest and the specification", runVerify},
+		{"version", "show the versions of doszer and the programs it embeds", runVersion},
 	}
 }
 
@@ -727,6 +729,31 @@ Options:
 		printInstallReport(rep, opts.DryRun)
 	}
 	return err
+}
+
+// runVersion implements `doszer version`.
+func runVersion(args []string) error {
+	fs := newFlags("version")
+	const help = `doszer version - show the versions of doszer and the programs it embeds
+
+Usage: doszer version
+
+Options:
+` + flagHelp
+	if ok, err := parse(fs, args, help, 0, 0); !ok {
+		return err
+	}
+	fmt.Println("doszer", version)
+	for _, p := range builtin.Programs() {
+		v := p.Version
+		if !p.Embedded {
+			v = "not embedded"
+		} else if v == "" {
+			v = "unknown version"
+		}
+		fmt.Printf("  %-12s %-16s %s\n", p.Name, v, p.URL)
+	}
+	return nil
 }
 
 // runRun implements `doszer run <archive.dosz>`.

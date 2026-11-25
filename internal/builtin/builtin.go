@@ -6,7 +6,9 @@
 package builtin
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -154,4 +156,58 @@ func extract(prefix string, names []string) (string, error) {
 		}
 	}
 	return dir, nil
+}
+
+// Program is a program embedded into doszer, for `doszer version`.
+type Program struct {
+	Name, Version, URL string
+	Embedded           bool // false: this build doesn't carry it
+}
+
+// Programs lists the programs doszer embeds, with their versions and
+// source repositories.
+func Programs() []Program {
+	f, _ := files()
+	has := func(names ...string) bool {
+		for _, n := range names {
+			if f == nil {
+				return false
+			}
+			if _, err := fs.Stat(f, n); err == nil {
+				return true
+			}
+		}
+		return false
+	}
+	progs := []Program{
+		{"DOSBox Pure", DOSBoxPureVersion, "https://codeberg.org/schelling/dosbox-pure", has(coreName())},
+		{"redumper", RedumperVersion, "https://github.com/superg/redumper", has("redumper", "redumper.exe")},
+	}
+	if runtime.GOOS == "windows" {
+		for _, s := range []struct{ name, file, url string }{
+			{"SDL", "SDL3.dll", "https://github.com/libsdl-org/SDL"},
+			{"sdl2-compat", "SDL2.dll", "https://github.com/libsdl-org/sdl2-compat"},
+		} {
+			p := Program{Name: s.name, URL: s.url, Embedded: has(s.file)}
+			if p.Embedded {
+				data, _ := fs.ReadFile(f, s.file)
+				p.Version = peVersion(data)
+			}
+			progs = append(progs, p)
+		}
+	}
+	return progs
+}
+
+// peVersion returns the file version in a Windows executable's
+// VS_FIXEDFILEINFO (signature 0xFEEF04BD, then the struct version, then
+// the version as two DWORDs of 16-bit parts), or "" if it has none.
+func peVersion(data []byte) string {
+	i := bytes.Index(data, []byte{0xBD, 0x04, 0xEF, 0xFE})
+	if i < 0 || i+16 > len(data) {
+		return ""
+	}
+	ms := binary.LittleEndian.Uint32(data[i+8:])
+	ls := binary.LittleEndian.Uint32(data[i+12:])
+	return fmt.Sprintf("%d.%d.%d", ms>>16, ms&0xffff, ls>>16)
 }

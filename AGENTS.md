@@ -72,7 +72,9 @@ README.md            doszer usage, configuration, install workflow
   Go 1.25).
 - The built-in frontend embeds DOSBox Pure, built from a pinned release
   (`make core`, `DBP_REF` in the Makefile; `internal/builtin`'s
-  `DOSBoxPureVersion` must match), for linux/amd64 and linux/arm64 (zig
+  `DOSBoxPureVersion` must match; `doszer version` lists it, redumper
+  and the Windows SDL DLLs, read from their version resource, via
+  `builtin.Programs`), for linux/amd64 and linux/arm64 (zig
   `c++ -target <arch>-linux-gnu.2.28`: static C++ runtime, glibc 2.27+
   as measured, any host) and windows/amd64 (MinGW-w64, plus
   sdl2-compat's `SDL2.dll` and `SDL3.dll`). No macOS support (dropped
@@ -238,6 +240,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `run` | Implemented; not yet played live |
 | `repack` | Implemented |
 | `verify` | Implemented |
+| `version` | Implemented |
 
 Manifest parsing and every manifest rule in specification §11 are
 implemented and tested. `build` implements §6 in full and enforces the

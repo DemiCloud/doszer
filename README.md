@@ -13,7 +13,8 @@ Conformance level: Recipe.
 
 Early development. Every command is implemented: `init`, `build`
 (including `[[extract]]`, media identification (§7) and disc image
-conversion (§6.4)), `install`, `repack` and `verify`.
+conversion (§6.4)), `install`, `run`, `repack`, `verify` and `version`
+(doszer's version and the programs it embeds, with their sources).
 
 ## Requirements
 
@@ -50,6 +51,7 @@ doszer run     FILE.dosz [--system-dir DIR] [--save-dir DIR]
 doszer FILE.dosz
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
 doszer verify  FILE.dosz
+doszer version
 ```
 
 Options are GNU-style: `-n`/`--dry-run`, `-f`/`--force` and `-h`/`--help`
