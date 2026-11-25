@@ -206,7 +206,7 @@ func Print(w io.Writer, r *Report) {
 			if n == 0 {
 				kk = k
 			}
-			s := fmt.Sprintf("%-*s  %s, %s", width, i.Name, i.Kind, size(i.Size))
+			s := fmt.Sprintf("%-*s  %s, %s", width, i.Name, i.Kind, Size(i.Size))
 			if i.Note != "" {
 				s += ": " + i.Note
 			}
@@ -255,7 +255,8 @@ func orNone(s string) string {
 	return s
 }
 
-func size(n int64) string {
+// Size formats n bytes for people.
+func Size(n int64) string {
 	switch {
 	case n >= 1<<30:
 		return fmt.Sprintf("%.2f GB", float64(n)/(1<<30))

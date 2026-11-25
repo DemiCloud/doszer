@@ -58,6 +58,7 @@ doszer info    FILE.dosz|SOURCE...
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
 doszer env     [--system-dir DIR] [--save-dir DIR] [--rom-dir DIR]
+doszer env portable [DIR] [--copy] [--from FILE] [-n] [-f]
 doszer config  [get KEY | set KEY VALUE | unset KEY | init [FILE] [--current] [-f]] [--file FILE]
 doszer version
 ```
@@ -597,6 +598,21 @@ Unset directories have defaults, the first that exists:
 
 `doszer env` and `doszer config` show which applies, and where it came
 from.
+
+### Portable
+
+A `doszer.toml` beside the executable makes doszer portable: it is the
+user config file, and `system/`, `saves/` and `roms/` beside the
+executable are the default directories. `doszer env portable [DIR]` sets
+this up in DIR (default: doszer's own directory): a copy of the
+executable, the three folders, and a commented `doszer.toml` carrying
+the current settings except the directories. `--copy` also copies, from
+the directories in effect, the shells and OS images (and sound fonts and
+MT-32 ROMs) of the system directory, every `.dosz` under the ROM
+directory, and those archives' saves; `--from FILE` takes the settings
+and directories from FILE instead (and implies `--copy`). A file already
+there with the same size is skipped, so running it again copies only
+what's new. Other systems' BIOS files and ROMs are left behind.
 
 `doszer config` lists every setting with its value and source (a file,
 or `default` and the default's own source). `config set KEY VALUE` and

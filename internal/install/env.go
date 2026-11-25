@@ -66,6 +66,15 @@ func Discover(systemDir, saveDir string) (Env, error) {
 // Discover's default. install doesn't search: its sessions' throwaway
 // saves stay in doszer's cache.
 func PlaySaveDir(archive string) (string, error) {
+	dir, err := PlaySaveDirNoCreate(archive)
+	if err != nil || dir == "" {
+		return dir, err
+	}
+	return dir, os.MkdirAll(dir, 0o755)
+}
+
+// PlaySaveDirNoCreate is PlaySaveDir without creating the directory.
+func PlaySaveDirNoCreate(archive string) (string, error) {
 	if d := config.FindSaveDir(); d.Path != "" {
 		return d.Path, nil
 	}
@@ -80,8 +89,7 @@ func PlaySaveDir(archive string) (string, error) {
 	if !within(abs, rd.ROMs) {
 		return "", nil // a test build, say: not RetroDECK's to keep
 	}
-	dir := filepath.Join(rd.Saves, filepath.Base(filepath.Dir(abs)))
-	return dir, os.MkdirAll(dir, 0o755)
+	return filepath.Join(rd.Saves, filepath.Base(filepath.Dir(abs))), nil
 }
 
 // within reports whether p is inside dir, following symbolic links (a

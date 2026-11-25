@@ -1315,18 +1315,34 @@ func runEnv(args []string) error {
 	systemDir := fs.String("system-dir", "", "")
 	saveDir := fs.String("save-dir", "", "")
 	romDir := fs.String("rom-dir", "", "")
+	copyFiles := fs.Bool("copy", false, "")
+	from := fs.String("from", "", "")
+	dryRun := fs.BoolP("dry-run", "n", false, "")
+	force := fs.BoolP("force", "f", false, "")
 	const help = `doszer env - show the directories, images and tools doszer finds here
 
 Usage: doszer env [options]
+       doszer env portable [DIR] [--copy] [--from FILE] [-n] [-f]
 
 Options:
-` + flagSystemDir + flagSaveDir + flagROMDir + flagFormatData + flagHelp
-	if ok, err := parse(fs, args, help, 0, 0); !ok {
+` + flagSystemDir + flagSaveDir + flagROMDir + `      --copy              portable: copy images, archives and saves from the configured directories
+      --from FILE         portable: take settings and directories from FILE (implies --copy)
+  -n, --dry-run           portable: show what would be done
+  -f, --force             portable: overwrite DIR's doszer.toml
+` + flagFormatData + flagHelp
+	if ok, err := parse(fs, args, help, 0, 2); !ok {
 		return err
 	}
 	cfg, err := config.Load("")
 	if err != nil {
 		return err
+	}
+	if fs.NArg() > 0 {
+		if fs.Arg(0) != "portable" {
+			fmt.Fprint(os.Stderr, help)
+			return fmt.Errorf("env: unknown action %q", fs.Arg(0))
+		}
+		return runPortable(fs.Arg(1), *systemDir, *saveDir, *romDir, *from, *copyFiles, *dryRun, *force)
 	}
 	r, err := env.Read(cfg, *systemDir, *saveDir, *romDir)
 	if err != nil {
@@ -1849,4 +1865,82 @@ Options:
 	}
 	fmt.Fprint(os.Stderr, help)
 	return fmt.Errorf("config: unknown action %q", a[0])
+}
+
+// runPortable implements `doszer env portable`.
+func runPortable(dir, systemDir, saveDir, romDir, from string, copyFiles, dryRun, force bool) error {
+	if dir == "" {
+		if dir = config.ExeDir(); dir == "" {
+			return errors.New("env portable: no DIR given, and doszer's own directory is unknown")
+		}
+	}
+	var (
+		settings config.Config
+		keys     map[string]bool
+		err      error
+	)
+	if from != "" {
+		settings, keys, err = config.LoadFile(from)
+		copyFiles = true
+	} else {
+		settings, keys, err = config.Current("")
+	}
+	if err != nil {
+		return err
+	}
+	src := settings
+	for p, v := range map[*string]string{&src.SystemDir: systemDir, &src.SaveDir: saveDir, &src.ROMDir: romDir} {
+		if v != "" {
+			*p = v
+		}
+	}
+	acts, err := env.Portable(env.PortableOptions{Dir: dir, Settings: settings, Keys: keys, Copy: copyFiles, From: src, DryRun: dryRun, Force: force})
+	endSteps(err)
+	if format.Structured() {
+		if format == output.CSV {
+			var rows [][]string
+			for _, a := range acts {
+				rows = append(rows, []string{a.Action, a.Path, strconv.FormatInt(a.Size, 10), a.Why})
+			}
+			if e := output.EncodeCSV(os.Stdout, []string{"action", "path", "size", "why"}, rows); e != nil {
+				return e
+			}
+		} else if e := output.Encode(os.Stdout, format, struct {
+			Actions []env.PortableAction `json:"actions" yaml:"actions" toml:"actions"`
+		}{acts}); e != nil {
+			return e
+		}
+		return err
+	}
+	var copied, skipped int
+	var bytes int64
+	for _, a := range acts {
+		switch a.Action {
+		case "copy":
+			copied++
+			bytes += a.Size
+			if !dryRun {
+				continue
+			}
+		case "skip":
+			skipped++
+			if a.Why == "already there" {
+				continue
+			}
+		}
+		line := fmt.Sprintf("  %-7s %s", a.Action, a.Path)
+		if a.Why != "" {
+			line += " (" + a.Why + ")"
+		}
+		fmt.Println(line)
+	}
+	if err != nil {
+		return err
+	}
+	verb := "Set up"
+	if dryRun {
+		verb = "Dry run: would set up"
+	}
+	fmt.Printf("%s %s: %s copied (%s), %d skipped\n", verb, dir, plural(copied, "file"), env.Size(bytes), skipped)
+	return nil
 }

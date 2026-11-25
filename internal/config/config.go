@@ -227,3 +227,22 @@ func field(cfg *Config, k string) *string {
 	}
 	return nil
 }
+
+// LoadFile returns the settings of the config file path alone, over
+// Default(), and the keys it sets.
+func LoadFile(path string) (Config, map[string]bool, error) {
+	cfg := Default()
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return cfg, nil, err
+	}
+	if _, err := os.Stat(abs); err != nil {
+		return cfg, nil, err
+	}
+	list, err := mergeLayer(&cfg, Layer{Path: abs})
+	keys := map[string]bool{}
+	for _, k := range list {
+		keys[k] = true
+	}
+	return cfg, keys, err
+}
