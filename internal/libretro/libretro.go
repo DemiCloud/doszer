@@ -259,9 +259,6 @@ func Run(cfg Config) error {
 func loadSDL(libs []string) error {
 	if len(libs) == 0 {
 		libs = []string{"libSDL2-2.0.so.0"}
-		if runtime.GOOS == "darwin" {
-			libs = []string{"libSDL2-2.0.0.dylib"}
-		}
 	}
 	var handle uintptr
 	for _, lib := range libs {

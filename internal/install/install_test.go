@@ -4,12 +4,10 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -225,7 +223,7 @@ func TestPrepare(t *testing.T) {
 			t.Errorf("%s not stored", f.Name)
 		}
 	}
-	if got["AUTOBOOT.DBP"] != "O*dosbox_pure/Win98" || got["FRONTEND.DBP"] != `{"dosbox_pure_bootos_dfreespace":"1024","dosbox_pure_bootos_ramdisk":"diff"}` || got["SETUP/SETUP.EXE"] != "MZ" {
+	if got["AUTOBOOT.DBP"] != "O*dosbox_pure/Win98" || got["SETUP/SETUP.EXE"] != "MZ" || len(got) != 2 {
 		t.Fatalf("content %v", got)
 	}
 	if _, ok := got["DOSBOX.BAT"]; ok || len(s.Skipped) != 1 {
@@ -240,96 +238,80 @@ func TestPrepare(t *testing.T) {
 }
 
 func TestDiscover(t *testing.T) {
-	dir := t.TempDir()
-	exe := filepath.Join(dir, "dosboxpure")
-	os.WriteFile(exe, nil, 0o755)
-	discover := func(exe, sys, saves string) (Env, error) {
-		return Discover(Frontend{Kind: Standalone, Dir: filepath.Dir(exe), SystemDir: sys, SaveDir: saves})
-	}
-	if _, err := discover(exe, "", ""); err == nil {
-		t.Fatal("missing DOSBoxPure.cfg accepted")
-	}
-	os.WriteFile(filepath.Join(dir, "DOSBoxPure.cfg"), []byte(`{"path_saves": "mysaves", "interface_contentpath": "x"}`), 0o644)
-	e, err := discover(exe, "", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "cache"))
+
+	// Nothing given or found: no system directory, doszer's own saves.
+	e, err := Discover("", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if e.SystemDir != filepath.Join(dir, "system") || e.SaveDir != filepath.Join(dir, "mysaves") {
-		t.Fatalf("dirs %s %s", e.SystemDir, e.SaveDir)
-	}
-	if e.settings != nil {
-		t.Fatal("DOSBox Pure's own directories would be overridden")
+	if e.SystemDir != "" || e.SaveDir != filepath.Join(home, "cache", "doszer", "saves") {
+		t.Fatalf("dirs %q %q", e.SystemDir, e.SaveDir)
 	}
 
+	// RetroDECK's BIOS folder.
+	bios := filepath.Join(home, "retrodeck", "bios")
+	os.MkdirAll(bios, 0o755)
+	cfg := filepath.Join(home, retroDECKConfig)
+	os.MkdirAll(filepath.Dir(cfg), 0o755)
+	os.WriteFile(cfg, []byte(`{"version": "0.10.10b", "paths": {"bios_path": "`+bios+`", "saves_path": "/elsewhere"}}`), 0o644)
+	if e, err = Discover("", ""); err != nil || e.SystemDir != bios {
+		t.Fatalf("system dir %q, err %v", e.SystemDir, err)
+	}
+
+	// A system/ folder in the working directory comes first.
+	t.Chdir(home)
+	os.MkdirAll(filepath.Join(home, "system"), 0o755)
+	if e, err = Discover("", ""); err != nil || e.SystemDir != filepath.Join(home, "system") {
+		t.Fatalf("system dir %q, err %v", e.SystemDir, err)
+	}
+
+	// Given directories win, and must exist.
 	sys, saves := t.TempDir(), t.TempDir()
-	e, err = discover(exe, sys, saves)
-	if err != nil {
-		t.Fatal(err)
+	if e, err = Discover(sys, saves); err != nil || e.SystemDir != sys || e.SaveDir != saves {
+		t.Fatalf("dirs %q %q, err %v", e.SystemDir, e.SaveDir, err)
 	}
-	if e.SystemDir != sys || e.SaveDir != saves {
-		t.Fatal("explicit dirs ignored")
-	}
-	if _, err := discover(exe, filepath.Join(sys, "missing"), ""); err == nil {
+	if _, err := Discover(filepath.Join(sys, "missing"), ""); err == nil {
 		t.Fatal("missing system directory accepted")
-	}
-
-	// Run hands the given directories to DOSBox Pure, keeping its other
-	// settings.
-	work := t.TempDir()
-	if err := e.writeSettings(work); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(filepath.Join(work, "DOSBoxPure.cfg"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cfg map[string]any
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		t.Fatal(err)
-	}
-	if cfg["path_system"] != sys || cfg["path_saves"] != saves || cfg["interface_contentpath"] != "x" {
-		t.Fatalf("DOSBoxPure.cfg: %s", data)
-	}
-
-	// Only the system directory given: the saves still come from DOSBox
-	// Pure's configuration, and both are passed on.
-	e, err = discover(exe, sys, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if e.SaveDir != filepath.Join(dir, "mysaves") || e.settings == nil {
-		t.Fatalf("save dir %s, settings %v", e.SaveDir, e.settings)
 	}
 }
 
-// fakeDOSBoxPure writes a script that stands in for DOSBox Pure: it copies
-// the file in $FAKE_SAVE into the save directory under the session's
-// content name, with the suffix in $FAKE_SUFFIX.
-func fakeDOSBoxPure(t *testing.T) (exe, saveDir string) {
+// fakeDOSBoxPure stands in for DOSBox Pure: launching a session copies the
+// file in $FAKE_SAVE into the save directory under the session's content
+// name, with the suffix in $FAKE_SUFFIX. It returns a system and save
+// directory for Options.
+func fakeDOSBoxPure(t *testing.T) (systemDir, saveDir string) {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("needs a POSIX shell")
-	}
 	dir := t.TempDir()
-	saveDir = filepath.Join(dir, "saves")
+	systemDir, saveDir = filepath.Join(dir, "system"), filepath.Join(dir, "saves")
 	os.MkdirAll(saveDir, 0o755)
-	os.MkdirAll(filepath.Join(dir, "system"), 0o755)
-	os.WriteFile(filepath.Join(dir, "DOSBoxPure.cfg"), []byte("{}"), 0o644)
-	exe = filepath.Join(dir, "DOSBoxPure")
-	script := "#!/bin/sh\nname=$(basename \"$1\" .dosz)\ncp \"$FAKE_SAVE\" \"" + saveDir + "/$name$FAKE_SUFFIX\"\n"
-	os.WriteFile(exe, []byte(script), 0o755)
-	return exe, saveDir
+	os.MkdirAll(systemDir, 0o755)
+	old := launch
+	t.Cleanup(func() { launch = old })
+	launch = func(e Env, s *Session) error {
+		if s.CoreOptions["dosbox_pure_bootos_ramdisk"] != "diff" {
+			t.Errorf("session core options %v", s.CoreOptions)
+		}
+		data, err := os.ReadFile(os.Getenv("FAKE_SAVE"))
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(e.SaveDir, s.Name+os.Getenv("FAKE_SUFFIX")), data, 0o644)
+	}
+	return systemDir, saveDir
 }
 
 func TestRunPlainSession(t *testing.T) {
-	exe, saveDir := fakeDOSBoxPure(t)
+	systemDir, saveDir := fakeDOSBoxPure(t)
 	save := filepath.Join(t.TempDir(), "fixture.pure.zip")
 	os.WriteFile(save, zipBytes(t, map[string]string{"GAME/GAME.EXE": "installed", "GAME/GAME.CFG": "cfg"}), 0o644)
 	t.Setenv("FAKE_SAVE", save)
 	t.Setenv("FAKE_SUFFIX", ".pure.zip")
 
 	src := writeSource(t, "format = 1\nname = \"Example Game\"\n", map[string]string{"INSTALL/SETUP.EXE": "MZ"})
-	rep, err := Run(Options{Source: src, Frontend: Standalone, FrontendDir: exe})
+	rep, err := Run(Options{Source: src, SystemDir: systemDir, SaveDir: saveDir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +333,7 @@ func TestRunPlainSession(t *testing.T) {
 }
 
 func TestRunOSSession(t *testing.T) {
-	exe, saveDir := fakeDOSBoxPure(t)
+	systemDir, saveDir := fakeDOSBoxPure(t)
 	writeOSImage(t, saveDir, "Win98.img", make([]byte, 64<<10))
 	manifestText := "format = 1\nname = \"Example Game\"\n\n[boot]\nos = \"dosbox_pure/Win98\"\n"
 	src := writeSource(t, manifestText, map[string]string{"GAME/GAME.INI": "level=1\r\n"})
@@ -376,7 +358,7 @@ func TestRunOSSession(t *testing.T) {
 	t.Setenv("FAKE_SAVE", savePath)
 	t.Setenv("FAKE_SUFFIX", fmt.Sprintf("-%08X.sav", disk.Hash))
 
-	rep, err := Run(Options{Source: src, Frontend: Standalone, FrontendDir: exe, Force: true})
+	rep, err := Run(Options{Source: src, SystemDir: systemDir, SaveDir: saveDir, Force: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,8 +412,7 @@ func craftSave(t *testing.T, disk *vdisk.Disk, shortName, oldData, newData strin
 // (--os) instead of boot.os, and extracts from C: (--drive c), picking the
 // game's folder over the changes Windows makes to itself.
 func TestRunOSSessionDriveC(t *testing.T) {
-	exe, saveDir := fakeDOSBoxPure(t)
-	systemDir := filepath.Join(filepath.Dir(saveDir), "system")
+	systemDir, saveDir := fakeDOSBoxPure(t)
 
 	// A stand-in OS image: a FAT disk with Windows and the game's default
 	// install folder on it.
@@ -460,7 +441,7 @@ func TestRunOSSessionDriveC(t *testing.T) {
 	t.Setenv("FAKE_SUFFIX", "-CDRIVE.sav")
 
 	src := writeSource(t, "format = 1\nname = \"Example Game\"\n\n[boot]\nos = \"dosbox_pure/Win98\"\n", map[string]string{"SETUP.EXE": "MZ"})
-	opts := Options{Source: src, Frontend: Standalone, FrontendDir: exe, SystemDir: systemDir, SaveDir: saveDir, Drive: "c", OS: "dosbox_pure/Install"}
+	opts := Options{Source: src, SystemDir: systemDir, SaveDir: saveDir, Drive: "c", OS: "dosbox_pure/Install"}
 	rep, err := Run(opts)
 	if err != nil {
 		t.Fatal(err)
@@ -479,7 +460,7 @@ func TestRunOSSessionDriveC(t *testing.T) {
 		t.Fatalf("install_os: %v", err)
 	}
 	plain := writeSource(t, "format = 1\nname = \"Example Game\"\n", map[string]string{"SETUP.EXE": "MZ"})
-	if _, err := Run(Options{Source: plain, Frontend: Standalone, FrontendDir: exe, Drive: "c"}); err == nil {
+	if _, err := Run(Options{Source: plain, SystemDir: systemDir, SaveDir: saveDir, Drive: "c"}); err == nil {
 		t.Fatal("--drive c accepted for a plain session")
 	}
 }
@@ -548,14 +529,14 @@ func TestCheckDiffSafe(t *testing.T) {
 // installed, settings saved unchanged - extracts nothing, without error,
 // and still cleans up its save.
 func TestRunSessionNoChanges(t *testing.T) {
-	exe, saveDir := fakeDOSBoxPure(t)
+	systemDir, saveDir := fakeDOSBoxPure(t)
 	save := filepath.Join(t.TempDir(), "empty.pure.zip")
 	os.WriteFile(save, zipBytes(t, map[string]string{}), 0o644)
 	t.Setenv("FAKE_SAVE", save)
 	t.Setenv("FAKE_SUFFIX", ".pure.zip")
 
 	src := writeSource(t, "format = 1\nname = \"Example Game\"\n", map[string]string{"GAME.EXE": "MZ", "SETUP.EXE": "MZ"})
-	rep, err := Run(Options{Source: src, Frontend: Standalone, FrontendDir: exe})
+	rep, err := Run(Options{Source: src, SystemDir: systemDir, SaveDir: saveDir})
 	if err != nil {
 		t.Fatal(err)
 	}

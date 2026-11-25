@@ -22,7 +22,7 @@ import (
 type Options struct {
 	Source string // source directory (with DOSZ.TOML) to extract into
 
-	Frontend, FrontendDir, SystemDir, SaveDir string // DOSBox Pure; see Discover
+	SystemDir, SaveDir string // DOSBox Pure's directories; see Discover
 
 	Dir    string // folder to extract, relative to the drive root; chosen automatically if empty
 	Drive  string // OS image model: "C" to extract from C: changes instead of D:
@@ -39,10 +39,6 @@ type Options struct {
 	InstallOS map[string]string // configured install images by boot.os, the fallback for OS
 
 	session bool // extracting what a session just wrote (Extract's modifiedOK)
-}
-
-func (o Options) frontend() Frontend {
-	return Frontend{Kind: o.Frontend, Dir: o.FrontendDir, SystemDir: o.SystemDir, SaveDir: o.SaveDir}
 }
 
 // sessionOS is the OS image an OS image session boots, and a -CDRIVE.sav
@@ -187,7 +183,7 @@ func setStartProgram(rep *Report, m *manifest.Manifest, opts Options) error {
 // it wrote.
 func runSession(opts Options, m *manifest.Manifest) (*Report, error) {
 	opts.session = true
-	env, err := Discover(opts.frontend())
+	env, err := Discover(opts.SystemDir, opts.SaveDir)
 	if err != nil {
 		return nil, err
 	}
@@ -204,8 +200,8 @@ func runSession(opts Options, m *manifest.Manifest) (*Report, error) {
 		return nil, err
 	}
 	defer s.Close()
-	status.Step("DOSBox Pure is running: install the game, then close %s", env.Name())
-	if err := env.Run(s); err != nil {
+	status.Step("DOSBox Pure is running: install the game, then close its window")
+	if err := launch(env, s); err != nil {
 		return nil, err
 	}
 
@@ -453,14 +449,7 @@ func runFrom(opts Options, m *manifest.Manifest) (*Report, error) {
 		}
 		systemDir := opts.SystemDir
 		if systemDir == "" {
-			// Only the system directory is needed; any save directory will do.
-			f := opts.frontend()
-			f.SaveDir = os.TempDir()
-			env, err := Discover(f)
-			if err != nil {
-				return nil, err
-			}
-			systemDir = env.SystemDir
+			systemDir = findSystemDir()
 		}
 		img, err := osImagePath(systemDir, m.Boot.OS)
 		if err != nil {

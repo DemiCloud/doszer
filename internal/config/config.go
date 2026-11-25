@@ -21,14 +21,12 @@ const FileName = "doszer.toml"
 
 // Config holds every doszer setting (README "Configuration").
 type Config struct {
-	SystemDir   string            `toml:"system_dir"`
-	SaveDir     string            `toml:"save_dir"`
-	Frontend    string            `toml:"frontend"`     // "builtin" (default), "retroarch" or "standalone"
-	FrontendDir string            `toml:"frontend_dir"` // the frontend's install directory
-	OggQuality  int               `toml:"ogg_quality"`
-	Templates   map[string]string `toml:"templates"`
-	InstallOS   map[string]string `toml:"install_os"` // OS image install sessions boot, by boot.os
-	RedumpDAT   string            `toml:"redump_dat"` // datfile dump verifies against instead of Redump's (internal/redump)
+	SystemDir  string            `toml:"system_dir"`
+	SaveDir    string            `toml:"save_dir"`
+	OggQuality int               `toml:"ogg_quality"`
+	Templates  map[string]string `toml:"templates"`
+	InstallOS  map[string]string `toml:"install_os"` // OS image install sessions boot, by boot.os
+	RedumpDAT  string            `toml:"redump_dat"` // datfile dump verifies against instead of Redump's (internal/redump)
 }
 
 // Default returns doszer's built-in defaults.

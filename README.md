@@ -20,10 +20,11 @@ conversion (§6.4)), `install`, `repack` and `verify`.
 - Go 1.24 or later, to build
 - `ffmpeg` with `libvorbis`, for Ogg Vorbis audio tracks (not needed with
   `audio = "wav"`)
-- For `install`: nothing on Windows; SDL2 (`libSDL2-2.0.so.0`, installed
-  on most desktops and SteamOS) on Linux. doszer carries its own copy of
-  the DOSBox Pure core (built by `make core`) and runs it in its own
-  window. RetroArch or standalone DOSBox Pure can be used instead.
+- For `install` and `run`: nothing on Windows; SDL2 (`libSDL2-2.0.so.0`,
+  installed on most desktops and SteamOS) on Linux. doszer carries its own
+  copy of the DOSBox Pure core (built by `make core`) and runs it in its
+  own window. Releases are for Linux (amd64, arm64) and Windows (amd64);
+  there is no macOS build, since the core needs Apple's SDK to build.
 - To build the embedded core: [zig](https://ziglang.org/) for the Linux
   ones (`make core`), and MinGW-w64 for the Windows one (`make core-all`,
   which `make release` runs)
@@ -44,8 +45,8 @@ doszer redump  [SHA1|FILE...] [--update] [--dat FILE]
 doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH] [--name NAME] [--no-media] [-f]
 doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [-n] [--strict] [--ogg-quality N]
 doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FILE]] [-f] [-n] [--keep]
-               [--os PATH] [--drive c|d] [--frontend builtin|retroarch|standalone] [--frontend-dir DIR]
-               [--system-dir DIR] [--save-dir DIR]
+               [--os PATH] [--drive c|d] [--system-dir DIR] [--save-dir DIR]
+doszer run     FILE.dosz [--system-dir DIR] [--save-dir DIR]
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
 doszer verify  FILE.dosz
 ```
@@ -309,7 +310,6 @@ A DOS game that installs from CD, start to finish, under the plain model
 result for one.
 
 `install` needs no setup: it runs DOSBox Pure in a window of its own.
-To use RetroArch or standalone DOSBox Pure instead, see "Install".
 
 1. **Dump the disc** with the CD in the drive:
 
@@ -359,7 +359,7 @@ To use RetroArch or standalone DOSBox Pure instead, see "Install".
      mode.`) are usually harmless; the installer carries on.
    - Note how the installer says to start the game.
 
-   Start the game once if you like, then close DOSBox Pure (or RetroArch).
+   Start the game once if you like, then close DOSBox Pure.
    `doszer`
    copies the folder the installer created (e.g. `C:\GAME`) into
    `Example Game/GAME/`.
@@ -413,8 +413,6 @@ Every setting can be given as a flag. Precedence, highest first:
 ```toml
 system_dir  = "/path/to/system"      # DOSBox Pure's system directory (OS images, shells)
 save_dir    = "/path/to/saves"       # DOSBox Pure's save directory
-frontend    = "builtin"              # DOSBox Pure for install: builtin, retroarch or standalone
-frontend_dir = "/path/to/install"    # retroarch or standalone install directory (default: detected)
 ogg_quality = 6
 
 [templates]                          # pristine OS images used by install
@@ -438,11 +436,11 @@ directory, so it skips the `[x-doszer]` layer.
 
 ## Install
 
-`install` runs an installer under DOSBox Pure (in RetroArch, or
-standalone) and extracts what it wrote into the source. It packs the source (install media included,
+`install` runs an installer under DOSBox Pure (see "DOSBox Pure in
+doszer") and extracts what it wrote into the source. It packs the source (install media included,
 `DOSZ.TOML` and `DOSBOX.BAT` left out) into a temporary archive with a
 unique name, so the session's save files are fresh, starts DOSBox Pure on
-it, and waits for DOSBox Pure (or RetroArch) to exit. Then it reads the save files:
+it, and waits for its window to close. Then it reads the save files:
 
 | Boot model | Session starts | Install to | Changes read from |
 |---|---|---|---|
@@ -450,17 +448,15 @@ it, and waits for DOSBox Pure (or RetroArch) to exit. Then it reads the save fil
 | Shell | the shell (`boot.shell`) | C: | `<name>.pure.zip` |
 | Plain | DOSBox Pure's start menu | C: | `<name>.pure.zip` |
 
-An OS image session sets "Save Difference Per Content" for itself only
-(standalone: a `FRONTEND.DBP` in the content; RetroArch: a game-specific
-core options file), so the OS image is never modified and C: changes land
-in `<name>-CDRIVE.sav`; they're listed, not extracted, since every archive
-shares C:. Nothing in your DOSBox Pure or RetroArch configuration changes.
+An OS image session runs under "Save Difference Per Content", so the OS
+image is never modified and C: changes land in `<name>-CDRIVE.sav`;
+they're listed, not extracted, since every archive shares C:.
 
 The OS image must be a raw `.img` or a fixed-size VHD, not a dynamic
 (growing) VHD: DOSBox Pure's "Save Difference" mode compares written
 sectors against the wrong bytes of a dynamic VHD and silently drops some
 writes, corrupting the session's C: (and, in a frontend, any game's C:
-changes). `install` refuses a dynamic VHD. To convert one:
+changes). `install` and `run` refuse a dynamic VHD. `install` refuses a dynamic VHD. To convert one:
 `qemu-img convert -O vpc -o subformat=fixed dynamic.vhd fixed.vhd`.
 
 An OS image session boots `--os`, else the image `install_os` maps
@@ -528,65 +524,39 @@ save or disk image:
 | `.pure.zip` | (`--content` to tell modified files from added ones) |
 | `.vhd`, `.img` | `--template` or a configured template to compare against, else `--dir` |
 
-`install` runs DOSBox Pure under `frontend`:
-
-| `frontend` | Runs |
-|---|---|
-| `builtin` (default) | The DOSBox Pure libretro core doszer embeds (`make core`), in doszer's own window |
-| `retroarch` | The DOSBox Pure core in RetroArch, where archives are meant to run (the default in a build without the embedded core) |
-| `standalone` | Standalone DOSBox Pure |
-
-`builtin` is the same core RetroArch runs, built from DOSBox Pure
-1.0 Preview 8, which doszer's save-file handling was checked against. The
-core is unpacked to the user cache directory on first use. doszer answers
-its questions itself: the session's core options go straight to the core,
-saves go to `save_dir` (default: `doszer/saves` in the user cache
-directory), and OS images and shells come from `system_dir`, else
-RetroArch's system directory if RetroArch is installed. Click the window
-to capture the mouse; Ctrl+F10 releases it. Close the window when the
-install is done. It's built for linux/amd64 and linux/arm64 (glibc 2.28
-or later and the system's SDL2; WSLg under WSL) and windows/amd64 (it
-carries SDL2); elsewhere use `retroarch` or `standalone`.
-
-For `retroarch` and `standalone`, `frontend_dir` is the folder holding
-that frontend's executable (`retroarch`/`retroarch.exe`,
-`DOSBoxPure`/`DOSBoxPure.exe`). Unset, `install` looks for RetroArch with the DOSBox Pure core on `PATH`,
-in `RetroArch-Win64`, `RetroArch`, `Program Files\RetroArch` and Steam's
-`steamapps\common\RetroArch` on every drive (under Windows and WSL), in
-`/Applications` (macOS), and as a Flatpak (`org.libretro.RetroArch`, then
-RetroDECK's `net.retrodeck.retrodeck`); standalone DOSBox Pure, on `PATH`.
-
-RetroArch's settings come from the `retroarch.cfg` beside it, else its
-platform's default (`%APPDATA%\RetroArch`, `~/.config/retroarch`, a
-Flatpak's `~/.var/app/<id>/config/retroarch`): the core from
-`libretro_directory`, the system and save directories from
-`system_directory` and `savefile_directory` (in its `DOSBox-pure`
-subfolder with "Sort Saves into Folders by Core Name"), unless
-`system_dir`/`save_dir` are set. RetroArch runs with that configuration
-plus a session file (`--appendconfig`) that names those directories, turns
-off saving the configuration on exit, the content history and save-state
-autoload, and quits RetroArch when the content closes. Its config
-directory points at the session folder, which holds the content's
-game-specific core options: your DOSBox Pure core options, with the
-session's over them. Your configuration, core options and overrides are
-left unchanged, and not used for the session apart from those options.
-
-Standalone DOSBox Pure's system and save directories come from
-`DOSBoxPure.cfg` beside the executable (`path_system`, `path_saves`, else
-`system/` and `saves/`), unless `system_dir`/`save_dir` are set. Then
-`install` runs DOSBox Pure from its session folder with a copy of that
-`DOSBoxPure.cfg` naming those directories (DOSBox Pure prefers a
-`DOSBoxPure.cfg` in its working directory), so it boots OS images and
-shells from, and saves to, the same places doszer reads; your own
-`DOSBoxPure.cfg` is left unchanged, and settings changed during the
-session aren't kept.
-
-Under WSL, a Windows `retroarch.exe` or `DOSBoxPure.exe` is run with paths
-converted by `wslpath`.
-
 Limitations: a change is detected by size or modification time; the
 content must not have a `<content>.pure.zip` of its own layered over it,
 or parent archives.
+
+## Run
+
+`doszer run FILE.dosz` plays a built archive, to try it without a
+frontend. Its saves are named after the archive in the save directory, so
+the next `run` continues from them. An archive that boots an OS image
+runs under "Save Difference Per Content": the image is never written to.
+
+## DOSBox Pure in doszer
+
+`install` and `run` use the DOSBox Pure libretro core doszer embeds,
+built from DOSBox Pure 1.0 Preview 8 (`make core`), which doszer's
+save-file handling was checked against, in a window of their own. The
+core is unpacked to the user cache directory on first use. doszer passes
+the core its options directly, so no frontend's configuration is read or
+changed.
+
+- OS images and shells come from `system_dir` (`--system-dir`), else a
+  `system/` folder in the working directory, else one beside the doszer
+  executable (as standalone DOSBox Pure keeps its own), else RetroDECK's
+  BIOS folder (`bios_path` in
+  `~/.var/app/net.retrodeck.retrodeck/config/retrodeck/retrodeck.json`).
+  A manifest's `os = 'dosbox_pure/Win98'` is then
+  `system/dosbox_pure/Win98.vhd` (or `.img`).
+- Saves go to `save_dir` (`--save-dir`), else `doszer/saves` in the user
+  cache directory, never a frontend's own.
+
+Click the window to capture the mouse; Ctrl+F10 releases it. It's built
+for linux/amd64 and linux/arm64 (glibc 2.28 or later and the system's
+SDL2; WSLg under WSL) and windows/amd64 (it carries SDL2).
 
 ## Frontend setup
 

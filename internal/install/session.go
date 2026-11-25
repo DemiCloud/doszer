@@ -3,7 +3,6 @@ package install
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -28,19 +27,17 @@ type Session struct {
 	Model   manifest.Model
 	OS      string // OS image path for the OS image model (boot.os)
 	Skipped []string
+	Title   string // window title
 
-	// CoreOptions are the DOSBox Pure core options the session needs over
-	// the frontend's own: osCoreOptions for an OS image, else none.
+	// CoreOptions are the DOSBox Pure core options the session sets over
+	// the core's defaults (osCoreOptions).
 	CoreOptions map[string]string
 }
 
-// osCoreOptions are the core options an OS image session needs. "Save
-// Difference Per Content" keeps the OS image untouched and puts C: changes
+// osCoreOptions are the core options every session runs with. "Save
+// Difference Per Content" keeps an OS image untouched and puts C: changes
 // in <name>-CDRIVE.sav; the D: free space is pinned because it seeds the
-// D: save's hash. Standalone DOSBox Pure takes them from FRONTEND.DBP,
-// which it applies over its own configuration (dosbox_pure_libretro.cpp,
-// init_dosbox, DBPS_ApplyConfigOverrides - DBP_STANDALONE only); the core
-// in RetroArch from a game-specific options file (runRetroArch).
+// D: save's hash. Neither affects content that boots no OS image.
 var osCoreOptions = map[string]string{
 	"dosbox_pure_bootos_ramdisk":    "diff",
 	"dosbox_pure_bootos_dfreespace": "1024",
@@ -49,12 +46,12 @@ var osCoreOptions = map[string]string{
 // sessionExcluded are source files left out of the session's content:
 // the manifest, and files that would change how the session starts
 // (DOSBOX.BAT bypasses AUTOBOOT.DBP).
-var sessionExcluded = []string{manifest.FileName, "AUTOBOOT.DBP", "FRONTEND.DBP", "DOSBOX.BAT"}
+var sessionExcluded = []string{manifest.FileName, "AUTOBOOT.DBP", "DOSBOX.BAT"}
 
 // Prepare writes a session's content: every file in source, stored
 // uncompressed for speed, plus an AUTOBOOT.DBP that boots the manifest's
 // OS image or shell (the plain model starts at DOSBox Pure's start menu,
-// to run the installer from) and, for an OS image, FRONTEND.DBP.
+// to run the installer from).
 func Prepare(source string, m *manifest.Manifest) (*Session, error) {
 	status.Step("Packing the source for the session")
 	abs, err := filepath.Abs(source)
@@ -70,14 +67,13 @@ func Prepare(source string, m *manifest.Manifest) (*Session, error) {
 	var id [4]byte
 	rand.Read(id[:])
 	s := &Session{
-		unregister: interrupt.Remove(dir),
-		Name:       "doszer-install-" + hex.EncodeToString(id[:]),
-		Dir:        dir,
-		Model:      m.Model(),
-		OS:         m.Boot.OS,
-	}
-	if s.Model == manifest.ModelOS {
-		s.CoreOptions = osCoreOptions
+		unregister:  interrupt.Remove(dir),
+		Name:        "doszer-install-" + hex.EncodeToString(id[:]),
+		Dir:         dir,
+		Model:       m.Model(),
+		OS:          m.Boot.OS,
+		Title:       "doszer install",
+		CoreOptions: osCoreOptions,
 	}
 	s.Content = filepath.Join(dir, s.Name+".dosz")
 	if err := s.writeContent(abs, m); err != nil {
@@ -126,12 +122,6 @@ func (s *Session) writeContent(source string, m *manifest.Manifest) error {
 		switch s.Model {
 		case manifest.ModelOS:
 			err = addData(zw, "AUTOBOOT.DBP", build.BuildAutoboot(&manifest.Boot{OS: m.Boot.OS}))
-			if err == nil {
-				var data []byte
-				if data, err = json.Marshal(s.CoreOptions); err == nil {
-					err = addData(zw, "FRONTEND.DBP", data)
-				}
-			}
 		case manifest.ModelShell:
 			err = addData(zw, "AUTOBOOT.DBP", build.BuildAutoboot(&manifest.Boot{Shell: m.Boot.Shell}))
 		}

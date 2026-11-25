@@ -26,8 +26,6 @@ func coreName() string {
 	switch runtime.GOOS {
 	case "windows":
 		return "dosbox_pure_libretro.dll"
-	case "darwin":
-		return "dosbox_pure_libretro.dylib"
 	}
 	return "dosbox_pure_libretro.so"
 }
@@ -65,7 +63,7 @@ func Available() bool {
 // (empty: the system's).
 func Extract() (core string, sdl []string, err error) {
 	if !Available() {
-		return "", nil, errors.New("this doszer was built without the DOSBox Pure core (make core), use --frontend retroarch or standalone")
+		return "", nil, errors.New("this doszer was built without the DOSBox Pure core (make core; there is none for this platform)")
 	}
 	dir, err := extract("dosbox-pure-"+DOSBoxPureVersion, append([]string{coreName()}, sdlLibs()...))
 	if err != nil {

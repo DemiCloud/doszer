@@ -11,7 +11,7 @@ LDFLAGS         := -X main.version=$(VERSION)
 RELEASE_LDFLAGS := $(LDFLAGS) -s -w
 
 # Target platforms for `make release`
-PLATFORMS := linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64
+PLATFORMS := linux/amd64 linux/arm64 windows/amd64
 
 # The DOSBox Pure core embedded for the built-in frontend (internal/builtin),
 # built from this release tag. Linux cores are cross-built with zig, which

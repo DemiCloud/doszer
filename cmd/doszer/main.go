@@ -66,6 +66,7 @@ func init() {
 		{"init", "write a commented DOSZ.TOML into a source directory", runInit},
 		{"build", "build an archive from a source directory", runBuild},
 		{"install", "run an installer and extract the result into a source", runInstall},
+		{"run", "play an archive in DOSBox Pure", runRun},
 		{"repack", "rebuild an archive from its embedded manifest", runRepack},
 		{"verify", "check an archive against its manifest and the specification", runVerify},
 	}
@@ -123,6 +124,8 @@ const (
 	flagVersion    = "  -V, --version           show version\n"
 	flagOggQuality = "      --ogg-quality N     Ogg Vorbis quality, -1 to 10 (default: ogg_quality, else 6)\n"
 	flagStrict     = "      --strict            fail on any warning\n"
+	flagSaveDir    = "      --save-dir DIR      DOSBox Pure save directory (default: save_dir, else doszer's)\n"
+	flagSystemDir  = "      --system-dir DIR    DOSBox Pure system directory (default: system_dir, else ./system, else RetroDECK's)\n"
 )
 
 // newFlags returns a command's flag set: GNU-style (pflag), options
@@ -626,8 +629,6 @@ func runInstall(args []string) error {
 	fs := newFlags("install")
 	content := fs.String("content", "", "")
 	dir := fs.String("dir", "", "")
-	frontend := fs.String("frontend", "", "")
-	frontendDir := fs.String("frontend-dir", "", "")
 	drive := fs.String("drive", "", "")
 	dryRun := fs.BoolP("dry-run", "n", false, "")
 	force := fs.BoolP("force", "f", false, "")
@@ -648,13 +649,9 @@ Options:
   -n, --dry-run           report without writing
   -f, --force             overwrite differing files in the source
       --from FILE         extract from this .sav, .pure.zip, .vhd or .img instead
-      --frontend NAME     builtin, retroarch or standalone (default: frontend, else builtin)
-      --frontend-dir DIR  retroarch or standalone install directory (default: frontend_dir, else detected)
       --keep              keep the session's save files
       --os PATH           OS image to boot instead of boot.os (default: install_os, else boot.os)
-      --save-dir DIR      DOSBox Pure save directory (default: save_dir, else the frontend's)
-      --system-dir DIR    DOSBox Pure system directory (default: system_dir, else the frontend's)
-      --template FILE     pristine image to compare a --from image against
+` + flagSaveDir + flagSystemDir + `      --template FILE     pristine image to compare a --from image against
 ` + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
@@ -665,28 +662,53 @@ Options:
 		return err
 	}
 	opts := install.Options{
-		Source:      fs.Arg(0),
-		Frontend:    stringOr(*frontend, cfg.Frontend),
-		FrontendDir: stringOr(*frontendDir, cfg.FrontendDir),
-		SystemDir:   stringOr(*systemDir, cfg.SystemDir),
-		SaveDir:     stringOr(*saveDir, cfg.SaveDir),
-		Dir:         *dir,
-		Drive:       *drive,
-		OS:          *osImage,
-		InstallOS:   cfg.InstallOS,
-		Force:       *force,
-		DryRun:      *dryRun,
-		Keep:        *keep,
-		From:        *from,
-		Content:     *content,
-		Template:    *template,
-		Templates:   cfg.Templates,
+		Source:    fs.Arg(0),
+		SystemDir: stringOr(*systemDir, cfg.SystemDir),
+		SaveDir:   stringOr(*saveDir, cfg.SaveDir),
+		Dir:       *dir,
+		Drive:     *drive,
+		OS:        *osImage,
+		InstallOS: cfg.InstallOS,
+		Force:     *force,
+		DryRun:    *dryRun,
+		Keep:      *keep,
+		From:      *from,
+		Content:   *content,
+		Template:  *template,
+		Templates: cfg.Templates,
 	}
 
 	rep, err := install.Run(opts)
 	endSteps(err)
 	if rep != nil {
 		printInstallReport(rep, opts.DryRun)
+	}
+	return err
+}
+
+// runRun implements `doszer run <archive.dosz>`.
+func runRun(args []string) error {
+	fs := newFlags("run")
+	saveDir := fs.String("save-dir", "", "")
+	systemDir := fs.String("system-dir", "", "")
+	const help = `doszer run - play an archive in DOSBox Pure
+
+Usage: doszer run [options] ARCHIVE.dosz
+
+Options:
+` + flagSaveDir + flagSystemDir + flagHelp
+	if ok, err := parse(fs, args, help, 1, 1); !ok {
+		return err
+	}
+	cfg, err := config.Load("")
+	if err != nil {
+		return err
+	}
+	status.Step("DOSBox Pure is running %s: close its window to end", filepath.Base(fs.Arg(0)))
+	env, err := install.Play(fs.Arg(0), stringOr(*systemDir, cfg.SystemDir), stringOr(*saveDir, cfg.SaveDir))
+	endSteps(err)
+	if err == nil {
+		fmt.Printf("Saves: %s\n", env.SaveDir)
 	}
 	return err
 }
