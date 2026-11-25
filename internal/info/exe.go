@@ -20,7 +20,7 @@ const (
 )
 
 func (p Platform) String() string {
-	return [...]string{"not a program", "DOS", "Windows 3.x", "Windows 95 or later", "Windows 2000 or later", "OS/2"}[p]
+	return [...]string{"not a program", "DOS", "Windows 3.x", "Windows 95 (or later)", "Windows 2000 (or later)", "OS/2"}[p]
 }
 
 // exeHeaderMax bounds how far into a file its new-style header may start:

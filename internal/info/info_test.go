@@ -126,7 +126,7 @@ parent = "Base.dosz"
 
 	var out bytes.Buffer
 	Print(&out, r)
-	for _, want := range []string{"Name:      Child Game", "Boot:      DOS, starts C:\\GAME.EXE", "Parent:    Base.dosz (found)", "             Shared.dosz (not found beside it)", "1 DOS, 1 Windows 3.x, 1 Windows 95 or later", "  First line.\n  Second line.", "Built by doszer test on 2026-01-01"} {
+	for _, want := range []string{"Name:      Child Game", "Boot:      DOS\nStarts:    C:\\GAME.EXE", "Parent:    Base.dosz (found)", "             Shared.dosz (not found beside it)", "Programs:  3\nOS:        DOS (1)\n           Windows 3.x (1)\n           Windows 95 (or later) (1)", "  First line.\n  Second line.", "Built by doszer test on 2026-01-01"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, out.String())
 		}

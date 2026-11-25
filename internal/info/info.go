@@ -278,7 +278,8 @@ func Print(w io.Writer, r *Report) {
 		}
 		fmt.Fprintf(w, "%-10s %s\n", k, fmt.Sprintf(format, a...))
 	}
-	line("File", "%s (%s)", filepath.Base(r.Path), size(r.Size))
+	line("File", "%s", filepath.Base(r.Path))
+	line("Size", "%s", size(r.Size))
 	line("SHA-256", "%s", r.SHA256)
 	line("Content", "%s (SHA-256 without the archive comment)", r.Content)
 
@@ -287,7 +288,9 @@ func Print(w io.Writer, r *Report) {
 		line("Manifest", "none embedded (not built by a DOSZ implementation)")
 	} else {
 		line("Name", "%s", m.Name)
-		line("Boot", "%s", bootString(&m.Boot))
+		for _, kv := range bootLines(&m.Boot) {
+			line(kv[0], "%s", kv[1])
+		}
 	}
 	for i, p := range r.Parents {
 		k := ""
@@ -304,22 +307,34 @@ func Print(w io.Writer, r *Report) {
 		line(k, "%s%s (%s)", strings.Repeat("  ", i), p.Name, state)
 	}
 	if len(r.Programs) > 0 {
-		var parts []string
-		for _, pl := range []Platform{DOS, Win16, Win32, WinNT5, OS2} {
-			if n := r.Programs[pl]; n > 0 {
-				parts = append(parts, fmt.Sprintf("%d %s", n, pl))
-			}
+		total := 0
+		for _, n := range r.Programs {
+			total += n
 		}
-		line("Programs", "%s", strings.Join(parts, ", "))
+		line("Programs", "%d", total)
+		k := "OS"
+		for _, pl := range []Platform{DOS, Win16, Win32, WinNT5, OS2} {
+			n := r.Programs[pl]
+			switch {
+			case n == 0:
+				continue
+			case len(r.Programs) == 1:
+				line(k, "%s", pl)
+			default:
+				line(k, "%s (%d)", pl, n)
+			}
+			k = ""
+		}
 	}
 
 	total := Bytes{Files: r.Files, Size: r.Deflated.Size + r.Stored.Size, Compressed: r.Deflated.Compressed + r.Stored.Compressed}
-	line("Contents", "%d files, %s in %s (%s)", total.Files, size(total.Size), size(total.Compressed), ratio(total))
+	line("Contents", "%s, %s", plural(total.Files, "file"), size(total.Size))
+	line("Packed", "%s (%s)", size(total.Compressed), ratio(total))
 	if r.Deflated.Files > 0 {
-		line("", "deflated: %d files, %s in %s (%s)", r.Deflated.Files, size(r.Deflated.Size), size(r.Deflated.Compressed), ratio(r.Deflated))
+		line("", "deflated  %-11s %10s to %s (%s)", plural(r.Deflated.Files, "file"), size(r.Deflated.Size), size(r.Deflated.Compressed), ratio(r.Deflated))
 	}
 	if r.Stored.Files > 0 {
-		line("", "stored: %d files, %s", r.Stored.Files, size(r.Stored.Size))
+		line("", "stored    %-11s %10s", plural(r.Stored.Files, "file"), size(r.Stored.Size))
 	}
 
 	for i, d := range r.Discs {
@@ -397,22 +412,24 @@ func Print(w io.Writer, r *Report) {
 	}
 }
 
-func bootString(b *manifest.Boot) string {
-	var s string
+// bootLines describes the boot model (§4): the model on one line, what it
+// names on the next.
+func bootLines(b *manifest.Boot) [][2]string {
+	var out [][2]string
 	switch {
 	case b.OS != "":
-		s = "OS image " + b.OS
+		out = append(out, [2]string{"Boot", "OS image"}, [2]string{"Image", b.OS})
 	case b.Shell != "":
-		s = "shell " + b.Shell
+		out = append(out, [2]string{"Boot", "Shell"}, [2]string{"Shell", b.Shell})
 	case b.Exec != "":
-		s = "DOS, starts " + b.Exec
+		out = append(out, [2]string{"Boot", "DOS"}, [2]string{"Starts", b.Exec})
 	default:
-		s = "DOS, start menu"
+		out = append(out, [2]string{"Boot", "DOS, start menu"})
 	}
 	if b.Disc != "" {
-		s += ", mounts " + b.Disc
+		out = append(out, [2]string{"Mounts", b.Disc})
 	}
-	return s
+	return out
 }
 
 func plural(n int, what string) string {
