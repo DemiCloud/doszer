@@ -46,12 +46,15 @@ func mediaDates(fs *fileSet) map[string]time.Time {
 			continue
 		}
 		dir := path.Dir(cuePath)
+		// Keyed by the entry's own path, not the sheet's spelling of it: a
+		// legacy GAME.CUE often names "game.bin", and MediaDates' caller
+		// looks entries up by their exact names.
 		resolved, err := cue.ResolveWith(sheet, func(name string) (string, int64, error) {
-			p := path.Join(dir, strings.ReplaceAll(name, `\`, "/"))
-			e, ok := fs.get(p)
+			p, ok := fs.canonical(path.Join(dir, strings.ReplaceAll(name, `\`, "/")))
 			if !ok {
 				return "", 0, os.ErrNotExist
 			}
+			e, _ := fs.get(p)
 			size, err := e.size()
 			return p, size, err
 		})

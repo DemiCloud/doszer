@@ -344,6 +344,13 @@ func (fs *fileSet) get(path string) (*fileEntry, bool) {
 	return fs.files[existing], true
 }
 
+// canonical returns path as the set spells it (paths match
+// case-insensitively, §2).
+func (fs *fileSet) canonical(path string) (string, bool) {
+	p, ok := fs.index[strings.ToLower(path)]
+	return p, ok
+}
+
 // paths returns every path, sorted by UTF-8 byte order (§8.2).
 func (fs *fileSet) paths() []string {
 	out := make([]string, 0, len(fs.files))

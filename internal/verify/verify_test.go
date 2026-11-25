@@ -690,8 +690,20 @@ func TestDiscImageFilesUseTheDiscsDate(t *testing.T) {
 }
 
 func TestVerifyRejectsWrongDiscDate(t *testing.T) {
+	for _, tc := range []struct{ name, cueFile string }{
+		{"same case", "disc.bin"},
+		// A legacy archive's sheet often spells its files in another
+		// case: the date check must still find the entry (§2).
+		{"other case", "DISC.BIN"},
+	} {
+		t.Run(tc.name, func(t *testing.T) { testWrongDiscDate(t, tc.cueFile) })
+	}
+}
+
+func testWrongDiscDate(t *testing.T, cueFile string) {
 	src := t.TempDir()
 	rawDisc(t, src, "1996110912120000")
+	writeFile(t, src, "disc.cue", "FILE \""+cueFile+"\" BINARY\r\n  TRACK 01 MODE1/2352\r\n    INDEX 01 00:00:00\r\n")
 	out := filepath.Join(t.TempDir(), "out.dosz")
 	f, err := os.Create(out)
 	if err != nil {
