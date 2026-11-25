@@ -50,12 +50,12 @@ type Manifest struct {
 
 // Boot selects the boot model and startup behaviour (spec §5.3).
 type Boot struct {
-	Exec   string `toml:"exec,omitempty"`
-	Shell  string `toml:"shell,omitempty"`
-	OS     string `toml:"os,omitempty"`
-	Parent string `toml:"parent,omitempty"`
-	Disc   string `toml:"disc,omitempty"`
-	Skip   *int   `toml:"skip,omitempty"`
+	Exec   string `toml:"exec,omitempty" json:"exec,omitempty" yaml:"exec,omitempty"`
+	Shell  string `toml:"shell,omitempty" json:"shell,omitempty" yaml:"shell,omitempty"`
+	OS     string `toml:"os,omitempty" json:"os,omitempty" yaml:"os,omitempty"`
+	Parent string `toml:"parent,omitempty" json:"parent,omitempty" yaml:"parent,omitempty"`
+	Disc   string `toml:"disc,omitempty" json:"disc,omitempty" yaml:"disc,omitempty"`
+	Skip   *int   `toml:"skip,omitempty" json:"skip,omitempty" yaml:"skip,omitempty"`
 }
 
 // Layout controls trimming, flattening and rewriting (spec §5.4).

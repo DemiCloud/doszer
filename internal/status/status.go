@@ -40,6 +40,21 @@ func Enable(f *os.File) {
 	mu.Unlock()
 }
 
+// Force turns reporting on for f even when it isn't a terminal: an
+// explicit --format fancy.
+func Force(f *os.File) {
+	mu.Lock()
+	out, outFile = f, f
+	mu.Unlock()
+}
+
+// Disable turns reporting off.
+func Disable() {
+	mu.Lock()
+	out, outFile = nil, nil
+	mu.Unlock()
+}
+
 // Step finishes the current step, if any, and starts a new one.
 func Step(format string, args ...any) {
 	mu.Lock()

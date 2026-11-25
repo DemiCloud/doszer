@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/output"
 	"github.com/DemiCloud/doszer/internal/platform"
 	"github.com/DemiCloud/doszer/internal/prepare"
 	"github.com/DemiCloud/doszer/internal/redump"
@@ -33,6 +36,10 @@ import (
 
 // errUsage signals that usage was already printed.
 var errUsage = errors.New("usage")
+
+// errQuiet signals that the errors were already reported: exit 1 with
+// nothing more to say.
+var errQuiet = errors.New("failed")
 
 // version is set via -ldflags "-X main.version=..." (see Makefile).
 var version = "dev"
@@ -77,7 +84,7 @@ func main() {
 	status.Enable(os.Stderr)
 	if err := run(windowsPaths(os.Args[1:])); err != nil {
 		status.Stop()
-		if !errors.Is(err, errUsage) {
+		if !errors.Is(err, errUsage) && !errors.Is(err, errQuiet) {
 			logError(err)
 		}
 		os.Exit(1)
@@ -162,6 +169,8 @@ func usage(w io.Writer) {
 // Option lines shared between commands' help.
 const (
 	flagHelp       = "  -h, --help              show this help\n"
+	flagFormatText = "      --format FMT        output: fancy, plain (default: fancy on a terminal)\n"
+	flagFormatData = "      --format FMT        output: fancy, plain, json, yaml, toml, csv (default: fancy on a terminal)\n"
 	flagVersion    = "  -V, --version           show version\n"
 	flagOggQuality = "      --ogg-quality N     Ogg Vorbis quality, -1 to 10 (default: ogg_quality, else 6)\n"
 	flagStrict     = "      --strict            fail on any warning\n"
@@ -175,7 +184,35 @@ const (
 func newFlags(name string) *pflag.FlagSet {
 	fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
 	fs.SetOutput(io.Discard)
+	fs.String("format", "", "")
 	return fs
+}
+
+// dataCommands are the commands with a result --format can encode.
+var dataCommands = map[string]bool{"info": true, "verify": true, "set": true, "version": true, "env": true}
+
+// format is the resolved --format of the command running.
+var format = output.Plain
+
+// setFormat resolves fs's --format: the spinner only under fancy, and a
+// structured format only for a command with a result to encode.
+func setFormat(fs *pflag.FlagSet) error {
+	v, _ := fs.GetString("format")
+	f, err := output.Parse(v)
+	if err != nil {
+		return err
+	}
+	if f.Structured() && !dataCommands[fs.Name()] {
+		return fmt.Errorf("%s: --format %s: no result to encode (fancy or plain only)", fs.Name(), f)
+	}
+	format = f.Resolve(os.Stdout)
+	switch {
+	case format == output.Fancy && f == output.Fancy:
+		status.Force(os.Stderr)
+	case format != output.Fancy:
+		status.Disable()
+	}
+	return nil
 }
 
 // parse parses args into fs, printing help on -h/--help (ok false, no
@@ -186,6 +223,9 @@ func parse(fs *pflag.FlagSet, args []string, help string, min, max int) (ok bool
 			fmt.Print(help)
 			return false, nil
 		}
+		return false, err
+	}
+	if err := setFormat(fs); err != nil {
 		return false, err
 	}
 	if fs.NArg() < min || fs.NArg() > max {
@@ -232,7 +272,7 @@ Options:
       --no-media          don't identify disc images in the source
       --os PATH           OS image model: OS image path, without extension
       --shell PATH        shell model: system shell path, without extension
-` + flagSystemDir + flagHelp
+` + flagSystemDir + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
 	}
@@ -343,7 +383,7 @@ Usage: doszer build [options] SOURCE [OUTPUT.dosz]
 Options:
   -n, --dry-run           print the build plan without writing an archive
       --name NAME         override the manifest's effective name
-` + flagOggQuality + flagStrict + flagHelp
+` + flagOggQuality + flagStrict + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 2); !ok {
 		return err
 	}
@@ -443,27 +483,140 @@ func printBuildPlan(res *build.Result, dryRun bool) {
 // runVerify implements `doszer verify <file.dosz>`.
 func runVerify(args []string) error {
 	fs := newFlags("verify")
-	const help = `doszer verify - check an archive against its manifest and the specification
+	all := fs.Bool("all", false, "")
+	const help = `doszer verify - check archives against their manifests and the specification
 
-Usage: doszer verify [options] FILE.dosz
+Usage: doszer verify [options] FILE.dosz...
+       doszer verify --all [DIR...]
 
 Options:
-` + flagHelp
-	if ok, err := parse(fs, args, help, 1, 1); !ok {
+      --all               check every .dosz under DIR (default: the current directory)
+` + flagFormatData + flagHelp
+	if ok, err := parse(fs, args, help, 0, 1<<20); !ok {
 		return err
 	}
-
-	warnings, err := verify.Check(fs.Arg(0))
-	endSteps(err)
-	for _, w := range warnings {
-		fmt.Fprintf(os.Stderr, "[WARN] %s\n", w)
+	if !*all && fs.NArg() == 0 {
+		fmt.Fprint(os.Stderr, help)
+		return errUsage
 	}
-	if err != nil {
-		return err
+	paths := fs.Args()
+	if *all {
+		dirs := paths
+		if len(dirs) == 0 {
+			dirs = []string{"."}
+		}
+		var err error
+		if paths, err = findArchives(dirs); err != nil {
+			return err
+		}
+		if len(paths) == 0 {
+			return fmt.Errorf("no .dosz files under %s", strings.Join(dirs, ", "))
+		}
 	}
 
-	fmt.Printf("%s conforms to the specification\n", fs.Arg(0))
+	type result struct {
+		File     string   `json:"file" yaml:"file" toml:"file"`
+		OK       bool     `json:"ok" yaml:"ok" toml:"ok"`
+		Errors   []string `json:"errors,omitempty" yaml:"errors,omitempty" toml:"errors,omitempty"`
+		Warnings []string `json:"warnings,omitempty" yaml:"warnings,omitempty" toml:"warnings,omitempty"`
+	}
+	var results []result
+	failed := 0
+	for _, p := range paths {
+		warnings, err := verify.Check(p)
+		endSteps(err)
+		r := result{File: p, OK: err == nil, Warnings: warnings}
+		if err != nil {
+			failed++
+			r.Errors = errorLines(err)
+		}
+		results = append(results, r)
+		if format.Structured() {
+			continue
+		}
+		prefix := ""
+		if len(paths) > 1 {
+			prefix = p + ": "
+		}
+		for _, w := range warnings {
+			status.Printf(os.Stderr, "[WARN] %s%s\n", prefix, w)
+		}
+		if err != nil {
+			if len(paths) == 1 {
+				return err
+			}
+			logError(fmt.Errorf("%s: %w", p, err))
+			continue
+		}
+		status.Printf(os.Stdout, "%s conforms to the specification\n", p)
+	}
+
+	switch format {
+	case output.CSV:
+		rows := make([][]string, len(results))
+		for i, r := range results {
+			rows[i] = []string{r.File, strconv.FormatBool(r.OK), strings.Join(r.Errors, "; "), strings.Join(r.Warnings, "; ")}
+		}
+		if err := output.EncodeCSV(os.Stdout, []string{"file", "ok", "errors", "warnings"}, rows); err != nil {
+			return err
+		}
+	case output.JSON, output.YAML, output.TOML:
+		if err := output.Encode(os.Stdout, format, struct {
+			Archives []result `json:"archives" yaml:"archives" toml:"archives"`
+		}{results}); err != nil {
+			return err
+		}
+	default:
+		if len(paths) > 1 {
+			fmt.Printf("%d of %s conform\n", len(paths)-failed, plural(len(paths), "archive"))
+		}
+	}
+	if failed > 0 {
+		if format.Structured() || len(paths) > 1 {
+			return errQuiet
+		}
+	}
 	return nil
+}
+
+// findArchives returns every .dosz file under dirs, sorted.
+func findArchives(dirs []string) ([]string, error) {
+	var out []string
+	for _, dir := range dirs {
+		err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !d.IsDir() && strings.EqualFold(filepath.Ext(p), ".dosz") {
+				out = append(out, p)
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// errorLines splits an error joined with errors.Join into its errors.
+func errorLines(err error) []string {
+	var lines []string
+	for _, l := range strings.Split(err.Error(), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	return lines
+}
+
+// plural is "1 thing" or "N things".
+func plural(n int, what string) string {
+	if n == 1 {
+		return "1 " + what
+	}
+	return fmt.Sprintf("%d %ss", n, what)
 }
 
 // runDump implements `doszer dump <dir>`.
@@ -482,7 +635,7 @@ Options:
       --drive DRIVE       drive to read, e.g. E: or /dev/sg1 (default: first drive with a disc)
       --from FILE         import this BIN/CUE image (.cue, or a .zip of one) instead of reading a drive
       --offset SAMPLES    --from: drive read offset the image's audio wasn't corrected for
-` + flagHelp
+` + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
 	}
@@ -591,7 +744,7 @@ Options:
       --dat FILE          datfile to use (default: redump_dat, else Redump's)
       --offset SAMPLES    drive read offset a CUE image's audio wasn't corrected for
       --update            fetch Redump's current datfile now
-` + flagHelp
+` + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 0, 1<<20); !ok {
 		return err
 	}
@@ -721,7 +874,7 @@ Options:
       --keep              keep the session's save files
       --os PATH           OS image to boot instead of boot.os (default: install_os, else boot.os)
 ` + flagSaveDir + flagSystemDir + `      --template FILE     pristine image to compare a --from image against
-` + flagHelp
+` + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
 	}
@@ -766,9 +919,31 @@ func runVersion(args []string) error {
 Usage: doszer version
 
 Options:
-` + flagHelp
+` + flagFormatData + flagHelp
 	if ok, err := parse(fs, args, help, 0, 0); !ok {
 		return err
+	}
+	if format.Structured() {
+		type program struct {
+			Name     string `json:"name" yaml:"name" toml:"name"`
+			Version  string `json:"version,omitempty" yaml:"version,omitempty" toml:"version,omitempty"`
+			URL      string `json:"url" yaml:"url" toml:"url"`
+			Embedded bool   `json:"embedded" yaml:"embedded" toml:"embedded"`
+		}
+		progs := []program{{"doszer", version, homepage, true}}
+		for _, p := range builtin.Programs() {
+			progs = append(progs, program{p.Name, p.Version, p.URL, p.Embedded})
+		}
+		if format == output.CSV {
+			rows := make([][]string, len(progs))
+			for i, p := range progs {
+				rows[i] = []string{p.Name, p.Version, p.URL, strconv.FormatBool(p.Embedded)}
+			}
+			return output.EncodeCSV(os.Stdout, []string{"name", "version", "url", "embedded"}, rows)
+		}
+		return output.Encode(os.Stdout, format, struct {
+			Programs []program `json:"programs" yaml:"programs" toml:"programs"`
+		}{progs})
 	}
 	fmt.Println("doszer", version)
 	for _, p := range builtin.Programs() {
@@ -799,7 +974,7 @@ Usage: doszer run [options] ARCHIVE.dosz
 Options:
       --option KEY=VALUE  DOSBox Pure core option for this session (repeatable)
       --save-dir DIR      DOSBox Pure save directory (default: save_dir, else ./saves, else RetroDECK's)
-` + flagSystemDir + flagHelp
+` + flagSystemDir + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
 	}
@@ -931,7 +1106,7 @@ Usage: doszer repack [options] INPUT.dosz [OUTPUT.dosz]
 Options:
   -n, --dry-run           print the rebuild plan without writing an archive
       --manifest FILE     use this manifest instead of the archive's embedded one
-` + flagOggQuality + flagStrict + flagHelp
+` + flagOggQuality + flagStrict + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 2); !ok {
 		return err
 	}
@@ -994,7 +1169,7 @@ Options:
       --add DIR           lay DIR's files over the result (repeatable)
   -n, --dry-run           print the changes without writing OUTPUT
   -f, --force             overwrite OUTPUT
-` + flagHelp
+` + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 3, 3); !ok {
 		return err
 	}
@@ -1035,10 +1210,11 @@ func runInfo(args []string) error {
 Usage: doszer info FILE.dosz...
 
 Options:
-` + flagHelp
+` + flagFormatData + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1<<20); !ok {
 		return err
 	}
+	var data []info.Data
 	for i, p := range fs.Args() {
 		status.Step("Reading %s", filepath.Base(p))
 		r, err := info.Read(p)
@@ -1046,10 +1222,26 @@ Options:
 		if err != nil {
 			return err
 		}
+		if format.Structured() {
+			data = append(data, r.Data())
+			continue
+		}
 		if i > 0 {
 			fmt.Println()
 		}
 		info.Print(os.Stdout, r)
+	}
+	switch format {
+	case output.CSV:
+		rows := make([][]string, len(data))
+		for i, d := range data {
+			rows[i] = d.CSVRow()
+		}
+		return output.EncodeCSV(os.Stdout, info.CSVHeader, rows)
+	case output.JSON, output.YAML, output.TOML:
+		return output.Encode(os.Stdout, format, struct {
+			Archives []info.Data `json:"archives" yaml:"archives" toml:"archives"`
+		}{data})
 	}
 	return nil
 }
@@ -1071,7 +1263,7 @@ Options:
       --no-parent         remove the parent
       --os [OLD:]NEW      set the OS image, only where it is OLD
       --shell [OLD:]NEW   set the shell, only where it is OLD
-` + flagHelp
+` + flagFormatData + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1<<20); !ok {
 		return err
 	}
@@ -1109,6 +1301,15 @@ Options:
 		return err
 	}
 
+	type result struct {
+		File    string        `json:"file" yaml:"file" toml:"file"`
+		Changed bool          `json:"changed" yaml:"changed" toml:"changed"`
+		Before  manifest.Boot `json:"before" yaml:"before" toml:"before"`
+		After   manifest.Boot `json:"after" yaml:"after" toml:"after"`
+		Skipped []string      `json:"skipped,omitempty" yaml:"skipped,omitempty" toml:"skipped,omitempty"`
+		Error   string        `json:"error,omitempty" yaml:"error,omitempty" toml:"error,omitempty"`
+	}
+	var results []result
 	failed := 0
 	for _, p := range fs.Args() {
 		name := filepath.Base(p)
@@ -1118,6 +1319,17 @@ Options:
 			o.DryRun = true
 		}
 		res, err := repack.Set(o)
+		if format.Structured() {
+			r := result{File: p}
+			if err != nil {
+				failed++
+				r.Error = err.Error()
+			} else {
+				r.Changed, r.Before, r.After, r.Skipped = res.Changed() && !show, res.Before, res.After, res.Skipped
+			}
+			results = append(results, r)
+			continue
+		}
 		if err != nil {
 			logError(err)
 			failed++
@@ -1140,7 +1352,26 @@ Options:
 			fmt.Printf("Left %s: %s\n", name, why)
 		}
 	}
+	switch format {
+	case output.CSV:
+		rows := make([][]string, len(results))
+		for i, r := range results {
+			rows[i] = []string{r.File, strconv.FormatBool(r.Changed), r.After.Exec, r.After.Shell, r.After.OS, r.After.Parent, r.Before.Shell, r.Before.OS, r.Before.Parent, strings.Join(r.Skipped, "; "), r.Error}
+		}
+		if err := output.EncodeCSV(os.Stdout, []string{"file", "changed", "exec", "shell", "os", "parent", "was_shell", "was_os", "was_parent", "skipped", "error"}, rows); err != nil {
+			return err
+		}
+	case output.JSON, output.YAML, output.TOML:
+		if err := output.Encode(os.Stdout, format, struct {
+			Archives []result `json:"archives" yaml:"archives" toml:"archives"`
+		}{results}); err != nil {
+			return err
+		}
+	}
 	if failed > 0 {
+		if format.Structured() {
+			return errQuiet
+		}
 		return fmt.Errorf("%d of %d archives failed", failed, fs.NArg())
 	}
 	return nil

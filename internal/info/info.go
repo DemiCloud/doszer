@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -497,4 +498,136 @@ func size(n int64) string {
 		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
 	}
 	return fmt.Sprintf("%d bytes", n)
+}
+
+// Data is a Report for --format: plain values, named alike in JSON, YAML
+// and TOML.
+type Data struct {
+	File          string       `json:"file" yaml:"file" toml:"file"`
+	Size          int64        `json:"size" yaml:"size" toml:"size"`
+	SHA256        string       `json:"sha256" yaml:"sha256" toml:"sha256"`
+	ContentSHA256 string       `json:"content_sha256" yaml:"content_sha256" toml:"content_sha256"`
+	Name          string       `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty"`
+	Manifest      bool         `json:"manifest" yaml:"manifest" toml:"manifest"`
+	Boot          string       `json:"boot,omitempty" yaml:"boot,omitempty" toml:"boot,omitempty"` // dos, menu, shell, os
+	Exec          string       `json:"exec,omitempty" yaml:"exec,omitempty" toml:"exec,omitempty"`
+	Shell         string       `json:"shell,omitempty" yaml:"shell,omitempty" toml:"shell,omitempty"`
+	OSImage       string       `json:"os_image,omitempty" yaml:"os_image,omitempty" toml:"os_image,omitempty"`
+	Disc          string       `json:"disc,omitempty" yaml:"disc,omitempty" toml:"disc,omitempty"`
+	Parents       []ParentData `json:"parents,omitempty" yaml:"parents,omitempty" toml:"parents,omitempty"`
+	Programs      int          `json:"programs" yaml:"programs" toml:"programs"`
+	OS            string       `json:"os,omitempty" yaml:"os,omitempty" toml:"os,omitempty"`
+	Setup         string       `json:"setup,omitempty" yaml:"setup,omitempty" toml:"setup,omitempty"`
+	Files         int          `json:"files" yaml:"files" toml:"files"`
+	Bytes         int64        `json:"bytes" yaml:"bytes" toml:"bytes"`
+	Packed        int64        `json:"packed" yaml:"packed" toml:"packed"`
+	Deflated      BytesData    `json:"deflated" yaml:"deflated" toml:"deflated"`
+	Stored        BytesData    `json:"stored" yaml:"stored" toml:"stored"`
+	Discs         []DiscData   `json:"discs,omitempty" yaml:"discs,omitempty" toml:"discs,omitempty"`
+	Gamepad       []string     `json:"gamepad,omitempty" yaml:"gamepad,omitempty" toml:"gamepad,omitempty"`
+	Notes         string       `json:"notes,omitempty" yaml:"notes,omitempty" toml:"notes,omitempty"`
+	Comment       string       `json:"comment,omitempty" yaml:"comment,omitempty" toml:"comment,omitempty"`
+}
+
+// ParentData is a Parent for --format.
+type ParentData struct {
+	Name  string `json:"name" yaml:"name" toml:"name"`
+	Found bool   `json:"found" yaml:"found" toml:"found"`
+	Error string `json:"error,omitempty" yaml:"error,omitempty" toml:"error,omitempty"`
+}
+
+// BytesData is a Bytes for --format.
+type BytesData struct {
+	Files  int   `json:"files" yaml:"files" toml:"files"`
+	Bytes  int64 `json:"bytes" yaml:"bytes" toml:"bytes"`
+	Packed int64 `json:"packed" yaml:"packed" toml:"packed"`
+}
+
+// DiscData is a Disc for --format.
+type DiscData struct {
+	Path        string      `json:"path" yaml:"path" toml:"path"`
+	DataTracks  int         `json:"data_tracks" yaml:"data_tracks" toml:"data_tracks"`
+	AudioTracks int         `json:"audio_tracks" yaml:"audio_tracks" toml:"audio_tracks"`
+	WAV         int         `json:"wav" yaml:"wav" toml:"wav"`
+	Ogg         int         `json:"ogg" yaml:"ogg" toml:"ogg"`
+	Bytes       int64       `json:"bytes" yaml:"bytes" toml:"bytes"`
+	Media       string      `json:"media,omitempty" yaml:"media,omitempty" toml:"media,omitempty"`
+	RedumpName  string      `json:"redump_name,omitempty" yaml:"redump_name,omitempty" toml:"redump_name,omitempty"`
+	Redump      string      `json:"redump,omitempty" yaml:"redump,omitempty" toml:"redump,omitempty"`
+	Tracks      []TrackData `json:"tracks,omitempty" yaml:"tracks,omitempty" toml:"tracks,omitempty"`
+}
+
+// TrackData is a declared track hash for --format.
+type TrackData struct {
+	Type       string `json:"type" yaml:"type" toml:"type"`
+	SHA1       string `json:"sha1" yaml:"sha1" toml:"sha1"`
+	RedumpSHA1 string `json:"redump_sha1,omitempty" yaml:"redump_sha1,omitempty" toml:"redump_sha1,omitempty"`
+}
+
+// Data returns r for --format.
+func (r *Report) Data() Data {
+	d := Data{
+		File: filepath.Base(r.Path), Size: r.Size, SHA256: r.SHA256, ContentSHA256: r.Content,
+		Programs: r.Programs, Files: r.Files,
+		Bytes:    r.Deflated.Size + r.Stored.Size,
+		Packed:   r.Deflated.Compressed + r.Stored.Compressed,
+		Deflated: BytesData{r.Deflated.Files, r.Deflated.Size, r.Deflated.Compressed},
+		Stored:   BytesData{r.Stored.Files, r.Stored.Size, r.Stored.Compressed},
+		Comment:  strings.TrimSpace(strings.ReplaceAll(r.Comment, "\r\n", "\n")),
+	}
+	if m := r.Manifest; m != nil {
+		d.Manifest, d.Name, d.Notes = true, m.Name, strings.TrimSpace(m.Notes)
+		b := m.Boot
+		d.Exec, d.Shell, d.OSImage, d.Disc = b.Exec, b.Shell, b.OS, b.Disc
+		switch {
+		case b.OS != "":
+			d.Boot = "os"
+		case b.Shell != "":
+			d.Boot = "shell"
+		case b.Exec != "":
+			d.Boot = "dos"
+		default:
+			d.Boot = "menu"
+		}
+	}
+	for _, p := range r.Parents {
+		d.Parents = append(d.Parents, ParentData{p.Name, p.Found, p.Err})
+	}
+	if r.Programs > 0 {
+		d.OS = r.Need.String()
+		if r.Need.Setup.Platform != platform.NotProgram {
+			d.Setup = r.Need.Setup.String()
+		}
+	}
+	for _, x := range r.Discs {
+		dd := DiscData{Path: x.Path, DataTracks: x.Data, AudioTracks: x.Audio, WAV: x.WAV, Ogg: x.Ogg, Bytes: x.Size}
+		if md := x.Media; md != nil {
+			dd.Media, dd.RedumpName, dd.Redump = md.ID, md.RedumpName, md.Redump
+			for _, t := range md.Tracks {
+				dd.Tracks = append(dd.Tracks, TrackData{t.Type, t.SHA1, t.RedumpSHA1})
+			}
+		}
+		d.Discs = append(d.Discs, dd)
+	}
+	if r.Padmap {
+		d.Gamepad = append(d.Gamepad, "PADMAP.DBP")
+	}
+	if r.DOSYML {
+		d.Gamepad = append(d.Gamepad, "DOS.YML")
+	}
+	return d
+}
+
+// CSVHeader and CSVRow are Data as one CSV row: the scalar fields.
+var CSVHeader = []string{"file", "size", "sha256", "content_sha256", "name", "boot", "exec", "shell", "os_image", "disc", "parent", "programs", "os", "setup", "files", "bytes", "packed", "discs"}
+
+// CSVRow returns d's CSVHeader fields.
+func (d Data) CSVRow() []string {
+	parent := ""
+	if len(d.Parents) > 0 {
+		parent = d.Parents[0].Name
+	}
+	i := strconv.Itoa
+	i64 := func(n int64) string { return strconv.FormatInt(n, 10) }
+	return []string{d.File, i64(d.Size), d.SHA256, d.ContentSHA256, d.Name, d.Boot, d.Exec, d.Shell, d.OSImage, d.Disc, parent, i(d.Programs), d.OS, d.Setup, i(d.Files), i64(d.Bytes), i64(d.Packed), i(len(d.Discs))}
 }

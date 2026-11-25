@@ -53,7 +53,7 @@ doszer run     FILE.dosz [--option KEY=VALUE...] [--system-dir DIR] [--save-dir 
 doszer FILE.dosz
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
 doszer set     FILE.dosz... [--parent [OLD:]NEW | --no-parent] [--os [OLD:]NEW] [--shell [OLD:]NEW] [-n]
-doszer verify  FILE.dosz
+doszer verify  FILE.dosz... | --all [DIR...]
 doszer info    FILE.dosz...
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
@@ -69,6 +69,23 @@ On a terminal, each command shows the step it's on with a spinner (and a
 count where there is one, e.g. files written), then each finished step
 with `✓`, or `✗` for the one that failed. Piped or redirected, only
 results, warnings and errors are printed.
+
+Every command takes `--format FMT`, named as in the sibling `romctl`:
+
+| `FMT` | Output |
+|---|---|
+| `fancy` | Text, with the spinner and finished steps. Default on a terminal. |
+| `plain` | The same text without them. Default when piped or redirected. |
+| `json`, `yaml`, `toml` | `info`, `verify`, `set` and `version` only: the result, and nothing else, on standard output, for scripts. Several archives are a list under `archives`. |
+| `csv` | The same as one row per archive (`info`: its single-valued fields) or program. |
+
+Warnings and errors still go to standard error. A failed archive under a
+structured format is in the result (`ok = false`, `errors`), and doszer
+exits 1.
+
+`verify --all` checks every `.dosz` under the given directories
+(default: the current one), e.g. a collection after copying it, and ends
+with a count; any failure makes it exit 1.
 
 | Command | Purpose |
 |---|---|

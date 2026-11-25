@@ -52,6 +52,7 @@ internal/dump/       doszer dump: a CD to BIN/CUE with redumper (Windows redumpe
 internal/redump/     Redump datfile: load (Logiqx XML/zip, compact), embedded snapshot (`make dat`), cached run-time copy, track matching; any CUE image (or zip of one) read in Redump's track layout, read-offset correction
 internal/interrupt/  removes registered temporary paths on SIGINT/SIGTERM
 internal/status/     terminal progress: current step with a spinner, finished steps
+internal/output/     --format (romctl's names): fancy/plain text, or a result as JSON/YAML/TOML/CSV
 assets/              the icon (doszer.svg; doszer-small.svg for 16/24 px), its .ico; `make icon` renders it into cmd/doszer's .syso and internal/libretro/icon.png
 examples/            complete example manifests (checked by internal/manifest's TestExamples)
 Makefile             build/test/vet/install/release (see `make help`)
@@ -73,7 +74,9 @@ README.md            doszer usage, configuration, install workflow
   `github.com/ebitengine/purego` (loading the DOSBox Pure core and SDL2
   without cgo, so every release target still cross-compiles with
   `CGO_ENABLED=0`; v0.10.0, the last needing only Go 1.18 - v0.11 needs
-  Go 1.25).
+  Go 1.25), `go.yaml.in/yaml/v3` (`--format yaml`; the YAML
+  organization's maintained continuation of `gopkg.in/yaml.v3`, which
+  `romctl` still uses).
 - The built-in frontend embeds DOSBox Pure, built from a pinned release
   (`make core`, `DBP_REF` in the Makefile; `internal/builtin`'s
   `DOSBoxPureVersion` must match; `doszer version` lists it, redumper
@@ -159,7 +162,10 @@ README.md            doszer usage, configuration, install workflow
   `pflag.FlagSet` per command (`newFlags`, `parse`), GNU-style - long
   `--option[=VALUE]`, short forms only for `-n`/`--dry-run`,
   `-f`/`--force`, `-h`/`--help` (and top-level `-V`/`--version`), options
-  before or after arguments, `--` ending them. Help is hand-written,
+  before or after arguments, `--` ending them. `newFlags` gives every
+  command `--format` (`setFormat`): a command with a result
+  (`dataCommands`) encodes it under a structured format, through a
+  struct tagged alike for json, yaml and toml. Help is hand-written,
   man-page brief, uppercase placeholders (`SOURCE`, `FILE`), shared option
   lines in `flag*` constants.
 - Every configuration setting is also available as a flag. Precedence:
