@@ -57,6 +57,7 @@ doszer verify  FILE.dosz... | --all [DIR...]
 doszer info    FILE.dosz...
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
+doszer env     [--system-dir DIR] [--save-dir DIR]
 doszer version
 ```
 
@@ -83,6 +84,14 @@ Warnings and errors still go to standard error. A failed archive under a
 structured format is in the result (`ok = false`, `errors`), and doszer
 exits 1.
 
+`env` shows what doszer finds on this machine: its configuration files,
+DOSBox Pure's system and save directories and where each came from
+(option, setting, `./system`, beside doszer, RetroDECK), the shells and
+OS images DOSBox Pure would list (a dynamic VHD flagged: `install`
+refuses one), whether `default_shell`, `default_os` and `install_os`
+name images present here, the Redump datfiles, and ffmpeg. It describes
+only this machine; archives may be played somewhere else.
+
 `verify --all` checks every `.dosz` under the given directories
 (default: the current one), e.g. a collection after copying it, and ends
 with a count; any failure makes it exit 1.
@@ -93,8 +102,10 @@ with a count; any failure makes it exit 1.
 | `build` | Build an archive from a source. Writes only the output file. |
 | `install` | Run an installer under DOSBox Pure and extract the chosen folder into the source. |
 | `repack` | Rebuild an archive from its embedded manifest. |
-| `verify` | Check an archive against its embedded manifest and the specification. |
+| `set` | Change archives' parent, OS image or shell in place. |
+| `verify` | Check archives against their embedded manifests and the specification. |
 | `info` | Show what an archive holds (below). |
+| `env` | Show the directories, images and tools doszer finds on this machine. |
 | `prepare` | Make a game-ready copy of a Windows 3.x shell or Windows 9x OS image (see "Preparing a shell", "Windows 9x OS image"). |
 
 `info` shows an archive's size and two SHA-256 hashes:

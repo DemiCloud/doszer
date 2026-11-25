@@ -21,6 +21,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/builtin"
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/dump"
+	"github.com/DemiCloud/doszer/internal/env"
 	"github.com/DemiCloud/doszer/internal/info"
 	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/interrupt"
@@ -74,6 +75,7 @@ func init() {
 		{"prepare", "make a game-ready copy of a Windows shell or OS image", runPrepare},
 		{"info", "show what an archive holds", runInfo},
 		{"verify", "check an archive against its manifest and the specification", runVerify},
+		{"env", "show the directories, images and tools doszer finds here", runEnv},
 		{"version", "show the versions of doszer and the programs it embeds", runVersion},
 	}
 }
@@ -1200,6 +1202,54 @@ Options:
 	} else {
 		fmt.Printf("Prepared %s (%d entries)\n", rep.Output, rep.Entries)
 	}
+	return nil
+}
+
+func runEnv(args []string) error {
+	fs := newFlags("env")
+	systemDir := fs.String("system-dir", "", "")
+	saveDir := fs.String("save-dir", "", "")
+	const help = `doszer env - show the directories, images and tools doszer finds here
+
+Usage: doszer env [options]
+
+Options:
+` + flagSystemDir + flagSaveDir + flagFormatData + flagHelp
+	if ok, err := parse(fs, args, help, 0, 0); !ok {
+		return err
+	}
+	cfg, err := config.Load("")
+	if err != nil {
+		return err
+	}
+	r, err := env.Read(cfg, *systemDir, *saveDir)
+	if err != nil {
+		return err
+	}
+	switch format {
+	case output.CSV:
+		var rows [][]string
+		add := func(k, v string) { rows = append(rows, []string{k, v}) }
+		add("system_dir", r.SystemDir.Path)
+		add("system_dir_from", r.SystemDir.From)
+		add("save_dir", r.SaveDir.Path)
+		add("save_dir_from", r.SaveDir.From)
+		for _, i := range r.Shells {
+			add("shell", i.Name)
+		}
+		for _, i := range r.Images {
+			add("image", i.Name+" ("+i.Kind+")")
+		}
+		for _, s := range r.Settings {
+			add(s.Key, s.Value)
+		}
+		add("ffmpeg", r.FFmpeg)
+		add("cache", r.Cache)
+		return output.EncodeCSV(os.Stdout, []string{"key", "value"}, rows)
+	case output.JSON, output.YAML, output.TOML:
+		return output.Encode(os.Stdout, format, r)
+	}
+	env.Print(os.Stdout, r)
 	return nil
 }
 

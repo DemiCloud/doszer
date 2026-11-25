@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/DemiCloud/doszer/internal/builtin"
@@ -59,18 +60,58 @@ func Discover(systemDir, saveDir string) (Env, error) {
 // FindSystemDir returns the system directory Discover uses when none is
 // given, or "" if there is none.
 func FindSystemDir() string {
-	candidates := []string{"system"}
-	if exe, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "system"))
+	d, _ := FindSystemDirFrom()
+	return d
+}
+
+// FindSystemDirFrom is FindSystemDir, also saying where the directory
+// came from: "./system", "beside doszer" or "RetroDECK".
+func FindSystemDirFrom() (dir, from string) {
+	if d := existingDir("system"); d != "" {
+		return d, "./system"
 	}
-	for _, d := range candidates {
-		if fi, err := os.Stat(d); err == nil && fi.IsDir() {
-			if abs, err := filepath.Abs(d); err == nil {
-				return abs
-			}
+	if exe, err := os.Executable(); err == nil {
+		if d := existingDir(filepath.Join(filepath.Dir(exe), "system")); d != "" {
+			return d, "beside doszer"
 		}
 	}
-	return retroDECKBIOS()
+	if d := retroDECKBIOS(); d != "" {
+		return d, "RetroDECK"
+	}
+	return "", ""
+}
+
+// existingDir returns d made absolute if it is a directory, else "".
+func existingDir(d string) string {
+	if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+		if abs, err := filepath.Abs(d); err == nil {
+			return abs
+		}
+	}
+	return ""
+}
+
+// RetroDECK returns the folders RetroDECK's settings name - its BIOS
+// (system), ROM and save folders - each "" if RetroDECK isn't installed
+// or the folder doesn't exist.
+func RetroDECK() (bios, roms, saves string) {
+	d := retroDECK()
+	return d.BIOS, d.ROMs, d.Saves
+}
+
+// LocalSaveDir returns the save directory Play uses before RetroDECK's,
+// and where it came from: a saves/ folder in the working directory
+// ("./saves") or beside the doszer executable ("beside doszer"), or "".
+func LocalSaveDir() (dir, from string) {
+	if d := existingDir("saves"); d != "" {
+		return d, "./saves"
+	}
+	if exe, err := os.Executable(); err == nil {
+		if d := existingDir(filepath.Join(filepath.Dir(exe), "saves")); d != "" {
+			return d, "beside doszer"
+		}
+	}
+	return "", ""
 }
 
 // retroDECKConfig is RetroDECK's settings file, under the home directory.
@@ -128,14 +169,8 @@ func retroDECKBIOS() string { return retroDECK().BIOS }
 // Discover's default. install doesn't search: its sessions' throwaway
 // saves stay in doszer's cache.
 func PlaySaveDir(archive string) (string, error) {
-	candidates := []string{"saves"}
-	if exe, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "saves"))
-	}
-	for _, d := range candidates {
-		if fi, err := os.Stat(d); err == nil && fi.IsDir() {
-			return filepath.Abs(d)
-		}
+	if d, _ := LocalSaveDir(); d != "" {
+		return d, nil
 	}
 	rd := retroDECK()
 	if rd.ROMs == "" || rd.Saves == "" {
@@ -200,45 +235,68 @@ var (
 	Win95Names = append(append([]string{}, Win98Names...), "Windows 95 (games)", "Windows 95", "Win95")
 )
 
-// FindSystemFile returns the first of names that names a shell (shell
-// set) or an OS image in systemDir, as a path relative to it without
-// extension (as boot.shell and boot.os take it), or "". Files count as
-// DOSBox Pure counts them (dosbox_pure_libretro.cpp, DBP_ScanSystem): a
-// shell is a .dosz, an image an .img, .ima or .vhd of at least 7 MB in
-// whole 512-byte sectors, at any depth. Names match case-insensitively,
-// the shallowest file first.
-func FindSystemFile(systemDir string, shell bool, names []string) string {
+// SystemFile is a shell or OS image DOSBox Pure finds in a system
+// directory.
+type SystemFile struct {
+	Name  string // relative to the system directory, slash-separated, without extension: as boot.shell and boot.os take it
+	File  string // the same with its extension
+	Shell bool   // a .dosz shell, else an OS image
+	Size  int64
+}
+
+// SystemFiles lists the shells and OS images in systemDir as DOSBox Pure
+// counts them (dosbox_pure_libretro.cpp, DBP_ScanSystem): a shell is a
+// .dosz, an image an .img, .ima or .vhd of at least 7 MB in whole
+// 512-byte sectors, at any depth. Sorted by name.
+func SystemFiles(systemDir string) []SystemFile {
 	if systemDir == "" {
-		return ""
+		return nil
 	}
-	found := map[string]string{} // lower-case base name without extension -> path
-	depth := map[string]int{}
+	var out []SystemFile
 	filepath.WalkDir(systemDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
 		ext := strings.ToLower(filepath.Ext(p))
-		switch {
-		case shell && ext == ".dosz":
-		case !shell && (ext == ".img" || ext == ".ima" || ext == ".vhd"):
-			info, err := d.Info()
-			if err != nil || info.Size() < 7<<20 || info.Size()%512 != 0 {
-				return nil
-			}
-		default:
+		shell := ext == ".dosz"
+		if !shell && !(ext == ".img" || ext == ".ima" || ext == ".vhd") {
+			return nil
+		}
+		if !shell && (info.Size() < 7<<20 || info.Size()%512 != 0) {
 			return nil
 		}
 		rel, err := filepath.Rel(systemDir, p)
 		if err != nil {
 			return nil
 		}
-		rel = filepath.ToSlash(strings.TrimSuffix(rel, filepath.Ext(rel)))
-		k := strings.ToLower(path.Base(rel))
-		if old, ok := depth[k]; !ok || strings.Count(rel, "/") < old {
-			found[k], depth[k] = rel, strings.Count(rel, "/")
-		}
+		rel = filepath.ToSlash(rel)
+		out = append(out, SystemFile{Name: strings.TrimSuffix(rel, path.Ext(rel)), File: rel, Shell: shell, Size: info.Size()})
 		return nil
 	})
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// FindSystemFile returns the first of names that names a shell (shell
+// set) or an OS image in systemDir (SystemFiles), as a path relative to
+// it without extension (as boot.shell and boot.os take it), or "". Names
+// match case-insensitively, the shallowest file first.
+func FindSystemFile(systemDir string, shell bool, names []string) string {
+	found := map[string]string{} // lower-case base name without extension -> path
+	depth := map[string]int{}
+	for _, f := range SystemFiles(systemDir) {
+		if f.Shell != shell {
+			continue
+		}
+		k := strings.ToLower(path.Base(f.Name))
+		if old, ok := depth[k]; !ok || strings.Count(f.Name, "/") < old {
+			found[k], depth[k] = f.Name, strings.Count(f.Name, "/")
+		}
+	}
 	for _, n := range names {
 		if p, ok := found[strings.ToLower(n)]; ok {
 			return p
