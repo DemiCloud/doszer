@@ -34,7 +34,7 @@ type Config struct {
 	SystemDir string            // RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY
 	SaveDir   string            // RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY
 	Options   map[string]string // core option values; any other option takes the core's default
-	Title     string            // window title
+	Title     string            // window title, followed by the mouse capture state
 	Frames    int               // stop after this many frames, unpaced (tests); 0 runs until closed
 }
 
@@ -127,6 +127,8 @@ type host struct {
 	quit     bool
 
 	av       avInfo
+	window   uintptr
+	title    string
 	renderer uintptr
 	texture  uintptr
 	texW     uint32
@@ -195,11 +197,13 @@ func Run(cfg Config) error {
 	}
 	defer sdl.Quit()
 	w, ht := windowSize(h.av.geometry)
-	window := sdl.CreateWindow(cfg.Title, sdl.WindowPosCentered, sdl.WindowPosCentered, w, ht, sdl.WindowShown|sdl.WindowResizable|sdl.WindowAllowHighDPI)
+	h.title = cfg.Title
+	window := sdl.CreateWindow(h.windowTitle(), sdl.WindowPosCentered, sdl.WindowPosCentered, w, ht, sdl.WindowShown|sdl.WindowResizable|sdl.WindowAllowHighDPI)
 	if window == 0 {
 		return sdl.Error("SDL_CreateWindow")
 	}
 	defer sdl.DestroyWindow(window)
+	h.window = window
 	if h.renderer = sdl.CreateRenderer(window, -1, sdl.RendererAccelerated); h.renderer == 0 {
 		if h.renderer = sdl.CreateRenderer(window, -1, 0); h.renderer == 0 {
 			return sdl.Error("SDL_CreateRenderer")
@@ -575,9 +579,24 @@ func (h *host) capture(on bool) {
 	}
 	h.captured = on
 	sdl.SetRelativeMouseMode(on)
+	sdl.SetWindowTitle(h.window, h.windowTitle())
 	if !on {
 		h.buttons = [8]bool{}
 	}
+}
+
+// windowTitle is the title with the mouse capture state: while the mouse
+// is captured the host cursor can't reach the window's close button, so
+// the title says how to release it.
+func (h *host) windowTitle() string {
+	state := "click to capture the mouse; close this window when done"
+	if h.captured {
+		state = "mouse captured: press Ctrl+F10 to release it"
+	}
+	if h.title == "" {
+		return state
+	}
+	return h.title + " - " + state
 }
 
 // retroMods converts SDL modifier bits to libretro's RETROKMOD_*.

@@ -143,7 +143,7 @@ func (e Env) runBuiltin(s *Session) error {
 		SystemDir: systemDir,
 		SaveDir:   e.SaveDir,
 		Options:   s.CoreOptions,
-		Title:     "doszer install - click to capture the mouse, Ctrl+F10 releases it; close this window when done",
+		Title:     "doszer install",
 	})
 }
 
