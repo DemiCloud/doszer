@@ -147,12 +147,18 @@ Each `tracks` entry:
 A converted disc image (§6.4) keeps a data track's user data and an audio
 track's samples from INDEX 01. Redump's hash can be reproduced from it for
 a Mode 1 data track, whose other sector bytes (sync, header, EDC and ECC,
-ECMA-130 §14) follow from the sector's address and user data, and for an
-audio track kept as WAV whose pregap was digital silence. An
-implementation MAY check `redump_sha1` by rebuilding the track's raw
-sectors so. A track that does not reproduce its value MUST NOT make the
-archive invalid, and SHOULD produce a warning: a Mode 2 track (whose
-subheaders conversion drops) or a pregap that was not silent cannot be
+ECMA-130 §14) follow from the sector's address and user data; for a Mode 2
+Form 1 (CD-ROM XA) data track whose subheaders follow its ISO 9660 file
+system, as mastering tools write them (end of record on each volume
+descriptor; end of record and of file on the descriptor set terminator and
+on the last sector of every file, directory and path table; data on the
+other sectors of those; zero on sectors none of them uses); and for an
+audio track kept as WAV whose pregap was digital silence. The conversion
+does not record whether a data track was Mode 1 or Mode 2, so both may be
+tried. An implementation MAY check `redump_sha1` by rebuilding the track's
+raw sectors so. A track that does not reproduce its value MUST NOT make
+the archive invalid, and SHOULD produce a warning: a pregap that was not
+silent, or subheaders a disc's mastering set otherwise, cannot be
 reproduced, and an Ogg Vorbis track cannot be checked at all.
 
 > Recorded beside the normalized hashes (`sha1`), `redump_name` and

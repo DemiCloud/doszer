@@ -112,3 +112,23 @@ func (m *mode1Reader) Read(p []byte) (int, error) {
 	m.buf = m.buf[n:]
 	return n, nil
 }
+
+// Mode2Form1 writes into sec (2352 bytes) the raw Mode 2 Form 1 (CD-ROM
+// XA) sector holding data (2048 bytes) at lba, with submode sub in its
+// subheader (file number, channel and coding zero, as on PC discs): the
+// header with mode 2, the subheader twice, the data, an EDC over the
+// subheader and data, then P and Q parity computed as if the header were
+// zero (ECMA-130 §14, CD-ROM XA).
+func Mode2Form1(sec []byte, lba int64, sub byte, data []byte) {
+	copy(sec, "\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00")
+	a := lba + 150
+	bcd := func(n int64) byte { return byte(n/10<<4 | n%10) }
+	sec[16], sec[17], sec[18], sec[19] = 0, 0, sub, 0
+	copy(sec[20:24], sec[16:20])
+	copy(sec[24:2072], data)
+	binary.LittleEndian.PutUint32(sec[2072:], edc(sec[16:2072]))
+	clear(sec[12:16])
+	eccBlock(sec[12:], 86, 24, 2, 86, sec[2076:])
+	eccBlock(sec[12:], 52, 43, 86, 88, sec[2248:])
+	sec[12], sec[13], sec[14], sec[15] = bcd(a/4500), bcd(a/75%60), bcd(a%75), 2
+}

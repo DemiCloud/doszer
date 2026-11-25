@@ -2,6 +2,7 @@ package redump
 
 import (
 	"archive/zip"
+	"bufio"
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
@@ -57,35 +58,23 @@ type part struct {
 }
 
 // Open streams the track's bytes. A file that can't seek (a zip entry) is
-// read from its start.
+// read from its start. A 2048-byte data track is rebuilt as Mode 1.
 func (t ImageTrack) Open() (io.ReadCloser, error) {
 	var readers []io.Reader
-	var files []fs.File
+	var closers []io.Closer
 	closeAll := func() {
-		for _, f := range files {
-			f.Close()
+		for _, c := range closers {
+			c.Close()
 		}
 	}
 	for _, p := range t.parts {
-		if p.name == "" {
-			readers = append(readers, io.LimitReader(zeros{}, p.size))
-			continue
-		}
-		f, err := t.fsys.Open(p.name)
+		r, c, err := t.openPart(p)
 		if err != nil {
 			closeAll()
 			return nil, err
 		}
-		files = append(files, f)
-		var r io.Reader
-		if ra, ok := f.(io.ReaderAt); ok {
-			r = io.NewSectionReader(ra, p.off, p.size)
-		} else {
-			if _, err := io.CopyN(io.Discard, f, p.off); err != nil {
-				closeAll()
-				return nil, fmt.Errorf("%s: %w", p.name, err)
-			}
-			r = io.LimitReader(f, p.size)
+		if c != nil {
+			closers = append(closers, c)
 		}
 		if p.mode1 {
 			r = &mode1Reader{r: r, lba: p.lba}
@@ -93,6 +82,105 @@ func (t ImageTrack) Open() (io.ReadCloser, error) {
 		readers = append(readers, r)
 	}
 	return readCloser{io.MultiReader(readers...), closeAll}, nil
+}
+
+// openPart opens a part's stored bytes: zeros, or a range of its file.
+func (t ImageTrack) openPart(p part) (io.Reader, io.Closer, error) {
+	if p.name == "" {
+		return io.LimitReader(zeros{}, p.size), nil, nil
+	}
+	f, err := t.fsys.Open(p.name)
+	if err != nil {
+		return nil, nil, err
+	}
+	if ra, ok := f.(io.ReaderAt); ok {
+		return io.NewSectionReader(ra, p.off, p.size), f, nil
+	}
+	if _, err := io.CopyN(io.Discard, f, p.off); err != nil {
+		f.Close()
+		return nil, nil, fmt.Errorf("%s: %w", p.name, err)
+	}
+	return io.LimitReader(f, p.size), f, nil
+}
+
+// hash returns the track's SHA-1 and size and, for a 2048-byte data track,
+// also its SHA-1 rebuilt as Mode 2 Form 1 (alt): which mode the disc used
+// isn't kept, so either may be Redump's. Both come from one read.
+func (t ImageTrack) hash() (sum, alt string, size int64, err error) {
+	h1, h2 := sha1.New(), sha1.New()
+	cooked := false
+	sec1, sec2 := make([]byte, 2352), make([]byte, 2352)
+	data := make([]byte, 2048)
+	for _, p := range t.parts {
+		r, c, err := t.openPart(p)
+		if err != nil {
+			return "", "", 0, err
+		}
+		if !p.mode1 {
+			n, err := io.Copy(io.MultiWriter(h1, h2), r)
+			if c != nil {
+				c.Close()
+			}
+			if err != nil {
+				return "", "", 0, err
+			}
+			size += n
+			continue
+		}
+		cooked = true
+		frames := p.size / 2048
+		subs, err := xaSubmodes(func() (io.ReadCloser, error) {
+			r, c, err := t.openPart(p)
+			if err != nil {
+				return nil, err
+			}
+			if c == nil {
+				c = io.NopCloser(nil)
+			}
+			return readCloser{r, func() { c.Close() }}, nil
+		}, frames, p.lba)
+		if err != nil {
+			if c != nil {
+				c.Close()
+			}
+			return "", "", 0, err
+		}
+		br := bufio.NewReaderSize(r, 1<<20)
+		for i := int64(0); i < frames; i++ {
+			if _, err := io.ReadFull(br, data); err != nil {
+				if c != nil {
+					c.Close()
+				}
+				return "", "", 0, err
+			}
+			Mode1(sec1, p.lba+i, data)
+			sub := subs[i]
+			if sub == subNone && !allZero(data) {
+				sub = subData
+			}
+			Mode2Form1(sec2, p.lba+i, sub, data)
+			h1.Write(sec1)
+			h2.Write(sec2)
+			size += 2352
+		}
+		if c != nil {
+			c.Close()
+		}
+	}
+	sum = hex.EncodeToString(h1.Sum(nil))
+	if cooked {
+		alt = hex.EncodeToString(h2.Sum(nil))
+	}
+	return sum, alt, size, nil
+}
+
+func allZero(b []byte) bool {
+	for _, c := range b {
+		if c != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 type zeros struct{}
@@ -287,17 +375,11 @@ func ArchiveImages(path string) (images []*Image, skipped []string, closeAll fun
 func (img *Image) Hash() ([]Track, error) {
 	var out []Track
 	for _, t := range img.Tracks {
-		rc, err := t.Open()
-		if err != nil {
-			return nil, err
-		}
-		h := sha1.New()
-		n, err := io.Copy(h, rc)
-		rc.Close()
+		sum, alt, n, err := t.hash()
 		if err != nil {
 			return nil, fmt.Errorf("%s: track %d: %w", img.Cue, t.Number, err)
 		}
-		out = append(out, Track{Path: fmt.Sprintf("%s, track %d", pathpkg.Base(filepath.ToSlash(img.Cue)), t.Number), Size: n, SHA1: hex.EncodeToString(h.Sum(nil))})
+		out = append(out, Track{Path: fmt.Sprintf("%s, track %d", pathpkg.Base(filepath.ToSlash(img.Cue)), t.Number), Size: n, SHA1: sum, Mode2SHA1: alt})
 	}
 	return out, nil
 }

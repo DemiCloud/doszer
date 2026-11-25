@@ -94,9 +94,9 @@ func Check(archivePath string) (warnings []string, err error) {
 
 // checkRedump checks each media's redump_sha1 values (§5.6) against its
 // disc image rebuilt in Redump's layout (redump.ArchiveImages): data
-// tracks as raw Mode 1 sectors, WAV audio as it is. A track that doesn't
-// rebuild to its value is a warning, not an error: Mode 2 tracks and
-// pregaps that weren't silent can't be rebuilt. An image with Ogg Vorbis
+// tracks as raw Mode 1 or Mode 2 sectors, WAV audio as it is. A track
+// that doesn't rebuild to its value is a warning, not an error: a pregap
+// that wasn't silent isn't kept. An image with Ogg Vorbis
 // tracks can't be checked and is left alone.
 func checkRedump(archivePath string, media []manifest.Media) ([]string, error) {
 	var want []*manifest.Media
@@ -129,8 +129,8 @@ func checkRedump(archivePath string, media []manifest.Media) ([]string, error) {
 		}
 		for i, t := range tracks {
 			r := md.Tracks[i].RedumpSHA1
-			if r != "" && t.SHA1 != r {
-				warnings = append(warnings, fmt.Sprintf("source.media %q: track %d doesn't rebuild to its redump_sha1 (a Mode 2 track, or a pregap that wasn't silent?)", md.ID, i+1))
+			if r != "" && !t.Matches(r) {
+				warnings = append(warnings, fmt.Sprintf("source.media %q: track %d doesn't rebuild to its redump_sha1 (a pregap that wasn't silent?)", md.ID, i+1))
 			}
 		}
 	}

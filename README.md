@@ -182,13 +182,14 @@ disc in Redump's datfile (the one `doszer redump` uses) also gets the
 disc's Redump name (`redump_name`), link (`redump`) and each track's
 Redump hash (`redump_sha1`): which Redump dump the archive's disc is,
 shown by `info`. A built archive keeps a data track as 2048-byte sectors
-and audio as WAV or Ogg Vorbis, but a Mode 1 data track's other sector
-bytes (sync, header, EDC, ECC) follow from its address and data, so
-`verify` rebuilds the raw tracks and checks them against `redump_sha1`,
-warning about any that differ (spec §5.6). That works for Mode 1 data and
-WAV audio whose pregap was silent: `--audio wav` keeps a disc checkable.
-Ogg Vorbis tracks can't be checked; a Mode 2 track (subheaders dropped)
-or a pregap that wasn't silent won't rebuild exactly. `doszer redump
+and audio as WAV or Ogg Vorbis, but a data track's other sector bytes
+follow from what it keeps: a Mode 1 sector's sync, header, EDC and ECC
+from its address and data, and a Mode 2 (CD-ROM XA) sector's subheader
+from the disc's own file system too (which sectors end a file, a
+directory, a path table). So `verify` rebuilds the raw tracks, both ways
+for a data track, and checks them against `redump_sha1`, warning about
+any that differ (spec §5.6). Audio needs WAV whose pregap was silent:
+`--audio wav` keeps a disc checkable; Ogg Vorbis tracks can't be checked. `doszer redump
 FILE.dosz` looks an archive's discs up in Redump's datfile the same way,
 whatever its manifest records.
 

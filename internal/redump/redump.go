@@ -242,6 +242,16 @@ type Track struct {
 	Path string
 	Size int64
 	SHA1 string
+	// Mode2SHA1 is a data track rebuilt from 2048-byte sectors as Mode 2
+	// Form 1 instead of Mode 1 (SHA1): the sectors don't say which the
+	// disc used. Empty for a track read as it is.
+	Mode2SHA1 string
+}
+
+// Matches reports whether the track's SHA-1, or its Mode 2 rebuild's,
+// is sha1.
+func (t Track) Matches(sha1 string) bool {
+	return t.SHA1 == sha1 || (t.Mode2SHA1 != "" && t.Mode2SHA1 == sha1)
 }
 
 // HashTracks hashes a dump's track files.
@@ -282,7 +292,7 @@ func (db *DB) Match(tracks []Track) (*Match, error) {
 	counts := map[int]int{}
 	for _, t := range tracks {
 		seen := map[int]bool{}
-		for _, d := range db.bySHA1[t.SHA1] {
+		for _, d := range append(append([]int{}, db.bySHA1[t.SHA1]...), db.bySHA1[t.Mode2SHA1]...) {
 			if !seen[d] && hasRom(db.Discs[d], t) {
 				seen[d] = true
 				counts[d]++
@@ -312,7 +322,7 @@ func (db *DB) Match(tracks []Track) (*Match, error) {
 
 func hasRom(d Disc, t Track) bool {
 	for _, r := range d.Tracks {
-		if r.SHA1 == t.SHA1 && r.Size == t.Size {
+		if t.Matches(r.SHA1) && r.Size == t.Size {
 			return true
 		}
 	}
