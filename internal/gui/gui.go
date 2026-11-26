@@ -426,7 +426,9 @@ func (a *app) event(e *sdl.Event) {
 				a.selStart(h, e.Clicks())
 				break
 			}
-			a.tsel.active = false
+			if a.popup == nil { // a menu over the selection keeps it
+				a.tsel.active = false
+			}
 			a.click(e.Clicks() >= 2)
 		case 3:
 			if h := a.selAt(); h != nil && a.popup == nil {

@@ -720,12 +720,14 @@ func (a *app) selMenu(h *selHit) {
 	if from, to := a.tsel.span(); !a.tsel.active || a.tsel.region != h.region || from == to && !a.tsel.whole {
 		a.tsel = textSel{region: h.region, from: selPos{h.idx, 0}, to: selPos{h.idx, a.lineLen(h.region, h.idx)}, active: true, whole: h.text == ""}
 	}
-	region := h.region
+	// Taken as the menu opens: the click choosing Copy mustn't be able
+	// to change what it copies.
+	sel, all := a.selected_(), strings.Join(a.selText[h.region], "\n")
 	a.openMenu(a.mx, a.my, []string{"Copy\tCtrl+C", "Copy all"}, func(i int) {
 		if i == 0 {
-			a.copyText(a.selected_())
+			a.copyText(sel)
 		} else {
-			a.copyText(strings.Join(a.selText[region], "\n"))
+			a.copyText(all)
 		}
 	})
 }
