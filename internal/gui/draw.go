@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/image/font"
@@ -300,3 +301,25 @@ func (a *app) clearCaches() {
 func destroyTexture(t *texture) { sdl.DestroyTexture(t.t) }
 
 func raiseWindow(w uintptr) { sdl.RaiseWindow(w) }
+
+// wrap breaks s into lines of at most width pixels, at spaces.
+func (a *app) wrap(s string, width int32, size float64) []string {
+	var out []string
+	for _, para := range strings.Split(s, "\n") {
+		line := ""
+		for _, w := range strings.Fields(para) {
+			try := w
+			if line != "" {
+				try = line + " " + w
+			}
+			if line != "" && a.textWidth(try, size, false) > width {
+				out = append(out, line)
+				line = w
+				continue
+			}
+			line = try
+		}
+		out = append(out, line)
+	}
+	return out
+}

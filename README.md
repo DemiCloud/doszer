@@ -886,15 +886,22 @@ from a disc, into a ROM folder, by the commands one would type:
    Windows 9x OS image), CD audio as Ogg Vorbis or WAV, which ROM folder
    (or system subfolder, e.g. RetroDECK's `windows9x`) it goes in, and
    whether to keep the dump.
+   And whether to install it first (on by default), and, for a Windows
+   9x setup that only installs to C:, `--drive c`.
 3. **Build**: `doszer dump` (or `dump --from FILE`, once per disc) into
-   `paths.sources/<name>`, `doszer init`, `doszer build`, one after the
-   other in a dialog with their output; the new archive is selected in
-   the list. The dump (BIN/CUE and DOSZ.TOML) stays in `paths.sources`
+   `paths.sources/<name>` and `doszer init`, one after the other in a
+   dialog with their output. Installing, it then says what comes next and
+   runs `doszer install`: DOSBox Pure opens with the disc, you run its
+   setup and close the window, and the installed files are extracted
+   into the source. A last page lists the programs the setup installed
+   (`doszer start SOURCE`), the likeliest chosen, and Build runs `doszer
+   start SOURCE PROGRAM` (`boot.exec`, or a `WINDOWS.BAT` for Windows)
+   and `doszer build`. The new archive is selected in the list. The dump (BIN/CUE and DOSZ.TOML) stays in `paths.sources`
    to rebuild or change later, unless not kept. Until doszer is set up
    it goes to a temporary folder instead, removed afterwards.
 
-A game that is only its disc (not installed) boots DOSBox Pure's start
-menu; `doszer install` installs it from there.
+A game built without installing boots DOSBox Pure's start menu (or
+Windows), from which it runs off its disc.
 
 ### First run
 

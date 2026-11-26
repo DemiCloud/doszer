@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DemiCloud/doszer/internal/config"
+	"github.com/DemiCloud/doszer/internal/start"
 )
 
 // addGame is the Add a game flow: a disc in a CD drive, or disc image
@@ -29,6 +30,19 @@ type addGame struct {
 	dests    []string
 	keep     bool
 	named    bool // the name was typed, not suggested
+	install  bool // run its setup in DOSBox Pure, then choose the program it starts
+	driveC   bool // install --drive c: the setup only installs to C:
+
+	// Once installed: choosing the program the game starts with.
+	plan       *addPlan
+	candidates []start.Candidate
+	choice     int
+}
+
+// addPlan is where a game being added goes.
+type addPlan struct {
+	name, src, out string
+	temp, keep     bool
 }
 
 var bootChoices = []struct{ label, flag string }{
@@ -48,7 +62,7 @@ func (a *app) openAddGame() {
 		a.alert("No ROM folder", "Choose where games go first: Settings, Games (ROMs).")
 		return
 	}
-	g := &addGame{drives: opticalDrives(), discs: 1, keep: true}
+	g := &addGame{drives: opticalDrives(), discs: 1, keep: true, install: true}
 	g.useFiles = len(g.drives) == 0
 	for i, d := range g.drives {
 		if d.disc {
@@ -200,26 +214,91 @@ func (a *app) addGameRun() {
 	if a.o.SystemDir != "" {
 		initArgs = append(initArgs, "--system-dir", a.o.SystemDir)
 	}
+	steps = append(steps, step{args: append(initArgs, src)})
+	plan := &addPlan{name: g.name.text, src: src, out: out, temp: temp, keep: g.keep && !temp}
+	if !g.install {
+		a.add = nil
+		a.runSteps("Add "+plan.name, append(steps, buildStep(plan)), a.added(plan))
+		return
+	}
+	installArgs := []string{"install", "--format", "plain"}
+	if g.driveC {
+		installArgs = append(installArgs, "--drive", "c")
+	}
+	if a.o.SystemDir != "" {
+		installArgs = append(installArgs, "--system-dir", a.o.SystemDir)
+	}
 	steps = append(steps,
-		step{args: append(initArgs, src)},
-		step{args: []string{"build", "--format", "plain", src, out}},
+		step{prompt: "Next, DOSBox Pure opens with the game's disc. Run its setup (SETUP.EXE or INSTALL.EXE: in Windows, from the CD drive), install the game, then close DOSBox Pure's window."},
+		step{args: append(installArgs, src)},
 	)
-	keep := g.keep && !temp
 	a.add = nil
-	a.runSteps("Add "+g.name.text, steps, func(err error) {
-		if !keep && err == nil {
-			if temp {
-				os.RemoveAll(filepath.Dir(src))
+	a.runSteps("Add "+plan.name, steps, func(err error) {
+		if err != nil {
+			a.say("The game's files are kept in "+plan.src+" to try again", true)
+			return
+		}
+		a.chooseStart(plan)
+	})
+}
+
+// buildStep builds plan's archive.
+func buildStep(p *addPlan) step {
+	return step{args: []string{"build", "--format", "plain", p.src, p.out}}
+}
+
+// added is what happens once a game is built: its dump removed unless
+// kept, the list read again with the new archive selected.
+func (a *app) added(p *addPlan) func(error) {
+	return func(err error) {
+		if err != nil {
+			return
+		}
+		if !p.keep {
+			if p.temp {
+				os.RemoveAll(filepath.Dir(p.src))
 			} else {
-				os.RemoveAll(src)
+				os.RemoveAll(p.src)
 			}
 		}
-		if err == nil {
-			a.selectAfterScan = out
-			a.rescan()
-			a.say("Added "+filepath.Base(out), false)
+		a.selectAfterScan = p.out
+		a.rescan()
+		a.say("Added "+filepath.Base(p.out), false)
+	}
+}
+
+// chooseStart asks which installed program starts the game (the list
+// `doszer start SOURCE` prints), then sets it and builds.
+func (a *app) chooseStart(p *addPlan) {
+	cs, _, err := start.Candidates(p.src)
+	if err != nil {
+		a.alert("Can't read the installed game", err.Error())
+		return
+	}
+	g := &addGame{page: 2, plan: p, candidates: cs}
+	for i, c := range cs {
+		if c.Current {
+			g.choice = i
+			break
 		}
-	})
+		if c.Likely {
+			g.choice = i
+		}
+	}
+	a.add, a.dialog = g, nil
+}
+
+// addGameFinish sets the chosen program (doszer start) and builds.
+func (a *app) addGameFinish(set bool) {
+	g := a.add
+	p := g.plan
+	var steps []step
+	if set && len(g.candidates) > 0 {
+		steps = append(steps, step{args: []string{"start", "--format", "plain", "--force", p.src, g.candidates[g.choice].Path}})
+	}
+	steps = append(steps, buildStep(p))
+	a.add = nil
+	a.runSteps("Add "+p.name, steps, a.added(p))
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
@@ -242,17 +321,23 @@ func (a *app) drawAddGame() {
 	p := a.px(24)
 	ty := y + p
 	title := "Add a game: where is it?"
-	if g.page == 1 {
+	switch g.page {
+	case 1:
 		title = "Add a game: how should it be built?"
+	case 2:
+		title = "Add a game: which program starts it?"
 	}
 	a.text(title, x+p, ty, 19, true, colText)
 	ty += a.lineHeight(19, true) + a.px(16)
 	cx, cw := x+p, w-2*p
 
-	if g.page == 0 {
+	switch g.page {
+	case 0:
 		ty = a.addGameSource(g, cx, ty, cw)
-	} else {
+	case 1:
 		ty = a.addGameOptions(g, cx, ty, cw)
+	case 2:
+		ty = a.addGameStart(g, cx, ty, cw, y+h-p-a.px(48))
 	}
 
 	// Buttons.
@@ -263,13 +348,30 @@ func (a *app) drawAddGame() {
 		a.button(label, bx, by, style, fn)
 		bx -= a.px(8)
 	}
-	if g.page == 0 {
+	switch g.page {
+	case 0:
 		place("Next", btnAccent, a.addGameNext)
-	} else {
-		place("Build", btnAccent, a.addGameRun)
+	case 1:
+		label := "Build"
+		if g.install {
+			label = "Install"
+		}
+		place(label, btnAccent, a.addGameRun)
 		place("Back", btnNormal, func() { g.page = 0; a.focus = nil })
+	case 2:
+		if len(g.candidates) > 0 {
+			place("Build", btnAccent, func() { a.addGameFinish(true) })
+			place("Build without one", btnNormal, func() { a.addGameFinish(false) })
+		} else {
+			place("Build anyway", btnAccent, func() { a.addGameFinish(false) })
+		}
 	}
-	place("Cancel", btnNormal, func() { a.add = nil })
+	place("Cancel", btnNormal, func() {
+		if g.plan != nil {
+			a.say("The installed game is kept in "+g.plan.src, false)
+		}
+		a.add = nil
+	})
 }
 
 // option draws a selectable card and returns the y below it.
@@ -402,19 +504,61 @@ func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {
 		note(out, colFaint)
 	}
 
+	row("Install")
+	box := func(on bool, label string) string {
+		if on {
+			return "■  " + label
+		}
+		return "□  " + label
+	}
+	a.button(box(g.install, "Install it first"), fx, y, btnGhost, func() { g.install = !g.install })
+	y += a.px(34)
+	if g.install {
+		note("DOSBox Pure opens with the disc: run its setup, then close the window.", colFaint)
+		a.button(box(g.driveC, "Its setup only installs to C: (Windows 9x)"), fx, y-a.px(6), btnGhost, func() { g.driveC = !g.driveC })
+		y += a.px(34)
+	} else {
+		note("For a game that runs from its disc, or is installed already.", colFaint)
+	}
+
 	srcs := config.SourcesDirOf(a.cfg)
 	row("The dump")
 	if srcs.Path == "" {
 		a.text("Not kept: doszer isn't set up, so it goes in a temporary folder.", fx, y+a.px(7), 13, false, colMuted)
 		y += a.px(38)
 	} else {
-		box := "□  Keep it"
-		if g.keep {
-			box = "■  Keep it"
-		}
-		a.button(box, fx, y, btnGhost, func() { g.keep = !g.keep })
+		a.button(box(g.keep, "Keep it"), fx, y, btnGhost, func() { g.keep = !g.keep })
 		y += a.px(38)
 		note("In "+filepath.Join(srcs.Path, safeName(g.name.text))+": the BIN/CUE and DOSZ.TOML, to rebuild or change later.", colFaint)
+	}
+	return y
+}
+
+// addGameStart lists the installed programs to choose from.
+func (a *app) addGameStart(g *addGame, x, y, w, bottom int32) int32 {
+	if len(g.candidates) == 0 {
+		a.text("The setup added no programs doszer can start.", x, y, 14, false, colText)
+		y += a.px(26)
+		a.text(a.ellipsize("Build anyway: the archive boots DOSBox Pure's start menu, or Windows. "+g.plan.src+" keeps the files.", w, 12, false), x, y, 12, false, colMuted)
+		return y + a.px(30)
+	}
+	for _, l := range a.wrap("The setup installed these into "+g.plan.src+". The game starts with the one you choose (doszer start):", w, 13) {
+		a.text(l, x, y, 13, false, colMuted)
+		y += a.lineHeight(13, false) + a.px(4)
+	}
+	y += a.px(8)
+	a.pushClip(x, y, w, bottom-y)
+	defer a.popClip()
+	for i, c := range g.candidates {
+		detail := c.Target
+		if c.Runs != "" {
+			detail += ", runs " + c.Runs
+		}
+		if c.Likely {
+			detail += " (likeliest)"
+		}
+		idx := i
+		y = a.option(x, y, w, g.choice == i, c.Path, detail, func() { g.choice = idx })
 	}
 	return y
 }

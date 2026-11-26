@@ -96,6 +96,25 @@ func TestScreenshot(t *testing.T) {
 			}
 		}
 	}
+	// A source as install leaves one, for the program choice.
+	src := filepath.Join(t.TempDir(), "Some Game")
+	for p, data := range map[string]string{
+		"DOSZ.TOML":        "format = 1\nname = 'Some Game'\n",
+		"GAME/GAME.EXE":    "MZ" + string(make([]byte, 62)),
+		"GAME/RUNGAME.BAT": "@echo off\r\ngame\r\n",
+		"GAME/SNDSET.EXE":  "MZ" + string(make([]byte, 62)),
+		"GAME/SETUP.EXE":   "MZ" + string(make([]byte, 62)),
+	} {
+		os.MkdirAll(filepath.Dir(filepath.Join(src, p)), 0o755)
+		os.WriteFile(filepath.Join(src, p), []byte(data), 0o644)
+	}
+	shots["addstart.png"] = func(a *App) {
+		a.chooseStart(&addPlan{name: "Some Game", src: src, out: filepath.Join(t.TempDir(), "Some Game.dosz")})
+	}
+	shots["prompt.png"] = func(a *App) {
+		a.runSteps("Add Some Game", []step{{prompt: "Next, DOSBox Pure opens with the game's disc. Run its setup (SETUP.EXE or INSTALL.EXE: in Windows, from the CD drive), install the game, then close DOSBox Pure's window."}}, nil)
+		a.jobs = nil // the shot shows it waiting
+	}
 	for name, setup := range shots {
 		romFlag := roms
 		if roms == "-" {

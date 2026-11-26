@@ -126,7 +126,7 @@ func (a *app) startStep(d *dialog) {
 	if st.prompt != "" {
 		j.waiting = true
 		d.lines = []string{st.prompt}
-		j.Write([]byte("\n" + st.prompt + "\n"))
+		j.Write([]byte("\n(waiting for you)\n"))
 		d.buttons = []dialogButton{stop, {label: "Continue", style: btnAccent, fn: func() {
 			j.waiting = false
 			j.notify <- nil
@@ -258,7 +258,15 @@ func (a *app) drawDialog() {
 	}
 	lh := a.lineHeight(13, false) + a.px(4)
 	mono := a.lineHeight(12, false) + a.px(3)
-	h := p*2 + a.lineHeight(17, true) + a.px(12) + int32(len(d.lines))*lh + a.px(48)
+	// A message wraps; a command line is one line, shortened.
+	lines := d.lines
+	if d.job == nil || d.job.waiting {
+		lines = nil
+		for _, l := range d.lines {
+			lines = append(lines, a.wrap(l, w-2*a.px(22), 13)...)
+		}
+	}
+	h := p*2 + a.lineHeight(17, true) + a.px(12) + int32(len(lines))*lh + a.px(48)
 	if d.field != nil {
 		h += a.px(44)
 	}
@@ -273,9 +281,12 @@ func (a *app) drawDialog() {
 	ty := y + p
 	a.text(a.ellipsize(d.title, w-2*p, 17, true), x+p, ty, 17, true, colText)
 	ty += a.lineHeight(17, true) + a.px(12)
-	for _, l := range d.lines {
+	for _, l := range lines {
 		c := colMuted
-		if d.job != nil {
+		switch {
+		case d.job != nil && d.job.waiting:
+			c = colShell // what to do
+		case d.job != nil:
 			c = colAccent // the command line
 		}
 		a.text(a.ellipsize(l, w-2*p, 13, false), x+p, ty, 13, false, c)
