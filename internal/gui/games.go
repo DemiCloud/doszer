@@ -438,7 +438,7 @@ func (a *app) drawRow(g *library.Game, x, y, w, h int32, sel, hover bool) {
 	iy := y + (h-is)/2
 	a.drawIcon(g, ix, iy, is)
 
-	right := a.px(200)
+	right := a.px(360)
 	tx := ix + is + a.px(16)
 	tw := w - (tx - x) - right - a.px(24)
 	ty := y + a.px(12)
@@ -453,6 +453,34 @@ func (a *app) drawRow(g *library.Game, x, y, w, h int32, sel, hover bool) {
 	rx := x + w - a.px(16)
 	ry := y + a.px(14)
 	lh := a.lineHeight(13, false) + a.px(4)
+
+	// What it needs and what disc it is, as Ryujinx shows a title ID.
+	mx := sx + a.px(16)
+	my := ry
+	if osl, bad := a.needBadge(g); osl != "" {
+		c := colMuted
+		if bad {
+			c = colError
+		}
+		a.badge(strings.TrimPrefix(osl, "Needs "), c, mx, my)
+	}
+	my += a.lineHeight(12, false) + a.px(12)
+	if g.Disc != "" {
+		id := g.Disc[:8]
+		iw := a.textWidth(id, 12, false) + a.px(16)
+		ih := a.lineHeight(12, false) + a.px(6)
+		bg := rgba{72, 72, 80, 255}
+		if a.hovered(mx, my, iw, ih) {
+			bg = colCardSel
+		}
+		a.round(mx, my, iw, ih, a.px(5), bg)
+		a.monoText(id, mx+a.px(8), my+a.px(3), colText)
+		full := g.Disc
+		a.clipHit(mx, my, iw, ih, func(bool) { a.copyText(full) })
+		if g.Redump != "" {
+			a.text("Redump", mx+iw+a.px(8), my+a.px(3), 12, false, colDOS)
+		}
+	}
 	played := "Never played"
 	if !g.LastPlayed.IsZero() {
 		played = g.LastPlayed.Local().Format("Jan 2, 2006 3:04 PM")
@@ -501,13 +529,6 @@ func (a *app) chip(g *library.Game, x, y int32) {
 		return
 	}
 	x += a.badge(label, c, x, y) + a.px(6)
-	if need, bad := a.needBadge(g); need != "" {
-		nc := colMuted
-		if bad {
-			nc = colError
-		}
-		x += a.badge(need, nc, x, y) + a.px(6)
-	}
 	switch {
 	case g.Broken != "":
 		a.badge(a.ellipsize(g.Broken, a.px(360), 12, false), colError, x, y)

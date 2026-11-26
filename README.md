@@ -852,12 +852,14 @@ A file dropped on the window plays (`.dosz`), starts an import (`.cue`,
   list or grid: each archive's icon (`DOSZ.ICO`, else its initial),
   name, folder, how it boots (DOS, a Windows 3.x shell, an OS image,
   flagged when the system folder lacks it), when it was last played,
-  for how long, and its size; the oldest Windows its programs need
-  ("Needs Windows 95", from their headers, as `init` and `info` read
-  them; a parent's when the game has none of its own), in red when no
-  shell or image in the system folder is new enough or the one it boots
-  is too old (judged by their names, e.g. "Windows 98 (games)"); a game
-  over parent archives shows its
+  for how long, and its size. On the right, the oldest Windows its
+  programs need ("Windows 95", from their headers, as `init` and `info`
+  read them; a parent's when the game has none of its own), in red when
+  no shell or image in the system folder is new enough or the one it
+  boots is too old (judged by their names, e.g. "Windows 98 (games)"),
+  and its disc: the first data track's SHA-1 from its manifest, short
+  (a click copies it whole), marked Redump when Redump has the disc. A
+  game over parent archives shows its
   chain, and one whose chain is broken says why. The System menu shows
   only the games booting one system (DOS, a shell, an OS image), needing
   one, missing their system, or with a broken chain; Tools verifies every game

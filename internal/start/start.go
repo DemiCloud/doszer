@@ -58,7 +58,7 @@ func Candidates(source string) ([]Candidate, *manifest.Manifest, error) {
 		}
 		keep = append(keep, p)
 	}
-	likely := platform.Likely(keep, m.Name)
+	likely := likeliest(keep, m.Name)
 	cur := current(source, m)
 	var out []Candidate
 	for _, p := range keep {
@@ -197,10 +197,19 @@ func Set(source, program string, force, dryRun bool) (*Result, error) {
 			}
 			return s
 		}
-		reg := path.Join(dir, "INSTALL.REG")
-		if _, err := os.Stat(filepath.Join(source, filepath.FromSlash(reg))); err == nil {
-			res.Registy = win(reg)
-			b.WriteString("REGEDIT /S " + res.Registy + "\r\n")
+		// install writes INSTALL.REG at the extracted folder's root,
+		// the program's folder or one above it (SIERRA/INSTALL.REG for
+		// SIERRA/ANTARA/ANTARAR.EXE).
+		for d := dir; ; d = path.Dir(d) {
+			reg := path.Join(d, "INSTALL.REG")
+			if _, err := os.Stat(filepath.Join(source, filepath.FromSlash(reg))); err == nil {
+				res.Registy = win(strings.TrimPrefix(reg, "./"))
+				b.WriteString("REGEDIT /S " + res.Registy + "\r\n")
+				break
+			}
+			if d == "." || d == "/" {
+				break
+			}
 		}
 		b.WriteString("D:\r\n")
 		if dir != "." {
@@ -213,4 +222,41 @@ func Set(source, program string, force, dryRun bool) (*Result, error) {
 		return res, nil
 	}
 	return res, os.WriteFile(bat, []byte(res.Batch), 0o644)
+}
+
+// likeliest is the program the game most likely starts with: platform.Likely's
+// (named after its folder or the game), else the one program whose name
+// begins with its folder's or the game's last word (ANTARAR.EXE in
+// SIERRA/ANTARA, of Betrayal in Antara), else nil.
+func likeliest(progs []platform.Program, name string) *platform.Program {
+	if p := platform.Likely(progs, name); p != nil {
+		return p
+	}
+	norm := func(s string) string {
+		var b strings.Builder
+		for _, r := range strings.ToLower(s) {
+			if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+				b.WriteRune(r)
+			}
+		}
+		return b.String()
+	}
+	words := strings.Fields(name)
+	last := ""
+	if len(words) > 0 {
+		last = norm(words[len(words)-1])
+	}
+	var hit *platform.Program
+	for i, p := range progs {
+		base := norm(strings.TrimSuffix(path.Base(p.Path), path.Ext(p.Path)))
+		dir := norm(path.Base(path.Dir(p.Path)))
+		match := func(stem string) bool { return len(stem) >= 4 && strings.HasPrefix(base, stem) }
+		if match(dir) || match(last) {
+			if hit != nil {
+				return nil
+			}
+			hit = &progs[i]
+		}
+	}
+	return hit
 }

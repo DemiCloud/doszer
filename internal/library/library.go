@@ -49,6 +49,8 @@ type Game struct {
 	Parents  []string      // its parent chain, nearest first, by file name
 	Broken   string        // why the parent chain can't be followed, or ""
 	Need     platform.Need // what its programs need (its own, else its parents')
+	Disc     string        // its first disc's first data track SHA-1 (the manifest's [[source.media]]), or ""
+	Redump   string        // that disc's Redump name, if Redump has it
 
 	LastPlayed time.Time
 	PlayTime   time.Duration
@@ -160,8 +162,21 @@ func read(dir, p string) Game {
 		switch {
 		case f.Name == manifest.FileName:
 			if data, err := small(f, 1<<20); err == nil {
-				if m, err := manifest.Parse(data, stem); err == nil && m.Name != "" {
-					g.Name = m.Name
+				if m, err := manifest.Parse(data, stem); err == nil {
+					if m.Name != "" {
+						g.Name = m.Name
+					}
+					// The disc identifies the game, as a title ID would.
+					if len(m.Source.Media) > 0 {
+						md := m.Source.Media[0]
+						g.Redump = md.RedumpName
+						for _, t := range md.Tracks {
+							if t.Type == manifest.TrackData {
+								g.Disc = t.SHA1
+								break
+							}
+						}
+					}
 				}
 			}
 		case strings.EqualFold(f.Name, build.IconName):

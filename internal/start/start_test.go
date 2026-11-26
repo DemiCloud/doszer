@@ -90,6 +90,30 @@ func TestCandidatesAndSet(t *testing.T) {
 		}
 	})
 
+	t.Run("OS image, Sierra's layout", func(t *testing.T) {
+		// As Betrayal in Antara installs: the game in SIERRA/ANTARA,
+		// Sierra's tools beside it, install's INSTALL.REG at SIERRA.
+		dir := source(t, "[boot]\nos = 'dosbox_pure/Win98'\n", map[string][]byte{
+			"SIERRA/ANTARA/ANTARAR.EXE": winExe(),
+			"SIERRA/SIGSPAT.EXE":        winExe(),
+			"SIERRA/INSTALL.REG":        []byte("REGEDIT4\r\n"),
+		})
+		cs, _, err := Candidates(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(cs) != 2 || cs[0].Path != "SIERRA/ANTARA/ANTARAR.EXE" || !cs[0].Likely {
+			t.Fatalf("candidates = %+v", cs)
+		}
+		res, err := Set(dir, cs[0].Path, false, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(res.Batch, "@ECHO OFF\r\nREGEDIT /S D:\\SIERRA\\INSTALL.REG\r\nD:\r\nCD \\SIERRA\\ANTARA\r\n") {
+			t.Errorf("WINDOWS.BAT =\n%q", res.Batch)
+		}
+	})
+
 	t.Run("shell", func(t *testing.T) {
 		dir := source(t, "[boot]\nshell = 'dosbox_pure/Win31'\n", map[string][]byte{"SKI/SKI.EXE": winExe()})
 		res, err := Set(dir, "SKI/SKI.EXE", false, false)
