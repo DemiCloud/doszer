@@ -1029,7 +1029,8 @@ changed.
 | Alt+F12 (hold) | fast-forward, without sound |
 | Ctrl+F5 | screenshot, at the game's resolution, to `Pictures/doszer` in the home directory |
 
-Pause, fast-forward, screenshot and mouse release use DOSBox's own keys.
+| Ctrl+F4 | next disc: the next disc or floppy image in the drive, named in the title |
+Pause, fast-forward, screenshot, disc swap and mouse release use DOSBox's own keys.
 On a Steam Deck (or any Steam Input controller), they can go on a Steam
 menu or the back buttons, as key presses. A game's own rarely used keys
 are better in the archive, as DOSBox Pure's action wheel (`[[input.pad]]`

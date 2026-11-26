@@ -1121,7 +1121,7 @@ Options:
 }
 
 // windowHelp is printed when DOSBox Pure's window opens.
-const windowHelp = "Click the window to capture the mouse, Ctrl+F10 releases it. Alt+Pause: pause, Alt+Enter: fullscreen, hold Alt+F12: fast-forward, Ctrl+F5: screenshot."
+const windowHelp = "Click the window to capture the mouse, Ctrl+F10 releases it. Alt+Pause: pause, Alt+Enter: fullscreen, hold Alt+F12: fast-forward, Ctrl+F5: screenshot, Ctrl+F4: next disc."
 
 // runRun implements `doszer run <archive.dosz>`.
 func runRun(args []string) error {

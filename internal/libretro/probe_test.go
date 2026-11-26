@@ -15,7 +15,8 @@ import (
 // a way to see what a game does without a window. Skipped unless
 // DOSZER_PROBE_CONTENT is set; DOSZER_PROBE_SYSTEM is the system
 // directory, DOSZER_PROBE_FRAMES how long to run (default 7200). Saves
-// are kept in DOSZER_PROBE_OUT/saves.
+// are kept in DOSZER_PROBE_OUT/saves. DOSZER_PROBE_SWAP is a frame
+// after which to swap discs (Ctrl+F4), logging the disc then in the drive.
 func TestProbe(t *testing.T) {
 	content := os.Getenv("DOSZER_PROBE_CONTENT")
 	if content == "" {
@@ -43,6 +44,13 @@ func TestProbe(t *testing.T) {
 		ramdisk = "diff"
 	}
 	last := 0
+	probeSwapAt = envInt("DOSZER_PROBE_SWAP", 0)
+	defer func() {
+		if probeSwapAt != 0 {
+			t.Logf("swapped at frame %d: %q", probeSwapAt, probeDisc)
+		}
+		probeSwapAt, probeDisc = 0, ""
+	}()
 	err = Run(Config{Core: corePath, SDL: sdlLibs, Content: content, SystemDir: os.Getenv("DOSZER_PROBE_SYSTEM"),
 		SaveDir: saves, Title: "probe", Frames: frames, Paced: os.Getenv("DOSZER_PROBE_PACED") != "",
 		Options: map[string]string{"dosbox_pure_menu_time": "0", "dosbox_pure_bootos_ramdisk": ramdisk},

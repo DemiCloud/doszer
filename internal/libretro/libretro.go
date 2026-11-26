@@ -168,6 +168,9 @@ type host struct {
 
 	vfs vfsState
 
+	disk diskControl // the core's disc swapping
+	disc string      // the disc swapped in, for the title
+
 	onFrame func(frame int, pix []byte, width, height, pitch int)
 	frame   int
 }
@@ -294,6 +297,9 @@ func Run(cfg Config) error {
 			continue
 		}
 		core.run()
+		if frame == probeSwapAt {
+			h.nextDisc()
+		}
 		// Fast-forward draws at most 60 frames a second: presenting
 		// every one would cap the speed.
 		if !h.fast || time.Since(h.lastDraw) >= time.Second/60 {
@@ -549,8 +555,12 @@ func environment(cmd uint32, data unsafe.Pointer) uintptr {
 	case envSetGeometry:
 		h.av.geometry = *(*geometry)(data)
 		h.texW, h.texH = 0, 0 // re-derive the logical size
+	case envSetDiskControlInterface:
+		h.setDiskControl(data, false)
+	case envSetDiskControlExt:
+		h.setDiskControl(data, true)
 	case envSetSupportNoGame, envSetSupportAchievements, envSetInputDescriptors, envSetControllerInfo,
-		envSetMemoryMaps, envSetDiskControlInterface, envSetDiskControlExt, envSetMessageExt:
+		envSetMemoryMaps, envSetMessageExt:
 		// Accepted, nothing to do.
 	case envSetHWRender:
 		return 0 // software rendering only
@@ -703,6 +713,12 @@ func (h *host) event(e *sdl.Event, window uintptr) {
 			}
 			return
 		}
+		if key == retrokF4 && mod&sdl.KmodCtrl != 0 {
+			if down {
+				h.nextDisc()
+			}
+			return
+		}
 		if key == retrokF10 && mod&sdl.KmodCtrl != 0 {
 			if down {
 				h.capture(false)
@@ -748,10 +764,8 @@ func (h *host) setPaused(on bool) {
 		if h.audio != 0 {
 			sdl.ClearQueuedAudio(h.audio)
 		}
-		sdl.SetWindowTitle(h.window, h.title+" (paused)")
-		return
 	}
-	sdl.SetWindowTitle(h.window, h.title)
+	h.setTitle()
 }
 
 // toggleFullscreen switches between the window and borderless

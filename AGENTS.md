@@ -265,13 +265,14 @@ against DOSBox Pure 1.0 Preview 8 (`dosbox_pure_libretro.cpp`) and its
 | Time | Without `GET_PERF_INTERFACE` the core uses its own clock | `time_cb = dbp_cpu_features_get_time_usec` |
 | Logging | Without `GET_LOG_INTERFACE` the core `vfprintf`s to stderr | `retro_fallback_log` |
 | Pixel format | XRGB8888 (SDL's `RGB888`), software rendered | `retro_load_game`, `SET_PIXEL_FORMAT` |
+| Disc swapping | `SET_DISK_CONTROL_EXT_INTERFACE` (else the plain one): images are every disc and floppy image in the content (`dbp_images`); a swap is `set_eject_state(true)`, `set_image_index`, `set_eject_state(false)`, called between `retro_run`s (it pauses the core's thread); `get_image_label` names the image file. Headless probe on a 3-disc archive under the OS image model: disc 2 mounted | `retro_init`, `disk_control_callback`; probe, 2026-11-25 |
 | `FRONTEND.DBP` | Ignored by the core (standalone only), so the built-in frontend passes core options itself | `init_dosbox`, `#ifdef DBP_STANDALONE` |
 | Host cursor | Hidden while the mouse is captured (a transparent SDL cursor, `SDL_ShowCursor` as fallback), shown (the system arrow) while it isn't: released with Ctrl+F10, a hidden cursor left the user unable to see it over the window. Works on Windows; under WSLg the pointer stays visible (WSLg draws it through its RDP client, which ignored both), so test mouse feel with the Windows build | live tests, 2026-11-24/25 |
 
 `internal/libretro`'s `TestProbe` runs real content headless and saves a
 screenshot every few seconds (`DOSZER_PROBE_CONTENT`, `_SYSTEM`, `_OUT`,
 `_FRAMES`, `_EVERY`; `_RAMDISK` for `bootos_ramdisk`, default `diff`;
-`_PACED` to run in real time): how to see what a game does in an OS image
+`_PACED` to run in real time; `_SWAP` a frame after which to swap discs): how to see what a game does in an OS image
 session without a window, e.g. a startup script that leaves the screen
 black. It logs the frame at which the core closed the session, if it did.
 Use a system directory of symlinks to the images, and `diff` or `true`,
