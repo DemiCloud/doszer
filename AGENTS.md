@@ -288,6 +288,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `env` | Implemented |
 | `config` | Implemented |
 | `gui` | Implemented; rendered on Linux (WSLg) and Windows (TestScreenshot), opened from a bare `doszer` without a terminal; launching a game from it not yet tried live |
+| `associate` | Implemented (Windows, HKCU); dry run checked on Windows, not yet applied live |
 | `version` | Implemented |
 
 Manifest parsing and every manifest rule in specification §11 are

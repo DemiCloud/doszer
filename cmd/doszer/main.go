@@ -80,6 +80,7 @@ func init() {
 		{"env", "show the directories, images and tools doszer finds here", runEnv},
 		{"config", "show, change or write doszer's configuration", runConfig},
 		{"gui", "open the window listing the archives in the ROM directory", runGUI},
+		{"associate", "make doszer open .dosz files in Explorer, with its icon", runAssociate},
 		{"version", "show the versions of doszer and the programs it embeds", runVersion},
 	}
 }
@@ -92,6 +93,9 @@ func main() {
 		status.Stop()
 		if !errors.Is(err, errUsage) && !errors.Is(err, errQuiet) {
 			logError(err)
+			if detached {
+				showError(err) // no console to read it in
+			}
 		}
 		os.Exit(1)
 	}
@@ -122,8 +126,10 @@ func run(args []string) error {
 		}
 	}
 	// A file instead of a command is run, so doszer can be the program
-	// that opens .dosz files (doszer FILE).
+	// that opens .dosz files (doszer FILE): from Explorer, without a
+	// console window for the game's length.
 	if fi, err := os.Stat(args[0]); err == nil && !fi.IsDir() {
+		fromTerminal()
 		return runRun(args)
 	}
 	if strings.ContainsAny(args[0], `/\.`) {
@@ -2024,4 +2030,42 @@ Options:
 		StatsPath: stats,
 		Version:   version,
 	})
+}
+
+// runAssociate implements `doszer associate`.
+func runAssociate(args []string) error {
+	fs := newFlags("associate")
+	remove := fs.Bool("remove", false, "")
+	dryRun := fs.BoolP("dry-run", "n", false, "")
+	const help = `doszer associate - make doszer open .dosz files in Explorer, with its icon
+
+Usage: doszer associate [--remove] [-n]
+
+Options:
+      --remove            remove the association
+  -n, --dry-run           show the registry changes without making them
+` + flagFormatText + flagHelp
+	if ok, err := parse(fs, args, help, 0, 0); !ok {
+		return err
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	changes, err := associate(exe, *remove, *dryRun)
+	for _, c := range changes {
+		fmt.Println("  " + c)
+	}
+	if err != nil {
+		return err
+	}
+	switch {
+	case *dryRun:
+		fmt.Println("Dry run: nothing changed")
+	case *remove:
+		fmt.Println("Removed the .dosz association")
+	default:
+		fmt.Printf("Associated .dosz with %s\n", exe)
+	}
+	return nil
 }

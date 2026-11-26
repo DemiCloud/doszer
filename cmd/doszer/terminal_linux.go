@@ -22,3 +22,10 @@ func fromTerminal() bool {
 	}
 	return false
 }
+
+// detached is never set off Windows: there is no console to free.
+var detached bool
+
+// showError does nothing off Windows: doszer has no console of its own
+// to lose there.
+func showError(error) {}

@@ -62,6 +62,7 @@ doszer env portable [DIR] [--copy] [--from FILE] [-n] [-f]
 doszer gui     [--rom-dir DIR] [--system-dir DIR] [--save-dir DIR]
 doszer
 doszer config  [get KEY | set KEY VALUE | unset KEY | init [FILE] [--current] [-f]] [--file FILE]
+doszer associate [--remove] [-n]
 doszer version
 ```
 
@@ -761,7 +762,17 @@ is optional; keys are in DOSBox Pure's `core_options.h`). Specification
 §12's options can't be changed.
 
 `doszer FILE.dosz`, with no command, does the same, so doszer can be the
-program that opens `.dosz` files (`doszer "%1"` on Windows).
+program that opens `.dosz` files (`doszer "%1"` on Windows). Opened from
+Explorer, it closes the console Windows gives it, and shows an error in a
+message box instead.
+
+`doszer associate` (Windows) registers doszer for the current user as
+the program that opens `.dosz` files, with doszer's icon
+(`HKCU\Software\Classes`, no administrator rights; `-n` shows the keys,
+`--remove` takes them out again). A program picked in Explorer's "Open
+with" still takes precedence. Explorer shows the one doszer icon for
+every archive: an archive's own `DOSZ.ICO` would need a shell extension
+DLL, which doszer doesn't ship.
 
 ## Window
 
