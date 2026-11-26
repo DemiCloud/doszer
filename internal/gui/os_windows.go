@@ -60,6 +60,18 @@ func browseProc(hwnd, msg, lParam, data uintptr) uintptr {
 
 // pickFolder asks for a folder with Windows' folder browser.
 func pickFolder(title, start string) (string, bool) {
+	if paths, err := shellDialog(false, true, false, "Choose the "+title+" folder", start, "", "", nil); err == nil {
+		if len(paths) == 0 {
+			return "", false
+		}
+		return paths[0], true
+	}
+	return browseFolder(title, start)
+}
+
+// browseFolder is the old folder browser (SHBrowseForFolder), where
+// Explorer's dialog can't be made.
+func browseFolder(title, start string) (string, bool) {
 	coInitializeEx.Call(0, 2) // apartment threaded, as the dialog needs
 	t, _ := syscall.UTF16PtrFromString("Choose the " + title + " folder")
 	s, _ := syscall.UTF16PtrFromString(start)
@@ -127,6 +139,12 @@ func opticalDrives() []drive {
 
 // pickSave asks where to save a PNG, with Windows' save dialog.
 func pickSave(title, name string) (string, bool) {
+	if paths, err := shellDialog(true, false, false, title, "", name, "png", [][2]string{{"PNG images", "*.png"}}); err == nil {
+		if len(paths) == 0 {
+			return "", false
+		}
+		return paths[0], true
+	}
 	paths := fileDialog(getSaveFileName, title, utf16z("PNG images (*.png)\x00*.png\x00"), name, "png",
 		0x2|0x800|0x8|0x80000) // OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER
 	if len(paths) == 0 {
@@ -151,6 +169,13 @@ func pickFiles(title string, kind int) []string {
 }
 
 func pickFilesFlags(title string, kind int, flags uint32) []string {
+	types := [][2]string{{"Disc images (*.cue, *.zip)", "*.cue;*.zip"}, {"All files", "*.*"}}
+	if kind == fileArchive {
+		types = [][2]string{{"DOSBox Pure archives (*.dosz)", "*.dosz"}, {"All files", "*.*"}}
+	}
+	if paths, err := shellDialog(false, false, flags&0x200 != 0, title, "", "", "", types); err == nil {
+		return paths
+	}
 	filter := utf16z("Disc images (*.cue, *.zip)\x00*.cue;*.zip\x00All files\x00*.*\x00")
 	if kind == fileArchive {
 		filter = utf16z("DOSBox Pure archives (*.dosz)\x00*.dosz\x00All files\x00*.*\x00")
