@@ -169,7 +169,7 @@ func pickFiles(title string, kind int) []string {
 }
 
 func pickFilesFlags(title string, kind int, flags uint32) []string {
-	types := [][2]string{{"Disc images (*.cue, *.zip)", "*.cue;*.zip"}, {"All files", "*.*"}}
+	types := [][2]string{{"Disc and disk images (*.cue, *.zip, *.img, *.ima, *.vfd)", "*.cue;*.zip;*.img;*.ima;*.vfd"}, {"All files", "*.*"}}
 	switch kind {
 	case fileArchive:
 		types = [][2]string{{"DOSBox Pure archives (*.dosz, *.dosp)", "*.dosz;*.dosp"}, {"All files", "*.*"}}
@@ -179,7 +179,7 @@ func pickFilesFlags(title string, kind int, flags uint32) []string {
 	if paths, err := shellDialog(false, false, flags&0x200 != 0, title, "", "", "", types); err == nil {
 		return paths
 	}
-	filter := utf16z("Disc images (*.cue, *.zip)\x00*.cue;*.zip\x00All files\x00*.*\x00")
+	filter := utf16z("Disc and disk images (*.cue, *.zip, *.img, *.ima, *.vfd)\x00*.cue;*.zip;*.img;*.ima;*.vfd\x00All files\x00*.*\x00")
 	if kind == fileArchive {
 		filter = utf16z("DOSBox Pure archives (*.dosz, *.dosp)\x00*.dosz;*.dosp\x00All files\x00*.*\x00")
 	}

@@ -860,7 +860,7 @@ Usage: doszer dump [options] DIR
 Options:
       --dat FILE          datfile to verify against (default: build.redump_dat, else Redump's)
       --drive DRIVE       drive to read, e.g. E: or /dev/sg1 (default: first drive with a disc)
-      --from FILE         import this BIN/CUE image (.cue, or a .zip of one) instead of reading a drive
+      --from FILE         import a BIN/CUE image (.cue, or a .zip of one) or a floppy image (.img, .ima, .vfd)
       --offset SAMPLES    --from: drive read offset the image's audio wasn't corrected for
 ` + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
@@ -876,6 +876,14 @@ Options:
 			return errors.New("--from and --drive exclude each other")
 		}
 		status.Step("Copying the image's tracks")
+		if dump.IsDiskImage(*from) {
+			p, err := dump.ImportDisk(*from, fs.Arg(0))
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Imported %s\n", p)
+			return nil
+		}
 		res, err := dump.Import(*from, fs.Arg(0), *offset)
 		endSteps(err)
 		if err != nil {

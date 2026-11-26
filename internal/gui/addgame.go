@@ -91,7 +91,7 @@ func (a *app) openAddGame() {
 			break
 		}
 	}
-	g.files = []*field{{placeholder: "A .cue file, or a .zip holding one"}}
+	g.files = []*field{{placeholder: "A .cue, a .zip holding one, or a disk image"}}
 	g.name.placeholder = "The game's name"
 	g.name.onChange = func() { g.named = true }
 	// Where it can go: each ROM folder, and its system subfolders or any
@@ -568,7 +568,7 @@ func (a *app) addGameSource(g *addGame, x, y, w int32) int32 {
 	}
 	y += a.px(8)
 	y = a.heading("From disc image files", x, y)
-	y = a.option(x, y, w, g.useFiles, "CUE sheets", "A dumped disc's .cue (with its .bin files), or a .zip holding one; one per disc", func() {
+	y = a.option(x, y, w, g.useFiles, "Image files", "A disc's .cue (with its .bin files) or a .zip holding one, or a floppy or disk image; one per disc", func() {
 		g.useFiles = true
 	})
 	if !g.useFiles {

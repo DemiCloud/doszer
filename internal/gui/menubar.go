@@ -12,6 +12,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/builtin"
 	"github.com/DemiCloud/doszer/internal/config"
+	"github.com/DemiCloud/doszer/internal/dump"
 )
 
 // homepage is doszer's, for Help.
@@ -164,7 +165,7 @@ func (a *app) drop(p string) {
 		a.playFile(p)
 	case ext == ".dosp":
 		a.showDeps(p, strings.TrimSuffix(filepath.Base(p), ext))
-	case ext == ".cue" || ext == ".zip":
+	case ext == ".cue" || ext == ".zip" || dump.IsDiskImage(p):
 		if a.add == nil {
 			a.openAddGame()
 		}
@@ -173,7 +174,7 @@ func (a *app) drop(p string) {
 			a.add.addFile(p)
 		}
 	default:
-		a.say(filepath.Base(p)+": drop an archive (.dosz), a disc image (.cue, .zip) or a game's folder", true)
+		a.say(filepath.Base(p)+": drop an archive (.dosz), a disc image (.cue, .zip), a disk image (.img, .ima, .vfd) or a game's folder", true)
 	}
 }
 
