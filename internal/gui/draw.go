@@ -29,6 +29,7 @@ var (
 	colCardHover  = rgba{52, 52, 56, 255}
 	colCardSel    = rgba{58, 60, 66, 255}
 	colAccent     = rgba{90, 160, 250, 255}
+	colSelection  = rgba{90, 160, 250, 90} // selected text's background
 	colAccentDark = rgba{44, 98, 170, 255}
 	colPopup      = rgba{38, 38, 42, 255}
 	colText       = rgba{240, 240, 242, 255}

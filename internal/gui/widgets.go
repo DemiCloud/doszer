@@ -2,7 +2,10 @@ package gui
 
 import (
 	"strings"
+	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/image/font"
 
 	"github.com/DemiCloud/doszer/internal/sdl"
 )
@@ -473,14 +476,32 @@ const (
 )
 
 // Selectable text: lines drawn in a region (a dialog's message, table or
-// output) can be selected by dragging over them, a line at a time, and
-// copied (Ctrl+C, or a right click).
+// output) can be selected by dragging over them and copied (Ctrl+C, or a
+// right click). A line drawn as one run of text (selTextLine) selects by
+// character, double-click a word, triple-click the line; a table row
+// (selLine) is several runs and selects whole.
 type textSel struct {
 	region string
-	from   int // the line the drag started on
-	to     int // the line it is on now
+	from   selPos // where the drag started
+	to     selPos // where it is now
 	drag   bool
 	active bool
+	whole  bool // a table's rows: whole lines, whatever the columns
+}
+
+// selPos is a position in a region's text: a line and a rune offset in it.
+type selPos struct{ line, col int }
+
+func (p selPos) before(q selPos) bool {
+	return p.line < q.line || p.line == q.line && p.col < q.col
+}
+
+// span is the selection in order, start first.
+func (t textSel) span() (selPos, selPos) {
+	if t.to.before(t.from) {
+		return t.to, t.from
+	}
+	return t.from, t.to
 }
 
 // selHit is a selectable line drawn this frame.
@@ -489,20 +510,95 @@ type selHit struct {
 	idx        int
 	x, y, w, h int32
 	layer      int
+	text       string // the text drawn; "" selects the line whole
+	tx         int32  // where it starts
+	face       faceKey
 }
 
 // selRegion registers a region's whole text (scrolled-off lines too),
 // for copying.
 func (a *app) selRegion(id string, lines []string) { a.selText[id] = lines }
 
-// selLine registers line idx of a region at its rectangle, and draws
-// the selection behind it if it's selected.
-func (a *app) selLine(id string, idx int, x, y, w, h int32) {
-	a.selHits = append(a.selHits, selHit{id, idx, x, y, w, h, a.layer})
-	t := a.tsel
-	if t.active && t.region == id && idx >= min(t.from, t.to) && idx <= max(t.from, t.to) {
-		a.fill(x, y, w, h, rgba{colAccent.r, colAccent.g, colAccent.b, 90})
+// lineLen is line idx of a region's length in runes.
+func (a *app) lineLen(region string, idx int) int {
+	if lines := a.selText[region]; idx >= 0 && idx < len(lines) {
+		return utf8.RuneCountInString(lines[idx])
 	}
+	return 0
+}
+
+// selLine registers line idx of a region at its rectangle, selected
+// whole, and draws the selection behind it if any of it is selected.
+func (a *app) selLine(id string, idx int, x, y, w, h int32) {
+	a.selHits = append(a.selHits, selHit{region: id, idx: idx, x: x, y: y, w: w, h: h, layer: a.layer})
+	t := a.tsel
+	if !t.active || t.region != id {
+		return
+	}
+	if from, to := t.span(); (t.whole || from != to) && idx >= from.line && idx <= to.line {
+		a.fill(x, y, w, h, colSelection)
+	}
+}
+
+// selTextLine registers line idx of a region at its rectangle, drawn as
+// s (the line, or its ellipsized start) from tx in face k, and draws the
+// selected characters' background.
+func (a *app) selTextLine(id string, idx int, x, y, w, h int32, s string, tx int32, k faceKey) {
+	a.selHits = append(a.selHits, selHit{id, idx, x, y, w, h, a.layer, s, tx, k})
+	t := a.tsel
+	if !t.active || t.region != id {
+		return
+	}
+	from, to := t.span()
+	if from == to || idx < from.line || idx > to.line {
+		return
+	}
+	c0, c1 := 0, a.lineLen(id, idx)
+	if idx == from.line {
+		c0 = from.col
+	}
+	if idx == to.line {
+		c1 = to.col
+	}
+	x0, x1 := tx+a.colX(s, c0, k), tx+a.colX(s, c1, k)
+	if idx < to.line {
+		x1 += a.px(5) // the line break
+	}
+	if x1 > x0 {
+		a.fill(x0, y, x1-x0, h, colSelection)
+	}
+}
+
+// colX is where column col of s, drawn in face k, starts; past an
+// ellipsis, the end.
+func (a *app) colX(s string, col int, k faceKey) int32 {
+	r := []rune(s)
+	if strings.HasSuffix(s, "…") && col >= len(r)-1 {
+		col = len(r)
+	}
+	return int32(font.MeasureString(a.faceOf(k), string(r[:min(col, len(r))])).Round())
+}
+
+// colAt is the column of the hit's line nearest the mouse.
+func (a *app) colAt(h *selHit) int {
+	if h.text == "" {
+		return 0
+	}
+	r := []rune(h.text)
+	best, bestD := 0, int32(1<<30)
+	for i := 0; i <= len(r); i++ {
+		d := a.mx - h.tx - int32(font.MeasureString(a.faceOf(h.face), string(r[:i])).Round())
+		if d < 0 {
+			d = -d
+		}
+		if d < bestD {
+			best, bestD = i, d
+		}
+	}
+	if strings.HasSuffix(h.text, "…") && best >= len(r)-1 && h.text != a.selText[h.region][h.idx] {
+		return a.lineLen(h.region, h.idx) // the ellipsis stands for the rest
+	}
+	return best
 }
 
 // selAt is the selectable line under the mouse on the top layer, if any.
@@ -517,42 +613,96 @@ func (a *app) selAt() *selHit {
 	return nil
 }
 
-// selDrag extends a drag to the line under the mouse, or past the
-// region's first or last line drawn.
+// selStart starts a selection at the hit under the mouse: a click places
+// it, a double click takes the word, a triple click the line; a line
+// selected whole is taken whole.
+func (a *app) selStart(h *selHit, clicks uint8) {
+	n := a.lineLen(h.region, h.idx)
+	t := textSel{region: h.region, drag: true, active: true}
+	switch {
+	case h.text == "":
+		t.whole = true
+		t.from, t.to = selPos{h.idx, 0}, selPos{h.idx, 0}
+	case clicks >= 3:
+		t.from, t.to = selPos{h.idx, 0}, selPos{h.idx, n}
+	case clicks == 2:
+		r := []rune(a.selText[h.region][h.idx])
+		c := min(a.colAt(h), len(r))
+		i, j := c, c
+		for i > 0 && !unicode.IsSpace(r[i-1]) {
+			i--
+		}
+		for j < len(r) && !unicode.IsSpace(r[j]) {
+			j++
+		}
+		t.from, t.to = selPos{h.idx, i}, selPos{h.idx, j}
+	default:
+		c := a.colAt(h)
+		t.from, t.to = selPos{h.idx, c}, selPos{h.idx, c}
+	}
+	a.tsel = t
+}
+
+// selDrag extends a drag to the mouse, or past the region's first or
+// last line drawn.
 func (a *app) selDrag() {
 	t := &a.tsel
 	if !t.drag {
 		return
 	}
 	if h := a.selAt(); h != nil && h.region == t.region {
-		t.to = h.idx
+		t.to = selPos{h.idx, a.colAt(h)}
 		return
 	}
-	for _, h := range a.selHits {
+	for i := range a.selHits {
+		h := &a.selHits[i]
 		if h.region != t.region {
 			continue
 		}
-		if a.my < h.y && h.idx < t.to {
-			t.to = h.idx
+		if a.my < h.y && h.idx <= t.to.line {
+			t.to = selPos{h.idx, 0}
 		}
-		if a.my >= h.y+h.h && h.idx > t.to {
-			t.to = h.idx
+		if a.my >= h.y+h.h && h.idx >= t.to.line {
+			t.to = selPos{h.idx, a.lineLen(h.region, h.idx)}
 		}
 	}
 }
 
-// selected is the selected lines' text, or "".
+// selected is the selected text, or "".
 func (a *app) selected_() string {
 	t := a.tsel
 	lines := a.selText[t.region]
 	if !t.active || len(lines) == 0 {
 		return ""
 	}
-	from, to := max(0, min(t.from, t.to)), min(len(lines)-1, max(t.from, t.to))
-	if from > to {
+	from, to := t.span()
+	if from.line >= len(lines) {
 		return ""
 	}
-	return strings.Join(lines[from:to+1], "\n")
+	if to.line >= len(lines) {
+		to = selPos{len(lines) - 1, a.lineLen(t.region, len(lines)-1)}
+	}
+	if t.whole {
+		from.col, to.col = 0, a.lineLen(t.region, to.line)
+	}
+	var b strings.Builder
+	for i := from.line; i <= to.line; i++ {
+		r := []rune(lines[i])
+		c0, c1 := 0, len(r)
+		if i == from.line {
+			c0 = min(from.col, len(r))
+		}
+		if i == to.line {
+			c1 = min(to.col, len(r))
+		}
+		if i > from.line {
+			b.WriteByte('\n')
+		}
+		if c1 > c0 {
+			b.WriteString(string(r[c0:c1]))
+		}
+	}
+	return b.String()
 }
 
 // copyText puts text on the clipboard.
@@ -567,8 +717,8 @@ func (a *app) copyText(text string) {
 // selMenu is a right click's menu over selectable text: copy the
 // selection (or the line under the mouse), or the region's whole text.
 func (a *app) selMenu(h *selHit) {
-	if !a.tsel.active || a.tsel.region != h.region {
-		a.tsel = textSel{region: h.region, from: h.idx, to: h.idx, active: true}
+	if from, to := a.tsel.span(); !a.tsel.active || a.tsel.region != h.region || from == to && !a.tsel.whole {
+		a.tsel = textSel{region: h.region, from: selPos{h.idx, 0}, to: selPos{h.idx, a.lineLen(h.region, h.idx)}, active: true, whole: h.text == ""}
 	}
 	region := h.region
 	a.openMenu(a.mx, a.my, []string{"Copy\tCtrl+C", "Copy all"}, func(i int) {

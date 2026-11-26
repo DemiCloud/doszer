@@ -977,10 +977,11 @@ directly: they're generated from the manifest's `[boot]` and
 `[[input.pad]]`. `doszer manifest FILE.dosz` prints an archive's
 manifest, for the same edit on the command line.
 
-Help > Keyboard shortcuts lists the keys. Dialog text (messages,
-Credits, About, build output) is selectable a line at a time: drag over
-it, then Ctrl+C or right-click > Copy; build dialogs' Copy copies their
-whole output.
+Help > Keyboard shortcuts lists the keys. Dialog text (messages, build
+output) is selectable by character: drag over it, or double-click a word,
+triple-click a line, then Ctrl+C or right-click > Copy. Tables (Keyboard
+shortcuts, Credits, About) select whole rows. Build dialogs' Copy copies
+their whole output.
 
 ### Building games
 

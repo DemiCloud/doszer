@@ -423,7 +423,7 @@ func (a *app) event(e *sdl.Event) {
 		switch e.Button() {
 		case 1:
 			if h := a.selAt(); h != nil && a.popup == nil {
-				a.tsel = textSel{region: h.region, from: h.idx, to: h.idx, drag: true, active: true}
+				a.selStart(h, e.Clicks())
 				break
 			}
 			a.tsel.active = false

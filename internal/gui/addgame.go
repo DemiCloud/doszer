@@ -791,7 +791,7 @@ func (a *app) addGameStart(g *addGame, x, y, w, bottom int32) int32 {
 		a.selRegion("report", report)
 		a.scrollbar(x+w-a.px(8), y+a.px(4), bh-a.px(8), start, rows, len(report))
 		for i, l := range report[start:end] {
-			a.selLine("report", start+i, x+a.px(4), ly, w-a.px(8), lh)
+			a.selTextLine("report", start+i, x+a.px(4), ly, w-a.px(8), lh, l, x+a.px(10), faceKey{px: int(a.px(12)), mono: true})
 			a.monoText(l, x+a.px(10), ly, colText)
 			ly += lh
 		}

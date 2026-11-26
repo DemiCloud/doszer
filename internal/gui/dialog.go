@@ -324,7 +324,6 @@ func (a *app) drawDialog() {
 	ty += a.lineHeight(17, true) + a.px(12)
 	a.selRegion("lines", lines)
 	for li, l := range lines {
-		a.selLine("lines", li, x+p-a.px(4), ty, w-2*p+a.px(8), lh)
 		c := colMuted
 		switch {
 		case d.job != nil && d.job.waiting:
@@ -333,11 +332,12 @@ func (a *app) drawDialog() {
 			c = colAccent // the command line
 		}
 		l = a.ellipsize(l, w-2*p, 13, false)
+		lx := x + p
 		if d.center {
-			a.text(l, x+(w-a.textWidth(l, 13, false))/2, ty, 13, false, c)
-		} else {
-			a.text(l, x+p, ty, 13, false, c)
+			lx = x + (w-a.textWidth(l, 13, false))/2
 		}
+		a.selTextLine("lines", li, x+p-a.px(4), ty, w-2*p+a.px(8), lh, l, lx, faceKey{px: int(a.px(13))})
+		a.text(l, lx, ty, 13, false, c)
 		ty += lh
 	}
 
@@ -409,7 +409,7 @@ func (a *app) drawDialog() {
 		ly := by + a.px(6)
 		a.selRegion("output", out)
 		for oi, l := range out[start:end] {
-			a.selLine("output", start+oi, bx+a.px(4), ly, bw-a.px(8), mono)
+			a.selTextLine("output", start+oi, bx+a.px(4), ly, bw-a.px(8), mono, l, bx+a.px(10), faceKey{px: int(a.px(12)), mono: true})
 			c := colText
 			if strings.Contains(l, "ERROR:") || strings.HasPrefix(l, "[WARN]") {
 				c = colError
