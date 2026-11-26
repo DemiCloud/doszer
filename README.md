@@ -902,9 +902,10 @@ Tools > Settings (Ctrl+,) is a dialog:
   defaults, shown greyed in them.
 
 A right click on a game opens its menu, submenus cascading: Play, Edit,
-Tools (Info, Dependencies, Verify, Repack, Convert to parent, Advanced: edit WINDOWS.BAT or
-DOSZ.TOML as text), Change (Parent, OS image or Shell, each listing its
-choices), Show in folder.
+Tools (Info, Dependencies, Verify, Repack, Convert to parent, Advanced:
+edit WINDOWS.BAT or DOSZ.TOML as text), Change (Parent - the `.dosp`
+files beside it -, OS image or Shell, each listing its choices), Show in
+folder. A submenu with no room on the right opens on the left.
 Every action is the doszer command that does it, run in its own process
 and shown in a dialog with its command line and live output - the
 command line can do anything the window does. Repack and the changes ask
@@ -1028,8 +1029,8 @@ changed.
 | Alt+Enter | toggle fullscreen |
 | Alt+F12 (hold) | fast-forward, without sound |
 | Ctrl+F5 | screenshot, at the game's resolution, to `Pictures/doszer` in the home directory |
-
 | Ctrl+F4 | next disc: the next disc or floppy image in the drive, named in the title |
+
 Pause, fast-forward, screenshot, disc swap and mouse release use DOSBox's own keys.
 On a Steam Deck (or any Steam Input controller), they can go on a Steam
 menu or the back buttons, as key presses. A game's own rarely used keys

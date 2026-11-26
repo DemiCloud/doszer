@@ -3,6 +3,7 @@ package gui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DemiCloud/doszer/internal/builtin"
@@ -64,10 +65,28 @@ func TestScreenshot(t *testing.T) {
 		"submenu.png": func(a *App) {
 			a.openMenuItems(a.px(60), a.menuH(), a.menus()[1].items)
 			p := a.popup
-			p.child, p.childOf = p.sub(5), 5 // View > Sort by
-			p.child.x, p.child.y, p.child.childOf = a.px(60)+a.px(196), a.menuH()+a.px(4)+a.px(30)*4+a.px(9), -1
+			for i, it := range p.items { // View > Sort by
+				if strings.HasPrefix(it, "Sort by") {
+					p.child, p.childOf = p.sub(i), i
+					p.child.x, p.child.y, p.child.childOf = a.px(60)+a.px(196), a.menuH()+a.px(4)+a.px(30)*5+a.px(9), -1
+				}
+			}
 		},
 		"folder.png": func(a *App) { a.openBuildFolder() },
+		"edgemenu.png": func(a *App) { // a game menu at the right edge: Tools opens left
+			a.OpenGameMenu(0)
+			p := a.popup
+			if p == nil {
+				return
+			}
+			p.x = a.w - a.px(210)
+			for i, it := range p.items {
+				if strings.HasPrefix(it, "Tools") {
+					p.child, p.childOf = p.sub(i), i
+					p.child.x, p.child.y, p.child.childOf, p.child.parentX = a.w-a.px(14), p.y+a.px(60), -1, p.x
+				}
+			}
+		},
 		"folders.png": func(a *App) {
 			if values := a.filters(); len(values) > 0 {
 				items := make([]string, len(values))

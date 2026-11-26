@@ -100,13 +100,14 @@ func (a *app) openEditorMode(g *library.Game, mode int) {
 	}
 	e.scan()
 	e.fromManifest()
-	// The parents it could have: archives beside it that wouldn't loop.
+	// The parents it could have: parents (.dosp) beside it that wouldn't
+	// loop, and the one it has.
 	dir := filepath.Dir(g.Path)
 	entries, _ := os.ReadDir(dir)
 	for _, ent := range entries {
 		n := ent.Name()
 		ext := strings.ToLower(filepath.Ext(n))
-		if ent.IsDir() || (ext != ".dosz" && ext != ".dosp" && ext != ".shell" && ext != ".zip") || n == filepath.Base(g.Path) {
+		if ent.IsDir() || (ext != ".dosp" && !strings.EqualFold(n, m.Boot.Parent)) || n == filepath.Base(g.Path) {
 			continue
 		}
 		loops := false

@@ -56,9 +56,9 @@ func (a *app) gameMenu(g *library.Game) {
 	a.openMenuItems(a.mx, a.my, items)
 }
 
-// parentItems are the archives beside g that can be its parent: any but
-// g and those g already holds up (which would loop), and None. The
-// current one is marked.
+// parentItems are the archives beside g that can be its parent: the
+// parents (.dosp) but those g already holds up (which would loop), its
+// current one whatever its type (marked), and None.
 func (a *app) parentItems(g *library.Game) []menuItem {
 	dir := filepath.Dir(g.Path)
 	entries, _ := os.ReadDir(dir)
@@ -86,7 +86,7 @@ func (a *app) parentItems(g *library.Game) []menuItem {
 	for _, e := range entries {
 		n := e.Name()
 		ext := strings.ToLower(filepath.Ext(n))
-		if e.IsDir() || (ext != ".dosz" && ext != ".dosp" && ext != ".shell" && ext != ".zip") || n == filepath.Base(g.Path) {
+		if e.IsDir() || (ext != ".dosp" && n != cur) || n == filepath.Base(g.Path) {
 			continue
 		}
 		loops := false

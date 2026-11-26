@@ -326,6 +326,7 @@ type popup struct {
 	sub     func(i int) *popup // the submenu item i opens, or nil
 	child   *popup             // the submenu open
 	childOf int
+	parentX int32 // a submenu's parent's left edge: it opens on that side when the right has no room
 }
 
 // openPopup opens a dropdown under a button at x, y.
@@ -374,6 +375,9 @@ func (a *app) drawPopupLevel(p *popup) {
 	}
 	h := ih*int32(len(p.items)-sep) + int32(sep)*a.px(9) + a.px(8)
 	x, y := min(p.x, a.w-w-a.px(8)), p.y
+	if p.parentX > 0 && p.x+w > a.w-a.px(8) {
+		x = max(a.px(8), p.parentX-w+a.px(4)) // left of its parent, not over it
+	}
 	if y+h > a.h {
 		y = max(a.px(8), a.h-h-a.px(8))
 	}
@@ -393,7 +397,7 @@ func (a *app) drawPopupLevel(p *popup) {
 		open := func() {
 			if p.childOf != i {
 				c := p.sub(i)
-				c.x, c.y, c.childOf = x+w-a.px(4), iy-a.px(4), -1
+				c.x, c.y, c.childOf, c.parentX = x+w-a.px(4), iy-a.px(4), -1, x
 				p.child, p.childOf = c, i
 			}
 		}
