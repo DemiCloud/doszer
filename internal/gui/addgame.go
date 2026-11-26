@@ -2,6 +2,7 @@ package gui
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -49,13 +50,15 @@ type addGame struct {
 type addPlan struct {
 	name, src, out string
 	temp, keep     bool
+	install        []step   // the install step, to run again
+	report         []string // install's output
 }
 
 var bootChoices = []struct{ label, flag string }{
-	{"Automatic (from the game's programs)", ""},
+	{"Auto", ""},
 	{"DOS", "dos"},
-	{"Windows 3.x shell", "shell"},
-	{"Windows 9x OS image", "os"},
+	{"Windows 3.x", "shell"},
+	{"Windows 9x", "os"},
 }
 
 // romSubfolders are the folders a ROM folder's games usually sort into
@@ -69,6 +72,9 @@ func (a *app) openAddGame() {
 		return
 	}
 	g := &addGame{drives: opticalDrives(), discs: 1, keep: true, install: true}
+	if !haveFFmpeg() {
+		g.audio = 1 // WAV: Ogg Vorbis is encoded by ffmpeg
+	}
 	g.useFiles = len(g.drives) == 0
 	for i, d := range g.drives {
 		if d.disc {
@@ -272,14 +278,26 @@ func (a *app) addGameRun() {
 		step{prompt: "Next, DOSBox Pure opens with the game's disc. Run its setup (SETUP.EXE or INSTALL.EXE: in Windows, from the CD drive), install the game, then close DOSBox Pure's window."},
 		step{args: append(installArgs, src)},
 	)
+	plan.install = steps[len(steps)-2:]
 	a.add = nil
-	a.runSteps("Build "+plan.name, steps, func(err error) {
+	a.runSteps("Build "+plan.name, steps, a.installed(plan))
+}
+
+// installed ends an install run: its output stays up, read before Next
+// moves on to choosing the program.
+func (a *app) installed(plan *addPlan) func(error) {
+	return func(err error) {
 		if err != nil {
-			a.say("The game's files are kept in "+plan.src+" to try again", true)
+			a.say("Kept in "+plan.src, true)
 			return
 		}
-		a.chooseStart(plan)
-	})
+		if d := a.dialog; d != nil && d.job != nil {
+			plan.report = d.job.lines()
+			d.buttons = []dialogButton{a.copyAll(d), {label: "Next", style: btnAccent, fn: func() { a.chooseStart(plan) }}}
+		} else {
+			a.chooseStart(plan)
+		}
+	}
 }
 
 // buildStep builds plan's archive.
@@ -315,7 +333,7 @@ func (a *app) chooseStart(p *addPlan) {
 		a.alert("Can't read the installed game", err.Error())
 		return
 	}
-	g := &addGame{page: 2, plan: p, candidates: cs}
+	g := &addGame{page: 2, plan: p, candidates: cs, dests: []string{filepath.Dir(p.out)}}
 	for i, c := range cs {
 		if c.Current {
 			g.choice = i
@@ -405,9 +423,14 @@ func (a *app) drawAddGame() {
 	case 2:
 		if len(g.candidates) > 0 {
 			place("Build", btnAccent, func() { a.addGameFinish(true) })
-			place("Build without one", btnNormal, func() { a.addGameFinish(false) })
+			place("Build without", btnNormal, func() { a.addGameFinish(false) })
 		} else {
-			place("Build anyway", btnAccent, func() { a.addGameFinish(false) })
+			p := g.plan
+			place("Install again", btnAccent, func() {
+				a.add = nil
+				a.runSteps("Build "+p.name, p.install, a.installed(p))
+			})
+			place("Build anyway", btnNormal, func() { a.addGameFinish(false) })
 		}
 	}
 	place("Cancel", btnNormal, func() {
@@ -457,7 +480,7 @@ func (a *app) addGameSource(g *addGame, x, y, w int32) int32 {
 			})
 		}
 		y += a.px(40)
-		for _, l := range a.wrap("Files already on disk: a game someone installed, or a disc's files. It's built where it is, with its DOSZ.TOML if it has one (doszer init writes one if not). You can also drop the folder on the window.", w, 12) {
+		for _, l := range a.wrap("Built in place; doszer init adds a DOSZ.TOML if it has none.", w, 12) {
 			a.text(l, x, y, 12, false, colFaint)
 			y += a.lineHeight(12, false) + a.px(4)
 		}
@@ -613,9 +636,12 @@ func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {
 	row := func(label string) {
 		a.text(label, x, y+a.px(7), 13, false, colText)
 	}
-	note := func(s string, c rgba) {
-		a.text(a.ellipsize(s, fw, 12, false), fx, y, 12, false, c)
-		y += a.lineHeight(12, false) + a.px(12)
+	note := func(s string, c rgba) { // wraps: notes are mostly paths
+		for _, l := range a.wrapAny(s, fw, 12) {
+			a.text(l, fx, y, 12, false, c)
+			y += a.lineHeight(12, false) + a.px(2)
+		}
+		y += a.px(10)
 	}
 	dropdown := func(items []string, cur *int) {
 		bx, by := fx, y
@@ -634,9 +660,9 @@ func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {
 		row("Settings")
 		a.text("From its DOSZ.TOML", fx, y+a.px(7), 13, false, colText)
 		y += a.px(32)
-		note("Its manifest says how it boots and is packed; doszer init isn't run.", colFaint)
+
 	} else {
-		row("Boots")
+		row("OS")
 		var boots []string
 		for _, b := range bootChoices {
 			boots = append(boots, b.label)
@@ -645,19 +671,23 @@ func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {
 		y += a.px(6)
 
 		row("CD audio")
-		dropdown([]string{"Ogg Vorbis (smaller)", "WAV (lossless, every track verifiable)"}, &g.audio)
+		ogg := "Ogg"
+		if !haveFFmpeg() {
+			ogg = "Ogg (needs ffmpeg)"
+		}
+		dropdown([]string{ogg, "WAV (lossless)"}, &g.audio)
 		y += a.px(4)
 	}
 
-	row("Put it in")
+	row("ROM folder")
 	dests := make([]string, len(g.dests))
 	copy(dests, g.dests)
 	dropdown(dests, &g.dest)
 	out := filepath.Join(g.dests[g.dest], safeName(g.name.text)+".dosz")
 	if _, err := os.Stat(out); err == nil && safeName(g.name.text) != "" {
-		note("Replaces the existing "+filepath.Base(out)+".", colShell)
+		note("Replaces "+filepath.Base(out), colShell)
 	} else {
-		note(out, colFaint)
+		note(filepath.Base(out), colFaint)
 	}
 
 	row("Install")
@@ -667,26 +697,26 @@ func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {
 		}
 		return "□  " + label
 	}
-	a.button(box(g.install, "Install it first"), fx, y, btnGhost, func() { g.install = !g.install })
+	a.button(box(g.install, "Install first"), fx, y, btnGhost, func() { g.install = !g.install })
 	y += a.px(34)
 	if g.install {
-		note("DOSBox Pure opens with the disc: run its setup, then close the window.", colFaint)
+		note("Run the game's setup in DOSBox Pure, then close it.", colFaint)
 	} else {
-		note("For a game that runs from its disc, or is installed already.", colFaint)
+		y += a.px(6)
 	}
 
 	srcs := config.SourcesDirOf(a.cfg)
 	if g.useFolder {
 		return y
 	}
-	row("The dump")
+	row("Source files")
 	if srcs.Path == "" {
-		a.text("Not kept: doszer isn't set up, so it goes in a temporary folder.", fx, y+a.px(7), 13, false, colMuted)
+		a.text("Not kept (doszer isn't set up)", fx, y+a.px(7), 13, false, colMuted)
 		y += a.px(38)
 	} else {
-		a.button(box(g.keep, "Keep it"), fx, y, btnGhost, func() { g.keep = !g.keep })
+		a.button(box(g.keep, "Keep"), fx, y, btnGhost, func() { g.keep = !g.keep })
 		y += a.px(38)
-		note("In "+filepath.Join(srcs.Path, safeName(g.name.text))+": the BIN/CUE and DOSZ.TOML, to rebuild or change later.", colFaint)
+		note(filepath.Join(srcs.Path, safeName(g.name.text)), colFaint)
 	}
 	return y
 }
@@ -694,12 +724,27 @@ func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {
 // addGameStart lists the installed programs to choose from.
 func (a *app) addGameStart(g *addGame, x, y, w, bottom int32) int32 {
 	if len(g.candidates) == 0 {
-		a.text("The setup added no programs doszer can start.", x, y, 14, false, colText)
-		y += a.px(26)
-		a.text(a.ellipsize("Build anyway: the archive boots DOSBox Pure's start menu, or Windows. "+g.plan.src+" keeps the files.", w, 12, false), x, y, 12, false, colMuted)
-		return y + a.px(30)
+		a.text("No programs found", x, y, 14, true, colText)
+		y += a.px(28)
+		// install's report says why: what changed where, what it skipped.
+		report := g.plan.report
+		lh := a.lineHeight(12, false) + a.px(3)
+		bh := bottom - y
+		a.round(x, y, w, bh, a.px(6), colBackground)
+		rows := max(1, int((bh-a.px(12))/lh))
+		start := max(0, len(report)-rows)
+		ly := y + a.px(6)
+		a.pushClip(x, y, w, bh)
+		a.selRegion("report", report)
+		for i, l := range report[start:] {
+			a.selLine("report", start+i, x+a.px(4), ly, w-a.px(8), lh)
+			a.monoText(l, x+a.px(10), ly, colText)
+			ly += lh
+		}
+		a.popClip()
+		return bottom
 	}
-	for _, l := range a.wrap("The setup installed these into "+g.plan.src+". The game starts with the one you choose (doszer start):", w, 13) {
+	for _, l := range a.wrap("Installed in "+g.plan.src+":", w, 13) {
 		a.text(l, x, y, 13, false, colMuted)
 		y += a.lineHeight(13, false) + a.px(4)
 	}
@@ -718,4 +763,10 @@ func (a *app) addGameStart(g *addGame, x, y, w, bottom int32) int32 {
 		y = a.option(x, y, w, g.choice == i, c.Path, detail, func() { g.choice = idx })
 	}
 	return y
+}
+
+// haveFFmpeg reports whether ffmpeg, which encodes Ogg Vorbis, is found.
+func haveFFmpeg() bool {
+	_, err := exec.LookPath("ffmpeg")
+	return err == nil
 }

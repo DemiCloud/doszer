@@ -437,6 +437,7 @@ func (a *app) drawPopupLevel(p *popup) {
 const (
 	scA         = 4
 	scG         = 10
+	scC         = 6
 	scN         = 17
 	scQ         = 20
 	scO         = 18
@@ -464,3 +465,111 @@ const (
 	scUp        = 82
 	scKPEnter   = 88
 )
+
+// Selectable text: lines drawn in a region (a dialog's message, table or
+// output) can be selected by dragging over them, a line at a time, and
+// copied (Ctrl+C, or a right click).
+type textSel struct {
+	region string
+	from   int // the line the drag started on
+	to     int // the line it is on now
+	drag   bool
+	active bool
+}
+
+// selHit is a selectable line drawn this frame.
+type selHit struct {
+	region     string
+	idx        int
+	x, y, w, h int32
+	layer      int
+}
+
+// selRegion registers a region's whole text (scrolled-off lines too),
+// for copying.
+func (a *app) selRegion(id string, lines []string) { a.selText[id] = lines }
+
+// selLine registers line idx of a region at its rectangle, and draws
+// the selection behind it if it's selected.
+func (a *app) selLine(id string, idx int, x, y, w, h int32) {
+	a.selHits = append(a.selHits, selHit{id, idx, x, y, w, h, a.layer})
+	t := a.tsel
+	if t.active && t.region == id && idx >= min(t.from, t.to) && idx <= max(t.from, t.to) {
+		a.fill(x, y, w, h, rgba{colAccent.r, colAccent.g, colAccent.b, 90})
+	}
+}
+
+// selAt is the selectable line under the mouse on the top layer, if any.
+func (a *app) selAt() *selHit {
+	top := a.top()
+	for i := len(a.selHits) - 1; i >= 0; i-- {
+		h := &a.selHits[i]
+		if h.layer >= top && a.mx >= h.x && a.mx < h.x+h.w && a.my >= h.y && a.my < h.y+h.h {
+			return h
+		}
+	}
+	return nil
+}
+
+// selDrag extends a drag to the line under the mouse, or past the
+// region's first or last line drawn.
+func (a *app) selDrag() {
+	t := &a.tsel
+	if !t.drag {
+		return
+	}
+	if h := a.selAt(); h != nil && h.region == t.region {
+		t.to = h.idx
+		return
+	}
+	for _, h := range a.selHits {
+		if h.region != t.region {
+			continue
+		}
+		if a.my < h.y && h.idx < t.to {
+			t.to = h.idx
+		}
+		if a.my >= h.y+h.h && h.idx > t.to {
+			t.to = h.idx
+		}
+	}
+}
+
+// selected is the selected lines' text, or "".
+func (a *app) selected_() string {
+	t := a.tsel
+	lines := a.selText[t.region]
+	if !t.active || len(lines) == 0 {
+		return ""
+	}
+	from, to := max(0, min(t.from, t.to)), min(len(lines)-1, max(t.from, t.to))
+	if from > to {
+		return ""
+	}
+	return strings.Join(lines[from:to+1], "\n")
+}
+
+// copyText puts text on the clipboard.
+func (a *app) copyText(text string) {
+	if text == "" {
+		return
+	}
+	sdl.SetClipboardText(text)
+	a.say("Copied", false)
+}
+
+// selMenu is a right click's menu over selectable text: copy the
+// selection (or the line under the mouse), or the region's whole text.
+func (a *app) selMenu(h *selHit) {
+	if !a.tsel.active || a.tsel.region != h.region {
+		a.tsel = textSel{region: h.region, from: h.idx, to: h.idx, active: true}
+	}
+	region := h.region
+	a.openMenu(a.mx, a.my, []string{"Copy\tCtrl+C", "Copy all"}, func(i int) {
+		if i == 0 {
+			a.copyText(a.selected_())
+		} else {
+			a.copyText(strings.Join(a.selText[region], "\n"))
+		}
+	})
+}

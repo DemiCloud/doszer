@@ -97,6 +97,10 @@ type app struct {
 	jobs   []*dialog // dialogs whose command is still running
 	menuAt func()    // the right-click menu of what was clicked last
 
+	tsel    textSel
+	selHits []selHit
+	selText map[string][]string
+
 	setupDone       bool   // Options.Setup ran
 	selectAfterScan string // an archive to select once the list is read again
 	mx, my          int32
@@ -157,7 +161,7 @@ func Run(o Options) error {
 	a := &app{
 		o: o, win: win, ren: ren, dirty: true,
 		faces: map[faceKey]font.Face{}, texts: map[textKey]*texture{}, icons: map[string]*texture{},
-		runCh: make(chan runResult, 1),
+		runCh: make(chan runResult, 1), selText: map[string][]string{},
 	}
 	a.initGames(st)
 	a.initSystems()
@@ -353,6 +357,9 @@ func (a *app) event(e *sdl.Event) {
 	case sdl.EventMouseMotion:
 		x, y := e.MouseXY()
 		a.mx, a.my = int32(float64(x)*a.ratio), int32(float64(y)*a.ratio)
+		a.selDrag()
+	case sdl.EventMouseButtonUp:
+		a.tsel.drag = false
 	case sdl.EventMouseWheel:
 		if a.dialog != nil {
 			a.dialog.scroll = max(0, a.dialog.scroll+int(e.Wheel())*3)
@@ -366,8 +373,17 @@ func (a *app) event(e *sdl.Event) {
 		a.mx, a.my = int32(float64(x)*a.ratio), int32(float64(y)*a.ratio)
 		switch e.Button() {
 		case 1:
+			if h := a.selAt(); h != nil && a.popup == nil {
+				a.tsel = textSel{region: h.region, from: h.idx, to: h.idx, drag: true, active: true}
+				break
+			}
+			a.tsel.active = false
 			a.click(e.Clicks() >= 2)
 		case 3:
+			if h := a.selAt(); h != nil && a.popup == nil {
+				a.selMenu(h)
+				break
+			}
 			a.rightClick()
 		}
 	}
@@ -375,6 +391,10 @@ func (a *app) event(e *sdl.Event) {
 
 func (a *app) key(sc int32, mod uint16) {
 	ctrl := mod&sdl.KmodCtrl != 0
+	if ctrl && sc == scC && a.tsel.active {
+		a.copyText(a.selected_())
+		return
+	}
 	if a.popup != nil {
 		if sc == scEscape {
 			a.popup = nil
@@ -481,6 +501,8 @@ func (a *app) render() {
 	a.frame++
 	a.dirty = false
 	a.hits = a.hits[:0]
+	a.selHits = a.selHits[:0]
+	clear(a.selText)
 	a.layer = layerPage
 	c := colBackground
 	sdl.SetRenderDrawColor(a.ren, c.r, c.g, c.b, 255)

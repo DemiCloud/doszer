@@ -885,7 +885,10 @@ and shown in a dialog with its command line and live output - the
 command line can do anything the window does. Repack and the changes ask
 first.
 
-Help > Keyboard shortcuts lists the keys.
+Help > Keyboard shortcuts lists the keys. Dialog text (messages,
+Credits, About, build output) is selectable a line at a time: drag over
+it, then Ctrl+C or right-click > Copy; build dialogs' Copy copies their
+whole output.
 
 ### Building games
 
@@ -897,18 +900,18 @@ folder, by the commands one would type:
    sheet with its BIN files, or a zip of one, per disc - several chosen
    at once, or dropped on the window, are one game's discs, in name
    order (Disc 1, Disc 2, ... Disc 10), built into a single archive.
-2. **How should it be built?** Its name, how it boots (automatic, from
-   its programs and the system folder, or DOS, a Windows 3.x shell, a
-   Windows 9x OS image), CD audio as Ogg Vorbis or WAV, which ROM folder
-   (or system subfolder, e.g. RetroDECK's `windows9x`) it goes in, and
-   whether to keep the dump.
+2. **How should it be built?** Name; OS (Auto, from its programs and
+   the system folder, or DOS, Windows 3.x, Windows 9x); CD audio, Ogg
+   Vorbis (needs ffmpeg; WAV is the default without it) or WAV; ROM
+   folder (or a system subfolder, e.g. RetroDECK's `windows9x`); and
+   whether to keep the source files (the dump and DOSZ.TOML).
    And whether to install it first (on by default).
 3. **Build**: `doszer dump` (or `dump --from FILE`, once per disc) into
    `paths.sources/<name>` and `doszer init`, one after the other in a
    dialog with their output. Installing, it then says what comes next and
    runs `doszer install`: DOSBox Pure opens with the disc, you run its
    setup and close the window, and the installed files are extracted
-   into the source. A last page lists the programs the setup installed
+   into the source; install's report stays up until Next. A last page lists the programs the setup installed
    (`doszer start SOURCE`), the likeliest chosen, and Build runs `doszer
    start SOURCE PROGRAM` (`boot.exec`, or a `WINDOWS.BAT` for Windows)
    and `doszer build`. The new archive is selected in the list. The dump (BIN/CUE and DOSZ.TOML) stays in `paths.sources`

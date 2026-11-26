@@ -268,9 +268,12 @@ func (a *app) drawSettings(ax, ay, aw, ah int32) {
 	fx := x + labelW
 	fw := w - labelW
 
-	note := func(s string, c rgba) {
-		a.text(a.ellipsize(s, fw, 12, false), fx, y, 12, false, c)
-		y += a.lineHeight(12, false) + a.px(14)
+	note := func(s string, c rgba) { // wraps: notes are mostly paths
+		for _, l := range a.wrapAny(s, fw, 12) {
+			a.text(l, fx, y, 12, false, c)
+			y += a.lineHeight(12, false) + a.px(2)
+		}
+		y += a.px(12)
 	}
 	label := func(s string) {
 		a.text(s, x, y+a.px(7), 13, false, colText)
@@ -279,11 +282,11 @@ func (a *app) drawSettings(ax, ay, aw, ah int32) {
 	overridden := func(k string) {
 		if flag := map[string]string{"paths.roms": a.o.ROMDir, "paths.system": a.o.SystemDir, "paths.saves": a.o.SaveDir}[k]; flag != "" {
 			name := map[string]string{"paths.roms": "--rom-dir", "paths.system": "--system-dir", "paths.saves": "--save-dir"}[k]
-			note("This window was started with "+name+" "+flag+", which takes precedence", colShell)
+			note("Overridden by "+name+" "+flag, colShell)
 			return
 		}
 		if s, ok := a.effective[k]; ok && s.From != "" && s.From != a.cfgPath && filepath.IsAbs(s.From) {
-			note("Set to "+s.Value+" in "+s.From+", which takes precedence", colShell)
+			note("Overridden by "+s.From, colShell)
 		}
 	}
 
@@ -294,18 +297,18 @@ func (a *app) drawSettings(ax, ay, aw, ah int32) {
 		label("Mode")
 		a.text("Portable", fx, y+a.px(7), 13, true, colText)
 		y += a.px(32)
-		note("Settings, saves and play time are kept beside doszer: "+filepath.Dir(a.cfgPath), colMuted)
+		note(filepath.Dir(a.cfgPath), colMuted)
 	case config.Configured():
 		label("Mode")
 		a.text("User profile", fx, y+a.px(7), 13, true, colText)
 		y += a.px(32)
-		note("Settings: "+a.cfgPath, colMuted)
+		note(a.cfgPath, colMuted)
 	default:
 		label("Mode")
 		a.text("Not set up", fx, y+a.px(7), 13, true, colShell)
 		a.button("Set up…", fx+a.px(110), y, btnAccent, func() { a.openSetup() })
 		y += a.px(32)
-		note("Nothing is saved: no settings, play time, or game saves after a game closes.", colMuted)
+		note("Nothing is saved", colMuted)
 	}
 	if config.Configured() && canOpen() {
 		a.button("Open settings file", fx, y-a.px(8), btnNormal, func() { a.open(a.cfgPath) })
@@ -379,13 +382,9 @@ func (a *app) drawSettings(ax, ay, aw, ah int32) {
 	})
 	y += a.px(38)
 	overridden("paths.roms")
-	note("The .dosz archives the Games page lists, each folder at any depth.", colFaint)
 	folder("System", "paths.system", &a.fSys)
-	note("OS images and Windows 3.x shells, as DOSBox Pure's system directory.", colFaint)
 	folder("Saves", "paths.saves", &a.fSave)
-	note("DOSBox Pure's save files, named after each archive.", colFaint)
 	folder("Sources", "paths.sources", &a.fSources)
-	note("Where Build > Import a disc keeps each disc's dump and DOSZ.TOML.", colFaint)
 
 	// Systems.
 	y += a.px(10)
@@ -423,8 +422,8 @@ func (a *app) drawSettings(ax, ay, aw, ah int32) {
 		y += a.px(38)
 		note(hint, colFaint)
 	}
-	chooser("Default OS image", false, &a.defOS, "init gives games that need Windows 95 or 98 this image.")
-	chooser("Default shell", true, &a.defShell, "init gives games that need Windows 3.x this shell.")
+	chooser("Default OS image", false, &a.defOS, "For new Windows 9x games")
+	chooser("Default shell", true, &a.defShell, "For new Windows 3.x games")
 
 	// Discs.
 	y += a.px(10)
@@ -437,11 +436,10 @@ func (a *app) drawSettings(ax, ay, aw, ah int32) {
 	sx += a.px(36)
 	a.button("+", sx, y, btnNormal, func() { a.ogg = min(10, a.ogg+1) })
 	y += a.px(38)
-	note("CD audio tracks' encoding quality, -1 to 10; 6 is the default.", colFaint)
+	note("-1 to 10 (default 6)", colFaint)
 	label("Redump datfile")
 	a.drawField(&a.fDat, fx, y, fw)
 	y += a.px(38)
-	note("A datfile dump and verify check discs against instead of Redump's own.", colFaint)
 
 	a.settingsH = y + a.settingsScroll - ay + p
 	a.settingsScroll = max(0, min(a.settingsScroll, a.settingsH-ah))

@@ -34,6 +34,7 @@ type dialogButton struct {
 	label string
 	style int
 	fn    func() // nil: closes the dialog
+	keep  bool   // the dialog stays open (Copy, Stop)
 }
 
 // job runs steps one after the other: doszer commands, each its own
@@ -121,7 +122,7 @@ func (a *app) startStep(d *dialog) {
 		return
 	}
 	st := j.steps[j.cur]
-	stop := dialogButton{label: "Stop", fn: func() {
+	stop := dialogButton{label: "Stop", keep: true, fn: func() {
 		if j.done {
 			return
 		}
@@ -136,13 +137,13 @@ func (a *app) startStep(d *dialog) {
 		j.waiting = true
 		d.lines = []string{st.prompt}
 		j.Write([]byte("\n(waiting for you)\n"))
-		d.buttons = []dialogButton{stop, {label: "Continue", style: btnAccent, fn: func() {
+		d.buttons = []dialogButton{stop, {label: "Continue", style: btnAccent, keep: true, fn: func() {
 			j.waiting = false
 			j.notify <- nil
 		}}}
 		return
 	}
-	d.buttons = []dialogButton{stop}
+	d.buttons = []dialogButton{a.copyAll(d), stop}
 	exe, err := a.exe()
 	if err != nil {
 		j.notify <- err
@@ -199,7 +200,7 @@ func (a *app) jobDone(d *dialog) {
 	if j.stopped {
 		j.err = errors.New("stopped")
 	}
-	d.buttons = []dialogButton{{label: "Close", style: btnAccent}}
+	d.buttons = []dialogButton{a.copyAll(d), {label: "Close", style: btnAccent}}
 	if j.after != nil {
 		j.after(j.err)
 	}
@@ -226,8 +227,12 @@ func (a *app) dialogKey(sc int32) {
 			a.dialog = nil
 		}
 	case scReturn, scKPEnter:
-		if len(d.buttons) > 0 {
-			a.press(d.buttons[len(d.buttons)-1])
+		// Enter is the main button (never Stop).
+		for i := len(d.buttons) - 1; i >= 0; i-- {
+			if d.buttons[i].style == btnAccent {
+				a.press(d.buttons[i])
+				break
+			}
 		}
 	case scUp:
 		d.scroll++
@@ -241,9 +246,8 @@ func (a *app) dialogKey(sc int32) {
 }
 
 func (a *app) press(b dialogButton) {
-	d := a.dialog
-	if b.fn == nil || d.job == nil || d.job.done {
-		a.dialog = nil // a dialog's buttons close it; Stop keeps it open
+	if !b.keep {
+		a.dialog = nil
 	}
 	if b.fn != nil {
 		b.fn()
@@ -270,12 +274,14 @@ func (a *app) drawDialog() {
 	lh := a.lineHeight(13, false) + a.px(4)
 	mono := a.lineHeight(12, false) + a.px(3)
 	// A message wraps; a command line is one line, shortened.
-	lines := d.lines
-	if d.job == nil || d.job.waiting {
-		lines = nil
-		for _, l := range d.lines {
-			lines = append(lines, a.wrap(l, w-2*a.px(22), 13)...)
+	// Messages and command lines wrap (a command line to three lines).
+	var lines []string
+	for _, l := range d.lines {
+		wl := a.wrapAny(l, w-2*a.px(22), 13)
+		if d.job != nil && !d.job.waiting && len(wl) > 3 {
+			wl = append(wl[:2], a.ellipsize(strings.Join(wl[2:], ""), w-2*a.px(22), 13, false))
 		}
+		lines = append(lines, wl...)
 	}
 	h := p*2 + a.lineHeight(17, true) + a.px(12) + int32(len(lines))*lh + a.px(48)
 	if d.field != nil {
@@ -315,7 +321,9 @@ func (a *app) drawDialog() {
 		a.text(title, x+p, ty, 17, true, colText)
 	}
 	ty += a.lineHeight(17, true) + a.px(12)
-	for _, l := range lines {
+	a.selRegion("lines", lines)
+	for li, l := range lines {
+		a.selLine("lines", li, x+p-a.px(4), ty, w-2*p+a.px(8), lh)
 		c := colMuted
 		switch {
 		case d.job != nil && d.job.waiting:
@@ -342,7 +350,13 @@ func (a *app) drawDialog() {
 			c2 = max(c2, a.textWidth(r.value, 13, false))
 		}
 		ty += a.px(4)
+		var rowText []string
 		for _, r := range d.rows {
+			rowText = append(rowText, strings.TrimSpace(r.name+"  "+r.value+"  "+r.link))
+		}
+		a.selRegion("rows", rowText)
+		for ri, r := range d.rows {
+			a.selLine("rows", ri, x+p-a.px(4), ty-a.px(4), c1+c2+a.px(36), rowH)
 			a.text(r.name, x+p, ty, 13, true, colText)
 			a.text(r.value, x+p+c1+a.px(20), ty, 13, false, colMuted)
 			if r.link != "" {
@@ -369,13 +383,27 @@ func (a *app) drawDialog() {
 		bx, by, bw := x+p, ty+a.px(4), w-2*p
 		bh := y + h - p - a.px(44) - by
 		a.round(bx, by, bw, bh, a.px(6), colBackground)
+		// Long output lines wrap at the box's width, by character.
+		cols := max(20, int((bw-a.px(20))/a.monoWidth()))
+		var wrapped []string
+		for _, l := range out {
+			r := []rune(l)
+			for len(r) > cols {
+				wrapped = append(wrapped, string(r[:cols]))
+				r = r[cols:]
+			}
+			wrapped = append(wrapped, string(r))
+		}
+		out = wrapped
 		rows := max(1, int((bh-a.px(12))/mono))
 		d.scroll = min(d.scroll, max(0, len(out)-rows))
 		end := len(out) - d.scroll
 		start := max(0, end-rows)
 		a.pushClip(bx, by, bw, bh)
 		ly := by + a.px(6)
-		for _, l := range out[start:end] {
+		a.selRegion("output", out)
+		for oi, l := range out[start:end] {
+			a.selLine("output", start+oi, bx+a.px(4), ly, bw-a.px(8), mono)
 			c := colText
 			if strings.Contains(l, "ERROR:") || strings.HasPrefix(l, "[WARN]") {
 				c = colError
@@ -422,3 +450,11 @@ const (
 	fileDisc    = iota // a CUE sheet or a zip of one
 	fileArchive        // a .dosz
 )
+
+// copyAll is a job dialog's Copy button: its command lines and output,
+// to paste when asking for help.
+func (a *app) copyAll(d *dialog) dialogButton {
+	return dialogButton{label: "Copy", keep: true, fn: func() {
+		a.copyText(d.title + "\n" + strings.Join(d.job.lines(), "\n"))
+	}}
+}

@@ -323,3 +323,27 @@ func (a *app) wrap(s string, width int32, size float64) []string {
 	}
 	return out
 }
+
+// monoWidth is the monospaced face's character width in pixels.
+func (a *app) monoWidth() int32 {
+	return max(1, int32(font.MeasureString(a.faceOf(faceKey{px: int(a.px(12)), mono: true}), "M").Ceil()))
+}
+
+// wrapAny is wrap, also breaking a word longer than width (a path) by
+// characters.
+func (a *app) wrapAny(s string, width int32, size float64) []string {
+	var out []string
+	for _, l := range a.wrap(s, width, size) {
+		for a.textWidth(l, size, false) > width {
+			r := []rune(l)
+			n := len(r)
+			for n > 1 && a.textWidth(string(r[:n]), size, false) > width {
+				n--
+			}
+			out = append(out, string(r[:n]))
+			l = string(r[n:])
+		}
+		out = append(out, l)
+	}
+	return out
+}
