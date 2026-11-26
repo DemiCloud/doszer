@@ -108,6 +108,7 @@ type app struct {
 	selText map[string][]string
 
 	setupDone       bool   // Options.Setup ran
+	exportDir       string // a RetroDECK folder chosen for Export, for the session
 	selectAfterScan string // an archive to select once the list is read again
 	mx, my          int32
 	scroll          [3]int32       // per page, pixels

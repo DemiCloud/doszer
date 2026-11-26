@@ -24,10 +24,12 @@ import (
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/dump"
 	"github.com/DemiCloud/doszer/internal/env"
+	"github.com/DemiCloud/doszer/internal/export"
 	"github.com/DemiCloud/doszer/internal/gui"
 	"github.com/DemiCloud/doszer/internal/info"
 	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/interrupt"
+	"github.com/DemiCloud/doszer/internal/lint"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/output"
 	"github.com/DemiCloud/doszer/internal/platform"
@@ -83,6 +85,8 @@ func init() {
 		{"info", "show what an archive or source directory holds", runInfo},
 		{"deps", "show what archives need: parents, shell or OS image", runDeps},
 		{"verify", "check archives against their manifests and the specification", runVerify},
+		{"lint", "warn about what makes archives worse without making them wrong", runLint},
+		{"export", "copy archives into RetroDECK's folders, with what they need", runExport},
 		{"env", "show the directories, images and tools doszer finds here", runEnv},
 		{"config", "show, change or write doszer's configuration", runConfig},
 		{"gui", "open the window listing the archives in the ROM directory", runGUI},
@@ -213,7 +217,7 @@ func newFlags(name string) *pflag.FlagSet {
 }
 
 // dataCommands are the commands with a result --format can encode.
-var dataCommands = map[string]bool{"start": true, "deps": true, "info": true, "verify": true, "set": true, "version": true, "env": true, "config": true}
+var dataCommands = map[string]bool{"start": true, "deps": true, "lint": true, "export": true, "info": true, "verify": true, "set": true, "version": true, "env": true, "config": true}
 
 // format is the resolved --format of the command running.
 var format = output.Plain
@@ -618,7 +622,7 @@ Usage: doszer verify [options] FILE.dosz...
        doszer verify --all [DIR...]
 
 Options:
-      --all               check every .dosz under DIR (default: the current directory)
+      --all               check every .dosz and .dosp under DIR (default: the current directory)
 ` + flagFormatData + flagHelp
 	if ok, err := parse(fs, args, help, 0, 1<<20); !ok {
 		return err
@@ -638,7 +642,7 @@ Options:
 			return err
 		}
 		if len(paths) == 0 {
-			return fmt.Errorf("no .dosz files under %s", strings.Join(dirs, ", "))
+			return fmt.Errorf("no archives under %s", strings.Join(dirs, ", "))
 		}
 	}
 
@@ -707,7 +711,96 @@ Options:
 	return nil
 }
 
-// findArchives returns every .dosz file under dirs, sorted.
+// runLint implements `doszer lint FILE...`.
+func runLint(args []string) error {
+	fs := newFlags("lint")
+	all := fs.Bool("all", false, "")
+	systemDir := fs.String("system-dir", "", "")
+	const help = `doszer lint - warn about what makes archives worse without making them wrong
+
+Usage: doszer lint [options] FILE...
+       doszer lint --all [DIR...]
+
+Options:
+      --all               check every .dosz and .dosp under DIR (default: the current directory)
+` + flagSystemDir + flagFormatData + flagHelp
+	if ok, err := parse(fs, args, help, 0, 1<<20); !ok {
+		return err
+	}
+	if !*all && fs.NArg() == 0 {
+		fmt.Fprint(os.Stderr, help)
+		return errUsage
+	}
+	paths := fs.Args()
+	if *all {
+		dirs := paths
+		if len(dirs) == 0 {
+			dirs = []string{"."}
+		}
+		var err error
+		if paths, err = findArchives(dirs); err != nil {
+			return err
+		}
+		if len(paths) == 0 {
+			return fmt.Errorf("no archives under %s", strings.Join(dirs, ", "))
+		}
+	}
+	cfg, err := config.Load("")
+	if err != nil {
+		return err
+	}
+	sys := config.SystemDirOf(cfg, *systemDir).Path
+
+	type result struct {
+		File     string         `json:"file" yaml:"file" toml:"file"`
+		Findings []lint.Finding `json:"findings" yaml:"findings" toml:"findings"`
+	}
+	var results []result
+	found, clean := 0, 0
+	for _, p := range paths {
+		fds, err := lint.Check(p, sys)
+		if err != nil {
+			if len(paths) == 1 {
+				return err
+			}
+			logError(err)
+			continue
+		}
+		results = append(results, result{p, fds})
+		found += len(fds)
+		if len(fds) == 0 {
+			clean++
+		}
+		if format.Structured() {
+			continue
+		}
+		prefix := ""
+		if len(paths) > 1 {
+			prefix = p + ": "
+		}
+		for _, f := range fds {
+			fmt.Printf("%s%s [%s]\n", prefix, f.Message, f.Check)
+		}
+	}
+	switch format {
+	case output.CSV:
+		var rows [][]string
+		for _, r := range results {
+			for _, f := range r.Findings {
+				rows = append(rows, []string{r.File, f.Check, f.Message})
+			}
+		}
+		return output.EncodeCSV(os.Stdout, []string{"file", "check", "message"}, rows)
+	case output.JSON, output.YAML, output.TOML:
+		return output.Encode(os.Stdout, format, struct {
+			Archives []result `json:"archives" yaml:"archives" toml:"archives"`
+		}{results})
+	}
+	fmt.Printf("%d of %s clean, %s\n", clean, plural(len(results), "archive"), plural(found, "warning"))
+	return nil
+}
+
+// findArchives returns every .dosz and .dosp file under dirs, sorted.
 func findArchives(dirs []string) ([]string, error) {
 	var out []string
 	for _, dir := range dirs {
@@ -718,7 +811,7 @@ func findArchives(dirs []string) ([]string, error) {
 			if err != nil {
 				return err
 			}
-			if !d.IsDir() && strings.EqualFold(filepath.Ext(p), ".dosz") {
+			if ext := strings.ToLower(filepath.Ext(p)); !d.IsDir() && (ext == ".dosz" || ext == ".dosp") {
 				out = append(out, p)
 			}
 			return nil
@@ -2368,4 +2461,107 @@ Options:
 		}
 	}
 	return err
+}
+
+// runExport implements `doszer export FILE...`.
+func runExport(args []string) error {
+	fs := newFlags("export")
+	all := fs.Bool("all", false, "")
+	dir := fs.String("dir", "", "")
+	systemDir := fs.String("system-dir", "", "")
+	overwrite := fs.Bool("overwrite", false, "")
+	dryRun := fs.BoolP("dry-run", "n", false, "")
+	const help = `doszer export - copy archives into RetroDECK's folders, with what they need
+
+Usage: doszer export [options] FILE...
+       doszer export --all [DIR...]
+
+Options:
+      --all               export every .dosz under DIR (default: the ROM directories)
+      --dir DIR           RetroDECK's folder, holding roms and bios (default: RetroDECK's settings)
+      --overwrite         replace archives that differ (never a shell or OS image)
+  -n, --dry-run           show the copies without making them
+` + flagSystemDir + flagFormatData + flagHelp
+	if ok, err := parse(fs, args, help, 0, 1<<20); !ok {
+		return err
+	}
+	if !*all && fs.NArg() == 0 {
+		fmt.Fprint(os.Stderr, help)
+		return errUsage
+	}
+	cfg, err := config.Load("")
+	if err != nil {
+		return err
+	}
+	sys := config.SystemDirOf(cfg, *systemDir).Path
+	paths := fs.Args()
+	if *all {
+		dirs := paths
+		if len(dirs) == 0 {
+			dirs = config.DirPaths(config.ROMDirsOf(cfg, ""))
+		}
+		found, err := findArchives(dirs)
+		if err != nil {
+			return err
+		}
+		paths = nil
+		for _, p := range found { // parents come with the games using them
+			if strings.EqualFold(filepath.Ext(p), ".dosz") {
+				paths = append(paths, p)
+			}
+		}
+		if len(paths) == 0 {
+			return fmt.Errorf("no .dosz files under %s", strings.Join(dirs, ", "))
+		}
+	}
+	t, err := export.FindRetroDECK(*dir, sys)
+	if err != nil {
+		return err
+	}
+	steps, err := export.Plan(paths, sys, t, *overwrite)
+	if err != nil {
+		return err
+	}
+	if !*dryRun {
+		err = export.Apply(steps, func(s export.Step) { status.Step("Copying %s", filepath.Base(s.To)) })
+		endSteps(err)
+		if err != nil {
+			return err
+		}
+	}
+	switch format {
+	case output.CSV:
+		rows := make([][]string, len(steps))
+		for i, s := range steps {
+			rows[i] = []string{s.What, s.Action, s.From, s.To}
+		}
+		return output.EncodeCSV(os.Stdout, []string{"what", "action", "from", "to"}, rows)
+	case output.JSON, output.YAML, output.TOML:
+		return output.Encode(os.Stdout, format, struct {
+			ROMs  string        `json:"roms" yaml:"roms" toml:"roms"`
+			BIOS  string        `json:"bios" yaml:"bios" toml:"bios"`
+			Steps []export.Step `json:"steps" yaml:"steps" toml:"steps"`
+		}{t.ROMs, t.BIOS, steps})
+	}
+	fmt.Printf("ROMs:  %s\nBIOS:  %s (from %s)\n\n", t.ROMs, t.BIOS, t.From)
+	words := map[string]string{export.Copy: "Copied", export.Replace: "Replaced", export.Same: "Same", export.Conflict: "Differs, kept", export.Missing: "Not here"}
+	if *dryRun {
+		words[export.Copy], words[export.Replace] = "Would copy", "Would replace"
+	}
+	counts := map[string]int{}
+	for _, s := range steps {
+		counts[s.Action]++
+		to := s.To
+		if r, err := filepath.Rel(filepath.Dir(t.ROMs), s.To); err == nil && !strings.HasPrefix(r, "..") {
+			to = r
+		}
+		fmt.Printf("%-14s %s\n", words[s.Action], to)
+	}
+	if counts[export.Conflict] > 0 && !*overwrite {
+		fmt.Println("\n--overwrite replaces the archives that differ.")
+	}
+	if counts[export.Missing] > 0 {
+		return fmt.Errorf("%s not found here", plural(counts[export.Missing], "file"))
+	}
+	return nil
 }

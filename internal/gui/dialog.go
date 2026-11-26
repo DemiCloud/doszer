@@ -454,7 +454,7 @@ type drive struct {
 // File kinds pickFile asks for.
 const (
 	fileDisc    = iota // a CUE sheet or a zip of one
-	fileArchive        // a .dosz
+	fileArchive        // a .dosz or .dosp
 	fileIcon           // an ICO file, or a Windows program to take one from
 )
 

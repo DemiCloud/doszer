@@ -95,6 +95,7 @@ func (a *app) parentMenu(g *library.Game) {
 	items := []menuItem{
 		{label: "Dependencies", fn: func() { a.showDeps(path, name) }},
 		{label: "Verify", fn: func() { a.runDoszer("Verify: "+name, []string{"verify", "--format", "plain", path}, nil) }},
+		{label: "Lint", fn: func() { a.lint(path, name) }},
 		{label: "-"},
 		{label: "Convert to game…", fn: func() { a.convert(path, name, "dosz") }},
 	}

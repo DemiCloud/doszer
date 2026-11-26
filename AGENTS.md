@@ -36,6 +36,8 @@ internal/cue/        CUE parsing, track byte ranges, normalized track hash (§7.
 internal/iso9660/    ISO 9660 reader, for [[extract]] (§5.7)
 internal/padmap/     [[input.pad]] (§5.9): PADMAP.DBP and DOS.YML encoding (§6.8.2, §6.8.3)
 internal/verify/     doszer verify: an archive against its manifest and spec §8/§11
+internal/export/     doszer export: archives into RetroDECK's roms/<system> (dos, windows3x, windows9x), parents beside, shell/OS image into bios (never replaced)
+internal/lint/       doszer lint: quality warnings verify doesn't give (icon, identified discs, boot OS new enough, .dosp)
 internal/platform/   AUTORUN.INF/program icon suggestion for init; what a program needs (MZ/NE/PE headers, NE expected and PE subsystem versions), a game's programs together (installed over disc, helpers aside, DOS versions), source scanning incl. disc images; for info and init
 internal/env/        doszer env: this machine's config files, system/save directories and where they came from, shells and images (fixed/dynamic), configured names, Redump datfiles, ffmpeg
 internal/info/       doszer info: an archive's hashes, boot, parents, programs by platform (MZ/NE/PE headers), compression, discs
@@ -310,6 +312,8 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `convert` | Implemented; checked on the RetroDECK windows3x set (BOWEP.shell to .dosp, 13 legacy games re-pointed and given manifests) |
 | `set` | Implemented |
 | `verify` | Implemented |
+| `lint` | Implemented |
+| `export` | Implemented (RetroDECK); checked into a scratch folder, not yet onto a Steam Deck |
 | `prepare` | Implemented. `shell`: a prepared real Win3.1 shell ran a program through RunExit and closed DOSBox Pure (headless probe). `os`: a prepared real Win98 image booted to Program Manager's generated Tools group (icons re-extracted) and ran a `WINDOWS.BAT` with PRESSKEY (headless probe); its shutdown didn't close the probe session, as with the hand-made reference image (Next steps) |
 | `info` | Implemented |
 | `deps` | Implemented; checked on a real parent chain (RetroDECK windows3x: games over BOWEP.shell over the Win31 shell) |

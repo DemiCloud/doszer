@@ -172,7 +172,7 @@ func pickFilesFlags(title string, kind int, flags uint32) []string {
 	types := [][2]string{{"Disc images (*.cue, *.zip)", "*.cue;*.zip"}, {"All files", "*.*"}}
 	switch kind {
 	case fileArchive:
-		types = [][2]string{{"DOSBox Pure archives (*.dosz)", "*.dosz"}, {"All files", "*.*"}}
+		types = [][2]string{{"DOSBox Pure archives (*.dosz, *.dosp)", "*.dosz;*.dosp"}, {"All files", "*.*"}}
 	case fileIcon:
 		types = [][2]string{{"Icons and programs (*.ico, *.exe, *.dll)", "*.ico;*.exe;*.dll"}, {"All files", "*.*"}}
 	}
@@ -181,7 +181,7 @@ func pickFilesFlags(title string, kind int, flags uint32) []string {
 	}
 	filter := utf16z("Disc images (*.cue, *.zip)\x00*.cue;*.zip\x00All files\x00*.*\x00")
 	if kind == fileArchive {
-		filter = utf16z("DOSBox Pure archives (*.dosz)\x00*.dosz\x00All files\x00*.*\x00")
+		filter = utf16z("DOSBox Pure archives (*.dosz, *.dosp)\x00*.dosz;*.dosp\x00All files\x00*.*\x00")
 	}
 	return fileDialog(getOpenFileName, title, filter, "", "", flags|0x1000|0x800|0x8|0x80000) // OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER
 }

@@ -35,6 +35,7 @@ type menu struct {
 func (a *app) menus() []menu {
 	file := []menuItem{
 		{label: "Open…", keys: "Ctrl+O", fn: a.openFile},
+		{label: "Export all games…", fn: func() { a.export("Export all games", nil) }},
 		{label: "-"},
 		{label: "Quit", keys: "Ctrl+Q", fn: func() { a.quit = true }},
 	}
@@ -66,6 +67,10 @@ func (a *app) menus() []menu {
 		{label: "Verify", sub: []menuItem{
 			{label: "An archive…", fn: a.verifyFile},
 			{label: "All games", fn: a.verifyAll},
+		}},
+		{label: "Lint", sub: []menuItem{
+			{label: "An archive…", fn: a.lintFile},
+			{label: "All games", fn: a.lintAll},
 		}},
 		{label: "Environment", fn: func() { a.runDoszer("Environment", []string{"env", "--format", "plain"}, nil) }},
 	}
@@ -216,6 +221,25 @@ func (a *app) verifyAll() {
 		return
 	}
 	a.runDoszer("Verify all games", append([]string{"verify", "--format", "plain", "--all"}, config.DirPaths(a.romDirs)...), nil)
+}
+
+// lint runs `doszer lint` on an archive.
+func (a *app) lint(path, name string) {
+	a.runDoszer("Lint: "+name, []string{"lint", "--format", "plain", path}, nil)
+}
+
+func (a *app) lintFile() {
+	if p, ok := pickFile("Lint an archive", fileArchive); ok {
+		a.lint(p, filepath.Base(p))
+	}
+}
+
+func (a *app) lintAll() {
+	if len(a.romDirs) == 0 {
+		a.alert("No ROM folder", "Choose where games go first: Tools, Settings.")
+		return
+	}
+	a.runDoszer("Lint all games", append([]string{"lint", "--format", "plain", "--all"}, config.DirPaths(a.romDirs)...), nil)
 }
 
 // showShortcuts lists the keyboard shortcuts as a table.

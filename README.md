@@ -57,10 +57,12 @@ doszer convert FILE [--to dosp|dosz] [-n]
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [--add PATH=FILE...] [-n] [--strict] [--ogg-quality N]
 doszer set     FILE.dosz... [--parent [OLD:]NEW | --no-parent] [--os [OLD:]NEW] [--shell [OLD:]NEW] [-n]
 doszer verify  FILE.dosz... | --all [DIR...]
+doszer lint    FILE... | --all [DIR...] [--system-dir DIR]
 doszer info    FILE.dosz|SOURCE...
 doszer deps    FILE... [--used-by] [--system-dir DIR]
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
+doszer export  FILE... | --all [DIR...] [--dir DIR] [--overwrite] [-n] [--system-dir DIR]
 doszer env     [--system-dir DIR] [--save-dir DIR] [--rom-dir DIR]
 doszer env portable [DIR] [--copy] [--from FILE] [-n] [-f]
 doszer gui     [--rom-dir DIR] [--system-dir DIR] [--save-dir DIR]
@@ -86,7 +88,7 @@ Every command takes `--format FMT`, named as in the sibling `romctl`:
 |---|---|
 | `fancy` | Text, with the spinner and finished steps. Default on a terminal. |
 | `plain` | The same text without them. Default when piped or redirected. |
-| `json`, `yaml`, `toml` | `info`, `verify`, `set` and `version` only: the result, and nothing else, on standard output, for scripts. Several archives are a list under `archives`. |
+| `json`, `yaml`, `toml` | `info`, `verify`, `lint`, `export`, `deps`, `set` and `version` only: the result, and nothing else, on standard output, for scripts. Several archives are a list under `archives`. |
 | `csv` | The same as one row per archive (`info`: its single-valued fields) or program. |
 
 Warnings and errors still go to standard error. A failed archive under a
@@ -101,9 +103,20 @@ refuses one), whether `defaults.shell`, `defaults.os` and `install.os`
 name images present here, the Redump datfiles, and ffmpeg. It describes
 only this machine; archives may be played somewhere else.
 
-`verify --all` checks every `.dosz` under the given directories
-(default: the current one), e.g. a collection after copying it, and ends
-with a count; any failure makes it exit 1.
+`verify --all` checks every `.dosz` and `.dosp` under the given
+directories (default: the current one), e.g. a collection after copying
+it, and ends with a count; any failure makes it exit 1.
+
+`lint` warns about what makes an archive worse without making it wrong,
+each warning tagged with its check: `manifest` (none embedded, so
+`repack` can't rebuild it), `icon` (no `DOSZ.ICO`; games only), `media`
+(a disc image no `[[source.media]]` entry identifies), `audio` (CD audio
+in WAV, where Ogg Vorbis is smaller), `chain` (a parent, shell or OS
+image missing), `os` (its programs need a newer Windows than the one it
+boots, judged by the image's name), `type` (a `.dosz` other archives use
+as a parent with no programs of its own, or a `.dosp` nothing uses) and
+`start` (no program to start: DOSBox Pure's start menu opens). It exits
+0 whatever it finds.
 
 | Command | Purpose |
 |---|---|
@@ -113,6 +126,8 @@ with a count; any failure makes it exit 1.
 | `repack` | Rebuild an archive from its embedded manifest. |
 | `set` | Change archives' parent, OS image or shell in place. |
 | `verify` | Check archives against their embedded manifests and the specification. |
+| `lint` | Warn about what makes archives worse without making them wrong. |
+| `export` | Copy archives into RetroDECK's folders, with their parents, shell or OS image. |
 | `info` | Show what an archive or source directory holds (below). |
 | `env` | Show the directories, images and tools doszer finds on this machine. |
 | `prepare` | Make a game-ready copy of a Windows 3.x shell or Windows 9x OS image (see "Preparing a shell", "Windows 9x OS image"). |
@@ -854,10 +869,10 @@ action:
 
 | Menu | |
 |---|---|
-| File | Open (an archive, to play), Quit |
+| File | Open (an archive, to play), Export all games (to RetroDECK), Quit |
 | View | Games, Parents, Systems; list or grid, sort, refresh |
 | Build | Import a disc, Build a folder, Repack an archive, Prepare a shell or OS image |
-| Tools | Settings, Verify (an archive, or all games), Environment |
+| Tools | Settings, Verify and Lint (an archive, or all games), Environment |
 | Help | Keyboard shortcuts, Credits (doszer and what it embeds, linked), About (right-click the icon to save it) |
 
 A file dropped on the window plays (`.dosz`), starts an import (`.cue`,
@@ -884,7 +899,7 @@ A file dropped on the window plays (`.dosz`), starts an import (`.cue`,
   at a time.
 - **Parents**: every `.dosp` under the ROM directory: icon, name,
   folder, what it boots and the games beside it that use it. Its menu
-  shows dependencies, verifies, or converts it back to a game (`doszer
+  shows dependencies, verifies, lints, or converts it back to a game (`doszer
   convert --to dosz`); a game's Tools > Convert to parent does the
   reverse.
 - **Systems**: the OS images and shells in the system directory, with
@@ -902,7 +917,7 @@ Tools > Settings (Ctrl+,) is a dialog:
   defaults, shown greyed in them.
 
 A right click on a game opens its menu, submenus cascading: Play, Edit,
-Tools (Info, Dependencies, Verify, Repack, Convert to parent, Advanced:
+Tools (Info, Dependencies, Verify, Lint, Repack, Export, Convert to parent, Advanced:
 edit WINDOWS.BAT or DOSZ.TOML as text), Change (Parent - the `.dosp`
 files beside it -, OS image or Shell, each listing its choices), Show in
 folder. A submenu with no room on the right opens on the left.
@@ -1056,6 +1071,28 @@ frontend's system directory, e.g. `dosbox_pure/<image>.vhd`, named
 however you like: a manifest's `shell` or `os` names the file by its path
 there (`dosbox_pure/<image>`), so archives that share one must use the
 same name.
+
+### Exporting to RetroDECK
+
+`doszer export FILE...` (or `--all`, every game in the ROM directories)
+copies archives into RetroDECK's folders with what they need:
+
+- each game into `roms/<system>/`, ES-DE's system folder for how it
+  boots: `dos`, `windows3x` (a Windows 3.x shell or image) or
+  `windows9x` (a Windows 9x image, or one whose name doesn't tell);
+- its parents beside it, where DOSBox Pure looks for them;
+- the shell or OS image it boots from the system directory into `bios/`,
+  at the path its `AUTOBOOT.DBP` names.
+
+The folders are RetroDECK's (`retrodeck.json`), else the system
+directory's when it is a `bios` folder beside a `roms` folder (a synced
+copy), else `--dir`: a folder holding `roms` and `bios`. A file already
+there with the same size and time is left alone; one that differs is
+kept unless `--overwrite`. A shell or OS image is only ever copied when
+missing, never replaced: the frontend's copy may have changed by being
+played. `-n` shows the copies without making them. The window's File >
+Export all games and a game's Tools > Export show that dry run first,
+then offer Export (and Overwrite when an archive differs).
 
 ### Preparing a shell
 

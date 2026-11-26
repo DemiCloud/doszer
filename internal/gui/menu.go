@@ -23,12 +23,14 @@ func (a *app) gameMenu(g *library.Game) {
 		{label: "Info", fn: func() { a.runDoszer("Info: "+name, []string{"info", "--format", "plain", path}, nil) }},
 		{label: "Dependencies", fn: func() { a.showDeps(path, name) }},
 		{label: "Verify", fn: func() { a.runDoszer("Verify: "+name, []string{"verify", "--format", "plain", path}, nil) }},
+		{label: "Lint", fn: func() { a.lint(path, name) }},
 		{label: "-"},
 		{label: "Repack…", fn: func() {
 			a.confirm("Repack "+name+"?", "Repack", func() {
 				a.runDoszer("Repack: "+name, []string{"repack", "--format", "plain", path, path}, rescan)
 			}, "Rebuilds the archive from its embedded manifest, in place.")
 		}},
+		{label: "Export…", fn: func() { a.export("Export: "+name, []string{path}) }},
 		{label: "Convert to parent…", fn: func() { a.convert(path, name, "dosp") }},
 		{label: "-"},
 		{label: "Advanced", sub: []menuItem{
