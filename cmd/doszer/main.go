@@ -2472,6 +2472,9 @@ Options:
 		for _, c := range res.Children {
 			fmt.Printf("  parent of %s\n", filepath.Base(c))
 		}
+		for _, f := range res.Removed {
+			fmt.Printf("  removed %s\n", f)
+		}
 	}
 	return err
 }

@@ -107,6 +107,10 @@ library), and is not meant to be played on its own, SHOULD be named with
 the extension `.dosp`, so that a frontend listing `.dosz` files does not
 offer it as a game. DOSBox Pure resolves a parent by its full file name,
 whatever the extension.
+Such an archive SHOULD NOT contain `WINDOWS.BAT`: DOSBox Pure runs the
+first of `WINDOWS.BAT`, `AUTOEXEC.BAT` and `WINDOWS\WIN.COM` it finds in
+the content when a shell starts, so a parent's would start its program
+in every child without one of its own.
 
 ### 5.4 `[layout]`
 

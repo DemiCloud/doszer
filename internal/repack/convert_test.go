@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DemiCloud/doszer/internal/build"
@@ -49,7 +50,7 @@ func TestConvert(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			writeZip(t, filepath.Join(dir, "Base.dosz"), map[string]string{"WINDOWS/WIN.COM": "x"})
+			writeZip(t, filepath.Join(dir, "Base.dosz"), map[string]string{"WINDOWS/WIN.COM": "x", "AUTOBOOT.DBP": "S*Win31\n", "WINDOWS.BAT": "@ECHO OFF\r\nGAME.EXE\r\n"})
 			writeZip(t, filepath.Join(dir, "Legacy.dosz"), map[string]string{"Base.dosz.parent": "", "GAME.EXE": "MZ"})
 			src := t.TempDir()
 			writeFile(t, src, "DOSZ.TOML", plainManifest+"parent = 'Base.dosz'\n")
@@ -66,6 +67,16 @@ func TestConvert(t *testing.T) {
 				t.Fatalf("parent: %v", err)
 			}
 			wantMarker := tt.want + ".parent"
+			// A parent leaves starting to its children: no WINDOWS.BAT, and
+			// the boot its AUTOBOOT.DBP had is kept.
+			base := readZip(t, filepath.Join(dir, tt.want))
+			_, bat := base["WINDOWS.BAT"]
+			if want := tt.want != "Base.dosp"; bat != want {
+				t.Errorf("%s has WINDOWS.BAT: %v, want %v", tt.want, bat, want)
+			}
+			if f, ok := base["AUTOBOOT.DBP"]; !ok || !strings.HasPrefix(readZipFile(t, f), "S*Win31") {
+				t.Errorf("%s lost its AUTOBOOT.DBP", tt.want)
+			}
 			if tt.ext == repack.ExtParent && len(res.Children) != 2 {
 				t.Errorf("children = %v, want 2", res.Children)
 			}

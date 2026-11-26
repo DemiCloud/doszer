@@ -39,8 +39,8 @@ type SetOptions struct {
 	Shell  *Change // applies only to an archive that boots a shell
 	DryRun bool
 	// Retrofit gives an archive with no embedded manifest (one not built
-	// by doszer) a minimal one - its name and current parent - to change,
-	// instead of refusing it.
+	// by doszer) a minimal one (Retrofit) to change, instead of refusing
+	// it.
 	Retrofit bool
 
 	Provenance *build.Provenance
@@ -88,10 +88,7 @@ func Set(opts SetOptions) (*SetResult, error) {
 	var m *manifest.Manifest
 	switch {
 	case mf == nil && opts.Retrofit:
-		m = &manifest.Manifest{Format: manifest.FormatVersion, Name: defaultName}
-		if links := chain.Resolve(opts.Path).Links; len(links) > 1 {
-			m.Boot.Parent = links[1].Name
-		}
+		m = Retrofit(opts.Path, defaultName)
 	case mf == nil:
 		return nil, fmt.Errorf("%s: no embedded %s (repack --manifest adds one)", opts.Path, manifest.FileName)
 	default:
@@ -142,4 +139,27 @@ func Set(opts SetOptions) (*SetResult, error) {
 		return nil, fmt.Errorf("%s: %w", opts.Path, err)
 	}
 	return res, nil
+}
+
+// Retrofit is a minimal manifest for an archive built without doszer:
+// its name, its parent marker's parent, and what its own AUTOBOOT.DBP
+// boots (line 1: S*shell, O*image or a program; dosbox_pure_run.h,
+// ReadAutoBoot), so rebuilding it keeps how it starts.
+func Retrofit(path, name string) *manifest.Manifest {
+	m := &manifest.Manifest{Format: manifest.FormatVersion, Name: name}
+	links := chain.Resolve(path).Links
+	if len(links) > 1 {
+		m.Boot.Parent = links[1].Name
+	}
+	if l := links[0]; l.Has {
+		switch line := l.Autoboot; {
+		case strings.HasPrefix(line, "S*"):
+			m.Boot.Shell = line[2:]
+		case strings.HasPrefix(line, "O*"):
+			m.Boot.OS = line[2:]
+		default:
+			m.Boot.Exec = line
+		}
+	}
+	return m
 }

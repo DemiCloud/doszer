@@ -40,6 +40,7 @@ type Options struct {
 	Flatten      bool              // turn on layout.flatten (build.Options.Flatten)
 	Strict       bool              // fail if any §11 warning condition occurs
 	Add          map[string]string // files to add or replace: path in the archive -> file on disk (an icon, a tool)
+	Remove       []string          // files to leave out (case-insensitive paths), before Add and [[file]]
 
 	Provenance *build.Provenance // recorded in the archive comment, if set (§8.4)
 }
@@ -110,6 +111,14 @@ func Run(opts Options) (*build.Result, error) {
 	m, err := manifest.Parse(data, defaultName)
 	if err != nil {
 		return nil, fmt.Errorf("%s is invalid: %w", manifestSource, err)
+	}
+
+	for _, p := range opts.Remove {
+		for q := range entries {
+			if strings.EqualFold(q, p) {
+				delete(entries, q)
+			}
+		}
 	}
 
 	// Added files replace an entry at the same path, before [[file]]
