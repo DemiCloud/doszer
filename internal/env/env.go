@@ -136,6 +136,10 @@ func Read(cfg config.Config, systemDir, saveDir, romDir string) (*Report, error)
 	return r, nil
 }
 
+// ImageKind tells a fixed VHD from a dynamic one, or a raw image, with a
+// note on what that means for doszer.
+func ImageKind(p string) (kind, note string) { return imageKind(p) }
+
 // imageKind tells a fixed VHD from a dynamic one, or a raw image.
 func imageKind(p string) (kind, note string) {
 	if !strings.EqualFold(filepath.Ext(p), ".vhd") {
@@ -176,7 +180,11 @@ func Print(w io.Writer, r *Report) {
 	}
 	dir := func(k string, d Dir) {
 		if d.Path == "" {
-			line(k, "none found")
+			if d.From != "" {
+				line(k, "none (%s)", d.From)
+			} else {
+				line(k, "none found")
+			}
 			return
 		}
 		line(k, "%s (%s)", d.Path, d.From)
@@ -185,7 +193,7 @@ func Print(w io.Writer, r *Report) {
 	dir("Save dir", r.SaveDir)
 	dir("ROM dir", r.ROMDir)
 	if rd := r.RetroDECK; rd != nil {
-		if rd.ROMs != "" && rd.Saves != "" && r.SaveDir.From == config.FromCache {
+		if rd.ROMs != "" && rd.Saves != "" && (r.SaveDir.From == config.FromCache || r.SaveDir.From == config.FromTemp) {
 			line("", "run: %s for archives under %s (RetroDECK)", filepath.Join(rd.Saves, "<folder>"), rd.ROMs)
 		}
 		line("RetroDECK", "BIOS %s, ROMs %s, saves %s", orNone(rd.BIOS), orNone(rd.ROMs), orNone(rd.Saves))

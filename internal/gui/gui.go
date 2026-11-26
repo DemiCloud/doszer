@@ -1,95 +1,59 @@
-// Package gui is doszer's window: the archives under the ROM directory as
-// a list or grid, with their icons (DOSZ.ICO), how they boot and how long
-// they've been played. Choosing one runs it with `doszer run` in a
-// process of its own; the window records the session's length.
+// Package gui is doszer's window. Games: the archives under the ROM
+// directory as a list or grid, with their icons (DOSZ.ICO), how they boot
+// and how long they've been played; choosing one runs it with `doszer
+// run` in a process of its own, timed. Systems: the shells and OS images
+// in the system directory, which games use them and which are missing.
+// Settings: doszer's configuration, written to its config file. On a
+// first run (no config file) it offers to set doszer up portable, in the
+// user's profile, or not at all - and an unconfigured doszer writes no
+// files of its own.
 package gui
 
 import (
-	"bytes"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"image"
-	"image/draw"
 	"image/png"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
-	"strings"
-	"sync"
 	"time"
-	"unicode/utf8"
 	"unsafe"
 
 	"golang.org/x/image/font"
 
 	"github.com/DemiCloud/doszer/internal/config"
-	"github.com/DemiCloud/doszer/internal/icon"
 	"github.com/DemiCloud/doszer/internal/library"
 	"github.com/DemiCloud/doszer/internal/libretro"
 	"github.com/DemiCloud/doszer/internal/sdl"
 )
 
-// Options say what the window shows and how it runs games.
+// Options say how the window starts. The directories are the command
+// line's (--rom-dir, --system-dir, --save-dir): they win over the
+// configuration, as for every command.
 type Options struct {
-	ROMDir    config.Dir // "" Path: none configured or found
-	SystemDir string     // passed to `doszer run` as --system-dir, if set
-	SaveDir   string     // passed as --save-dir, if set
-	SDL       []string   // SDL2 libraries (builtin.Extract); nil for the system's
-	StatsPath string     // play time file (config.StatsPath)
-	Version   string     // for the status bar
+	ROMDir, SystemDir, SaveDir string
+	SDL                        []string // SDL2 libraries (builtin.Extract); nil for the system's
+	Version                    string   // for the status bar
 
-	// Screenshot, if set, saves the window as a PNG there once the scan
-	// is done, then closes it: to see the window without one (tests).
+	// Screenshot, if set, saves the window as a PNG there once the scans
+	// are done, then closes it: to see the window without one (tests).
+	// The first-run dialog isn't opened unless Setup opens it.
 	Screenshot string
-	Setup      func(a *App) // before the screenshot: select, search, ...
+	Setup      func(a *App)
+	StatsPath  string // play time file instead of config.StatsPath's (tests)
 }
 
 // App is the window's state, for Options.Setup.
 type App = app
 
-// Select selects the n-th game shown.
-func (a *app) Select(n int) { a.sel = min(n, len(a.view)-1); a.reveal() }
-
-// Search types q into the search field.
-func (a *app) Search(q string) { a.query = q; a.refilter(a.keepPath()) }
-
-// Grid switches to the grid view.
-func (a *app) Grid(on bool) { a.grid = on; a.reveal() }
-
-type sortMode int
+type page int
 
 const (
-	sortName sortMode = iota
-	sortLastPlayed
-	sortPlayTime
-	sortSize
-	sortModes
+	pageGames page = iota
+	pageSystems
+	pageSettings
 )
-
-func (s sortMode) String() string {
-	return [...]string{"Name", "Last played", "Play time", "Size"}[s]
-}
-
-// hit is a clickable area drawn this frame.
-type hit struct {
-	x, y, w, h int32
-	button     string // a toolbar button's name, or ""
-	game       int    // index into app.view, when button is ""
-}
-
-type scanResult struct {
-	games []library.Game
-	err   error
-}
-
-type runResult struct {
-	path  string
-	start time.Time
-	took  time.Duration
-	err   error
-}
 
 type app struct {
 	o        Options
@@ -106,27 +70,30 @@ type app struct {
 	icons  map[string]*texture // by archive path; nil: no icon
 	circle *texture
 
-	stats    *library.Stats
-	games    []library.Game
-	scanning bool
-	scanErr  error
-	scanCh   chan scanResult
+	// What the configuration says now (reload).
+	cfg    config.Config
+	romDir config.Dir
+	sysDir config.Dir
 
-	query  string
-	sort   sortMode
-	grid   bool
-	view   []int // indices into games: filtered and sorted
-	sel    int   // index into view, -1 for none
-	scroll int32 // pixels
-	hover  int   // index into view under the mouse, -1 for none
-	hoverB string
-	mx, my int32
+	page   page
+	layer  int
 	hits   []hit
+	clips  []sdl.Rect
+	focus  *field
+	popup  *popup
+	setup  *setupDialog
+	mx, my int32
+	scroll [3]int32 // per page, pixels
+
+	games
+	systems
+	settings
 
 	running string // archive being played, or ""
 	runCh   chan runResult
 	message string
 	msgErr  bool
+	msgAt   time.Time
 }
 
 // Run opens the window and returns when it is closed.
@@ -142,6 +109,7 @@ func Run(o Options) error {
 	}
 	defer sdl.Quit()
 
+	st := loadState()
 	dpi := 1.0
 	if runtime.GOOS == "windows" {
 		var d, hd, vd float32
@@ -149,12 +117,16 @@ func Run(o Options) error {
 			dpi = float64(hd) / 96
 		}
 	}
-	win := sdl.CreateWindow("doszer", sdl.WindowPosCentered, sdl.WindowPosCentered, int32(1120*dpi), int32(720*dpi), sdl.WindowHidden|sdl.WindowResizable|sdl.WindowAllowHighDPI)
+	w, h := int32(1120*dpi), int32(720*dpi)
+	if st.Width > 0 && o.Screenshot == "" {
+		w, h = st.Width, st.Height
+	}
+	win := sdl.CreateWindow("doszer", sdl.WindowPosCentered, sdl.WindowPosCentered, w, h, sdl.WindowHidden|sdl.WindowResizable|sdl.WindowAllowHighDPI)
 	if win == 0 {
 		return sdl.Error("SDL_CreateWindow")
 	}
 	defer sdl.DestroyWindow(win)
-	sdl.SetWindowMinimumSize(win, int32(520*dpi), int32(360*dpi))
+	sdl.SetWindowMinimumSize(win, int32(640*dpi), int32(420*dpi))
 	libretro.SetIcon(win)
 	ren := sdl.CreateRenderer(win, -1, sdl.RendererAccelerated)
 	if ren == 0 {
@@ -166,30 +138,20 @@ func Run(o Options) error {
 	sdl.SetRenderDrawBlendMode(ren, sdl.BlendModeBlend)
 
 	a := &app{
-		o: o, win: win, ren: ren, dirty: true, sel: -1, hover: -1,
+		o: o, win: win, ren: ren, dirty: true,
 		faces: map[faceKey]font.Face{}, texts: map[textKey]*texture{}, icons: map[string]*texture{},
-		scanCh: make(chan scanResult, 1), runCh: make(chan runResult, 1),
+		runCh: make(chan runResult, 1),
 	}
-	defer a.clearCaches()
-	defer func() {
-		for _, t := range a.icons {
-			if t != nil {
-				sdl.DestroyTexture(t.t)
-			}
-		}
-		if a.circle != nil {
-			sdl.DestroyTexture(a.circle.t)
-		}
-	}()
+	a.initGames(st)
+	a.initSystems()
+	a.initSettings()
+	defer a.destroy()
 	a.makeCircle()
 	a.measure()
-	if o.StatsPath != "" {
-		var err error
-		if a.stats, err = library.LoadStats(o.StatsPath, o.ROMDir.Path); err != nil {
-			a.message, a.msgErr = "play time: "+err.Error(), true
-		}
+	a.reload()
+	if !config.Configured() && o.Screenshot == "" {
+		a.openSetup()
 	}
-	a.rescan()
 	a.draw()
 	sdl.ShowWindow(win)
 	sdl.StartTextInput()
@@ -205,48 +167,81 @@ func Run(o Options) error {
 		select {
 		case r := <-a.scanCh:
 			a.scanned(r)
+		case r := <-a.sysCh:
+			a.systemsScanned(r)
 		case r := <-a.runCh:
 			a.finished(r)
 		default:
 		}
-		if a.scanning || a.running != "" {
+		if a.busy() {
 			a.dirty = true // the status bar's activity
+		}
+		if a.message != "" && !a.msgErr && time.Since(a.msgAt) > 6*time.Second {
+			a.message, a.dirty = "", true
 		}
 		if a.dirty {
 			a.draw()
 		}
-		if a.o.Screenshot != "" && !a.scanning {
+		if a.o.Screenshot != "" && !a.scanning && !a.sysScanning {
 			if a.o.Setup != nil {
 				a.o.Setup(a)
 			}
-			a.draw()
+			// Read before presenting: after it, the back buffer's
+			// content is undefined (Direct3D gave the previous frame).
+			a.render()
 			return a.screenshot(a.o.Screenshot)
 		}
 	}
+	a.saveState()
 	if a.running != "" {
 		// The game's process outlives the window; its play time still
 		// counts, recorded when it ends.
-		r := <-a.runCh
-		a.finished(r)
+		a.finished(<-a.runCh)
 	}
 	return nil
 }
 
-// screenshot saves what draw drew as a PNG.
-func (a *app) screenshot(path string) error {
-	img := image.NewNRGBA(image.Rect(0, 0, int(a.w), int(a.h)))
-	if sdl.RenderReadPixels(a.ren, nil, sdl.PixelFormatABGR8888, unsafe.Pointer(&img.Pix[0]), int32(img.Stride)) != 0 {
-		return sdl.Error("SDL_RenderReadPixels")
+func (a *app) busy() bool { return a.scanning || a.sysScanning || a.running != "" }
+
+func (a *app) destroy() {
+	a.clearCaches()
+	for _, t := range a.icons {
+		if t != nil {
+			sdl.DestroyTexture(t.t)
+		}
 	}
-	for i := 3; i < len(img.Pix); i += 4 {
-		img.Pix[i] = 255
+	if a.circle != nil {
+		sdl.DestroyTexture(a.circle.t)
 	}
-	f, err := os.Create(path)
+}
+
+// reload reads the configuration again, after it changed (settings, the
+// first-run dialog), rescanning what it moved.
+func (a *app) reload() {
+	cfg, err := config.Load("")
 	if err != nil {
-		return err
+		a.say(err.Error(), true)
 	}
-	defer f.Close()
-	return png.Encode(f, img)
+	a.cfg = cfg
+	rom, sys := config.ROMDirOf(cfg, a.o.ROMDir), config.SystemDirOf(cfg, a.o.SystemDir)
+	romChanged := rom.Path != a.romDir.Path || a.games.list == nil
+	sysChanged := sys.Path != a.sysDir.Path || a.systems.files == nil
+	a.romDir, a.sysDir = rom, sys
+	a.loadStats()
+	if romChanged {
+		a.rescan()
+	}
+	if sysChanged || romChanged {
+		a.rescanSystems()
+	}
+	a.loadSettings()
+	a.dirty = true
+}
+
+// say shows a message in the status bar: an error stays until the next
+// message, anything else for a few seconds.
+func (a *app) say(msg string, isErr bool) {
+	a.message, a.msgErr, a.msgAt, a.dirty = msg, isErr, time.Now(), true
 }
 
 // measure reads the window's size and scale, clearing the caches if the
@@ -273,147 +268,38 @@ func (a *app) measure() {
 	}
 }
 
-// rescan lists the ROM directory in the background.
-func (a *app) rescan() {
-	if a.o.ROMDir.Path == "" || a.scanning {
-		return
+// screenshot saves what draw drew as a PNG.
+func (a *app) screenshot(path string) error {
+	img := image.NewNRGBA(image.Rect(0, 0, int(a.w), int(a.h)))
+	if sdl.RenderReadPixels(a.ren, nil, sdl.PixelFormatABGR8888, unsafe.Pointer(&img.Pix[0]), int32(img.Stride)) != 0 {
+		return sdl.Error("SDL_RenderReadPixels")
 	}
-	a.scanning = true
-	dir, stats := a.o.ROMDir.Path, a.stats
-	go func() {
-		games, err := library.Scan(dir, stats)
-		a.scanCh <- scanResult{games, err}
-	}()
-}
-
-func (a *app) scanned(r scanResult) {
-	a.scanning = false
-	a.scanErr = r.err
-	var keep string
-	if g := a.selected(); g != nil {
-		keep = g.Path
+	for i := 3; i < len(img.Pix); i += 4 {
+		img.Pix[i] = 255
 	}
-	for _, t := range a.icons {
-		if t != nil {
-			sdl.DestroyTexture(t.t)
-		}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
 	}
-	a.icons = map[string]*texture{}
-	a.games = r.games
-	a.refilter(keep)
-}
-
-// refilter recomputes the view after the games, query or sort changed,
-// keeping keep (an archive path) selected if it is still shown.
-func (a *app) refilter(keep string) {
-	q := strings.ToLower(strings.TrimSpace(a.query))
-	a.view = a.view[:0]
-	for i, g := range a.games {
-		if q == "" || strings.Contains(strings.ToLower(g.Name), q) || strings.Contains(strings.ToLower(g.Rel), q) || strings.Contains(strings.ToLower(g.System), q) {
-			a.view = append(a.view, i)
-		}
-	}
-	less := func(x, y *library.Game) bool {
-		switch a.sort {
-		case sortLastPlayed:
-			if !x.LastPlayed.Equal(y.LastPlayed) {
-				return x.LastPlayed.After(y.LastPlayed)
-			}
-		case sortPlayTime:
-			if x.PlayTime != y.PlayTime {
-				return x.PlayTime > y.PlayTime
-			}
-		case sortSize:
-			if x.Size != y.Size {
-				return x.Size > y.Size
-			}
-		}
-		return strings.ToLower(x.Name) < strings.ToLower(y.Name)
-	}
-	sort.SliceStable(a.view, func(i, j int) bool { return less(&a.games[a.view[i]], &a.games[a.view[j]]) })
-	a.sel = -1
-	for i, gi := range a.view {
-		if a.games[gi].Path == keep {
-			a.sel = i
-		}
-	}
-	if a.sel < 0 && len(a.view) > 0 {
-		a.sel = 0
-	}
-	a.scroll = 0
-	a.reveal()
-	a.dirty = true
-}
-
-func (a *app) selected() *library.Game {
-	if a.sel < 0 || a.sel >= len(a.view) {
-		return nil
-	}
-	return &a.games[a.view[a.sel]]
+	defer f.Close()
+	return png.Encode(f, img)
 }
 
 // Layout, in pixels.
 func (a *app) toolbarH() int32 { return a.px(56) }
 func (a *app) statusH() int32  { return a.px(30) }
 func (a *app) pad() int32      { return a.px(14) }
-func (a *app) rowH() int32     { return a.px(88) }
-func (a *app) rowGap() int32   { return a.px(8) }
-func (a *app) tileW() int32    { return a.px(172) }
-func (a *app) tileH() int32    { return a.px(196) }
 
-// area is the scrolled list's rectangle.
+// area is the page's scrolled rectangle.
 func (a *app) area() (x, y, w, h int32) {
 	return 0, a.toolbarH(), a.w, a.h - a.toolbarH() - a.statusH()
 }
 
-// columns is the grid's column count.
-func (a *app) columns() int {
-	_, _, w, _ := a.area()
-	return max(1, int((w-a.pad())/(a.tileW()+a.rowGap())))
-}
-
-// itemRect is item i's rectangle in content coordinates (before
-// scrolling, relative to the area's top).
-func (a *app) itemRect(i int) (x, y, w, h int32) {
-	_, _, aw, _ := a.area()
-	p := a.pad()
-	if !a.grid {
-		return p, p + int32(i)*(a.rowH()+a.rowGap()), aw - 2*p, a.rowH()
-	}
-	cols := a.columns()
-	used := int32(cols)*(a.tileW()+a.rowGap()) - a.rowGap()
-	left := (aw - used) / 2
-	return left + int32(i%cols)*(a.tileW()+a.rowGap()), p + int32(i/cols)*(a.tileH()+a.rowGap()), a.tileW(), a.tileH()
-}
-
-func (a *app) contentH() int32 {
-	if len(a.view) == 0 {
-		return 0
-	}
-	_, y, _, h := a.itemRect(len(a.view) - 1)
-	return y + h + a.pad()
-}
-
-func (a *app) clampScroll() {
+// scrollBy scrolls the page, within contentH.
+func (a *app) scrollBy(d, contentH int32) {
 	_, _, _, h := a.area()
-	a.scroll = max(0, min(a.scroll, a.contentH()-h))
-}
-
-// reveal scrolls the selection into view.
-func (a *app) reveal() {
-	if a.sel < 0 {
-		return
-	}
-	_, y, _, h := a.itemRect(a.sel)
-	_, _, _, ah := a.area()
-	p := a.pad()
-	if y-p < a.scroll {
-		a.scroll = y - p
-	}
-	if y+h+p > a.scroll+ah {
-		a.scroll = y + h + p - ah
-	}
-	a.clampScroll()
+	s := &a.scroll[a.page]
+	*s = max(0, min(*s+d, contentH-h))
 }
 
 func (a *app) event(e *sdl.Event) {
@@ -424,11 +310,11 @@ func (a *app) event(e *sdl.Event) {
 	case sdl.EventWindow:
 		if e.WindowEvent() == sdl.WindowEventSizeChanged {
 			a.measure()
-			a.clampScroll()
 		}
 	case sdl.EventTextInput:
-		a.query += e.Text()
-		a.refilter(a.keepPath())
+		if a.focus != nil && a.popup == nil {
+			a.focus.insert(e.Text())
+		}
 	case sdl.EventKeyDown:
 		sc, mod, _ := e.Key()
 		a.key(sc, mod)
@@ -436,8 +322,9 @@ func (a *app) event(e *sdl.Event) {
 		x, y := e.MouseXY()
 		a.mx, a.my = int32(float64(x)*a.ratio), int32(float64(y)*a.ratio)
 	case sdl.EventMouseWheel:
-		a.scroll -= e.Wheel() * a.px(72)
-		a.clampScroll()
+		if a.popup == nil && a.setup == nil {
+			a.scrollBy(-e.Wheel()*a.px(72), a.contentH())
+		}
 	case sdl.EventMouseButtonDown:
 		x, y := e.MouseXY()
 		a.mx, a.my = int32(float64(x)*a.ratio), int32(float64(y)*a.ratio)
@@ -447,308 +334,130 @@ func (a *app) event(e *sdl.Event) {
 	}
 }
 
-func (a *app) keepPath() string {
-	if g := a.selected(); g != nil {
-		return g.Path
-	}
-	return ""
-}
-
-// SDL scancodes.
-const (
-	scReturn    = 40
-	scEscape    = 41
-	scBackspace = 42
-	scF5        = 62
-	scHome      = 74
-	scPageUp    = 75
-	scEnd       = 77
-	scPageDown  = 78
-	scRight     = 79
-	scLeft      = 80
-	scDown      = 81
-	scUp        = 82
-	scKPEnter   = 88
-	scR         = 21
-	scG         = 10
-	scL         = 15
-)
-
 func (a *app) key(sc int32, mod uint16) {
-	step := 1
-	if a.grid {
-		step = a.columns()
-	}
-	_, _, _, ah := a.area()
-	page := 1
-	if a.grid {
-		page = max(1, int(ah/(a.tileH()+a.rowGap()))) * a.columns()
-	} else {
-		page = max(1, int(ah/(a.rowH()+a.rowGap())))
-	}
-	move := func(d int) {
-		if len(a.view) == 0 {
-			return
-		}
-		a.sel = max(0, min(len(a.view)-1, a.sel+d))
-		a.reveal()
-	}
 	ctrl := mod&sdl.KmodCtrl != 0
+	if a.popup != nil {
+		if sc == scEscape {
+			a.popup = nil
+		}
+		return
+	}
+	if a.setup != nil {
+		a.setupKey(sc)
+		return
+	}
 	switch {
-	case sc == scReturn || sc == scKPEnter:
-		a.play()
-	case sc == scEscape:
-		if a.query != "" {
-			a.query = ""
-			a.refilter(a.keepPath())
-		}
-	case sc == scBackspace:
-		if a.query != "" {
-			_, n := utf8.DecodeLastRuneInString(a.query)
-			if ctrl {
-				n = len(a.query)
-			}
-			a.query = a.query[:len(a.query)-n]
-			a.refilter(a.keepPath())
-		}
+	case ctrl && sc == sc1:
+		a.show(pageGames)
+		return
+	case ctrl && sc == sc2:
+		a.show(pageSystems)
+		return
+	case ctrl && (sc == sc3 || sc == scComma):
+		a.show(pageSettings)
+		return
 	case sc == scF5 || ctrl && sc == scR:
 		a.rescan()
-	case ctrl && sc == scG:
-		a.grid = true
-		a.reveal()
-	case ctrl && sc == scL:
-		a.grid = false
-		a.reveal()
-	case sc == scUp:
-		move(-step)
-	case sc == scDown:
-		move(step)
-	case sc == scLeft && a.grid:
-		move(-1)
-	case sc == scRight && a.grid:
-		move(1)
-	case sc == scPageUp:
-		move(-page)
-	case sc == scPageDown:
-		move(page)
-	case sc == scHome && a.query == "":
-		move(-len(a.view))
-	case sc == scEnd && a.query == "":
-		move(len(a.view))
-	}
-}
-
-func (a *app) click(double bool) {
-	for _, h := range a.hits {
-		if a.mx < h.x || a.mx >= h.x+h.w || a.my < h.y || a.my >= h.y+h.h {
-			continue
-		}
-		switch h.button {
-		case "list":
-			a.grid = false
-			a.reveal()
-		case "grid":
-			a.grid = true
-			a.reveal()
-		case "sort":
-			a.sort = (a.sort + 1) % sortModes
-			a.refilter(a.keepPath())
-		case "refresh":
-			a.rescan()
-		case "clear":
-			a.query = ""
-			a.refilter(a.keepPath())
-		case "":
-			a.sel = h.game
-			if double {
-				a.play()
-			}
-		}
+		a.rescanSystems()
 		return
 	}
-}
-
-// play runs the selected game with `doszer run`, one at a time.
-func (a *app) play() {
-	g := a.selected()
-	if g == nil || a.running != "" {
+	if a.focus != nil && a.focus.key(sc, ctrl) {
 		return
 	}
-	if g.Err != "" {
-		a.message, a.msgErr = g.Name+": "+g.Err, true
-		return
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		a.message, a.msgErr = err.Error(), true
-		return
-	}
-	args := []string{"run"}
-	if a.o.SystemDir != "" {
-		args = append(args, "--system-dir", a.o.SystemDir)
-	}
-	if a.o.SaveDir != "" {
-		args = append(args, "--save-dir", a.o.SaveDir)
-	}
-	args = append(args, "--", g.Path)
-	cmd := exec.Command(exe, args...)
-	hideConsole(cmd)
-	tail := &tailBuffer{}
-	cmd.Stdout, cmd.Stderr = tail, tail
-	start := time.Now()
-	if err := cmd.Start(); err != nil {
-		a.message, a.msgErr = err.Error(), true
-		return
-	}
-	a.running = g.Path
-	a.message, a.msgErr = "", false
-	go func() {
-		err := cmd.Wait()
-		if err != nil {
-			if line := tail.lastError(); line != "" {
-				err = errors.New(line)
-			}
+	switch a.page {
+	case pageGames:
+		a.gamesKey(sc, ctrl)
+	case pageSystems:
+		a.systemsKey(sc)
+	case pageSettings:
+		if sc == scEscape {
+			a.focus = nil
 		}
-		a.runCh <- runResult{g.Path, start, time.Since(start), err}
-	}()
-}
-
-func (a *app) finished(r runResult) {
-	a.running = ""
-	var name string
-	for i := range a.games {
-		g := &a.games[i]
-		if g.Path != r.path {
-			continue
-		}
-		name = g.Name
-		g.LastPlayed = r.start
-		g.PlayTime += r.took.Round(time.Second)
-	}
-	if a.stats != nil {
-		if err := a.stats.Add(r.path, r.start, r.took); err != nil {
-			a.message, a.msgErr = "play time: "+err.Error(), true
-		}
-	}
-	if r.err != nil {
-		a.message, a.msgErr = name+": "+r.err.Error(), true
-	} else if !a.msgErr {
-		a.message = ""
-	}
-	if a.sort != sortName {
-		a.refilter(r.path)
-	}
-	if a.win != 0 && !a.quit {
-		sdl.RaiseWindow(a.win)
 	}
 }
 
-// tailBuffer keeps the end of a game process's output, for its error.
-type tailBuffer struct {
-	mu  sync.Mutex
-	buf []byte
+// show switches to page p.
+func (a *app) show(p page) {
+	a.page, a.popup = p, nil
+	a.focus = nil
+	if p == pageGames {
+		a.focus = &a.search
+	}
 }
 
-func (t *tailBuffer) Write(p []byte) (int, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.buf = append(t.buf, p...)
-	if len(t.buf) > 8<<10 {
-		t.buf = t.buf[len(t.buf)-8<<10:]
+// contentH is the current page's content height, for scrolling.
+func (a *app) contentH() int32 {
+	switch a.page {
+	case pageSystems:
+		return a.systemsH
+	case pageSettings:
+		return a.settingsH
 	}
-	return len(p), nil
-}
-
-// lastError is the last "ERROR: " line's message (main's logError), else
-// the last line.
-func (t *tailBuffer) lastError() string {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	lines := strings.Split(strings.TrimSpace(string(bytes.ReplaceAll(t.buf, []byte("\r"), nil))), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if _, msg, ok := strings.Cut(lines[i], "ERROR: "); ok {
-			return msg
-		}
-	}
-	return strings.TrimSpace(lines[len(lines)-1])
+	return a.gamesH()
 }
 
 func (a *app) draw() {
-	a.frame++
-	a.dirty = false
-	a.hits = a.hits[:0]
-	c := colBackground
-	sdl.SetRenderDrawColor(a.ren, c.r, c.g, c.b, 255)
-	sdl.RenderClear(a.ren)
-
-	a.drawList()
-	a.drawToolbar()
-	a.drawStatus()
-
+	a.render()
 	sdl.RenderPresent(a.ren)
 	if a.frame%300 == 0 {
 		a.evict()
 	}
 }
 
-// button draws a toolbar button and registers it; returns its width.
-func (a *app) button(name, label string, x, y int32, on bool) int32 {
-	label, arrow := strings.CutSuffix(label, " ▼")
-	h := a.px(32)
-	w := a.textWidth(label, 13, false) + a.px(24)
-	if arrow {
-		w += a.px(16)
-	}
-	col := colButton
-	if on {
-		col = colButtonOn
-	}
-	if a.hoverButton(x, y, w, h) {
-		col = colCardSel
-	}
-	a.round(x, y, w, h, a.px(6), col)
-	lh := a.lineHeight(13, false)
-	tw := a.text(label, x+a.px(12), y+(h-lh)/2, 13, false, colText)
-	if arrow {
-		al := a.lineHeight(8, false)
-		a.text("▼", x+a.px(18)+tw, y+(h-al)/2, 8, false, colMuted)
-	}
-	a.hits = append(a.hits, hit{x: x, y: y, w: w, h: h, button: name})
-	return w
-}
+// render draws a frame, without presenting it.
+func (a *app) render() {
+	a.frame++
+	a.dirty = false
+	a.hits = a.hits[:0]
+	a.layer = layerPage
+	c := colBackground
+	sdl.SetRenderDrawColor(a.ren, c.r, c.g, c.b, 255)
+	sdl.RenderClear(a.ren)
 
-func (a *app) hoverButton(x, y, w, h int32) bool {
-	return a.mx >= x && a.mx < x+w && a.my >= y && a.my < y+h
+	ax, ay, aw, ah := a.area()
+	a.pushClip(ax, ay, aw, ah)
+	switch a.page {
+	case pageGames:
+		a.drawGames()
+	case pageSystems:
+		a.drawSystems()
+	case pageSettings:
+		a.drawSettings()
+	}
+	a.popClip()
+	a.drawToolbar()
+	a.drawStatus()
+	a.drawPopup()
+	a.drawSetup()
 }
 
 func (a *app) drawToolbar() {
 	th := a.toolbarH()
 	a.fill(0, 0, a.w, th, colToolbar)
+	a.fill(0, th-a.px(1), a.w, a.px(1), colLine)
 	p := a.pad()
 	y := (th - a.px(32)) / 2
 	x := p
-	x += a.button("list", "List", x, y, !a.grid) + a.px(4)
-	x += a.button("grid", "Grid", x, y, a.grid) + a.px(12)
-	x += a.button("sort", "Sort: "+a.sort.String()+" ▼", x, y, false) + a.px(12)
-	a.button("refresh", "Refresh", x, y, false)
-
-	// The search field: typing anywhere goes into it.
-	fw := min(a.px(320), a.w/3)
-	fx := a.w - p - fw
-	fh := a.px(32)
-	a.outline(fx, y, fw, fh, a.px(6), a.px(1), colLine, colField)
-	lh := a.lineHeight(13, false)
-	ty := y + (fh-lh)/2
-	if a.query == "" {
-		a.text("Type to search…", fx+a.px(12), ty, 13, false, colFaint)
-		return
+	tab := func(label string, pg page) {
+		style := btnNormal
+		if a.page == pg {
+			style = btnOn
+		}
+		x += a.button(label, x, y, style, func() { a.show(pg) }) + a.px(4)
 	}
-	q := a.ellipsize(a.query, fw-a.px(52), 13, false)
-	tw := a.text(q, fx+a.px(12), ty, 13, false, colText)
-	a.fill(fx+a.px(13)+tw, ty, a.px(1.5), lh, colAccent) // the caret
-	cw := a.px(28)
-	a.textRight("×", fx+fw-a.px(10), ty, 15, true, colMuted)
-	a.hits = append(a.hits, hit{x: fx + fw - cw, y: y, w: cw, h: fh, button: "clear"})
+	tab("Games", pageGames)
+	tab("Systems", pageSystems)
+	tab("Settings", pageSettings)
+	x += a.px(16)
+	a.fill(x-a.px(8), y+a.px(6), a.px(1), a.px(20), colLine)
+	switch a.page {
+	case pageGames:
+		a.gamesToolbar(x, y)
+	case pageSystems:
+		a.systemsToolbar(x, y)
+	case pageSettings:
+		a.settingsToolbar(x, y)
+	}
 }
 
 func (a *app) drawStatus() {
@@ -760,20 +469,18 @@ func (a *app) drawStatus() {
 	lh := a.lineHeight(12, false)
 	ty := y + (sh-lh)/2
 
-	var total time.Duration
-	for _, g := range a.games {
-		total += g.PlayTime
+	var left string
+	switch a.page {
+	case pageGames:
+		left = a.gamesStatus()
+	case pageSystems:
+		left = a.systemsStatus()
+	case pageSettings:
+		left = a.settingsStatus()
 	}
-	left := fmt.Sprintf("%d of %d games", len(a.view), len(a.games))
-	if len(a.view) == len(a.games) {
-		left = plural(len(a.games), "game")
-	}
-	if total > 0 {
-		left += "  |  Total play time: " + duration(total)
-	}
-	x := p + a.text(left, p, ty, 12, false, colMuted)
+	x := p + a.text(a.ellipsize(left, a.w/2, 12, false), p, ty, 12, false, colMuted)
 
-	right, rc := a.o.ROMDir.Path, colFaint
+	right, rc := "", colFaint
 	switch {
 	case a.running != "":
 		name := filepath.Base(a.running)
@@ -781,205 +488,106 @@ func (a *app) drawStatus() {
 			name = g.Name
 		}
 		right, rc = "Playing "+name+spinner(a.frame), colAccent
-	case a.scanning:
-		right, rc = "Scanning"+spinner(a.frame), colAccent
 	case a.message != "":
 		right, rc = a.message, colMuted
 		if a.msgErr {
 			rc = colError
 		}
-	case a.o.Version != "":
-		right = "doszer " + a.o.Version + "  |  " + right
+	case a.scanning || a.sysScanning:
+		right, rc = "Scanning"+spinner(a.frame), colAccent
+	default:
+		right = "doszer " + a.o.Version
+		switch {
+		case config.Portable():
+			right += " (portable)"
+		case !config.Configured():
+			right += " (not set up: nothing is saved)"
+		}
 	}
 	right = a.ellipsize(right, a.w-x-3*p, 12, false)
 	a.textRight(right, a.w-p, ty, 12, false, rc)
 }
 
-func (a *app) find(path string) *library.Game {
-	for i := range a.games {
-		if a.games[i].Path == path {
-			return &a.games[i]
-		}
-	}
-	return nil
-}
-
-func (a *app) drawList() {
+// emptyMessage draws a centred title and lines in the page area.
+func (a *app) emptyMessage(title string, lines ...string) {
 	ax, ay, aw, ah := a.area()
-	sdl.RenderSetClipRect(a.ren, &sdl.Rect{X: ax, Y: ay, W: aw, H: ah})
-	defer sdl.RenderSetClipRect(a.ren, nil)
+	lh := a.lineHeight(14, false) + a.px(6)
+	y := ay + (ah-int32(len(lines)+1)*lh)/2
+	w := a.textWidth(title, 16, true)
+	a.text(title, ax+(aw-w)/2, y, 16, true, colText)
+	y += lh + a.px(4)
+	for _, l := range lines {
+		w := a.textWidth(l, 14, false)
+		a.text(l, ax+(aw-w)/2, y, 14, false, colMuted)
+		y += lh
+	}
+}
 
-	if msg := a.emptyMessage(); msg != "" {
-		lines := strings.Split(msg, "\n")
-		lh := a.lineHeight(14, false) + a.px(6)
-		y := ay + (ah-int32(len(lines))*lh)/2
-		for i, l := range lines {
-			size, bold, c := 14.0, false, colMuted
-			if i == 0 {
-				size, bold, c = 16, true, colText
-			}
-			w := a.textWidth(l, size, bold)
-			a.text(l, (aw-w)/2, y, size, bold, c)
-			y += lh
+// heading draws a section title and returns the y below it.
+func (a *app) heading(title string, x, y int32) int32 {
+	a.text(title, x, y, 15, true, colText)
+	return y + a.lineHeight(15, true) + a.px(8)
+}
+
+// guiState is what the window remembers between runs, beside the play
+// time file.
+type guiState struct {
+	Width  int32  `json:"width,omitempty"`
+	Height int32  `json:"height,omitempty"`
+	Grid   bool   `json:"grid,omitempty"`
+	Sort   string `json:"sort,omitempty"`
+}
+
+func statePath() string {
+	p, err := config.StatsPath()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(p), "window.json")
+}
+
+func loadState() guiState {
+	var st guiState
+	if p := statePath(); p != "" {
+		if data, err := os.ReadFile(p); err == nil {
+			json.Unmarshal(data, &st)
 		}
+	}
+	return st
+}
+
+// saveState writes the window's state, but only where doszer is set up:
+// a user who chose not to save gets no files.
+func (a *app) saveState() {
+	if a.o.Screenshot != "" || !config.Configured() {
 		return
 	}
-
-	a.hover = -1
-	for i := range a.view {
-		x, y, w, h := a.itemRect(i)
-		y += ay - a.scroll
-		if y+h < ay || y > ay+ah {
-			continue
-		}
-		hover := a.mx >= x && a.mx < x+w && a.my >= y && a.my < y+h && a.my >= ay && a.my < ay+ah
-		if hover {
-			a.hover = i
-		}
-		g := &a.games[a.view[i]]
-		if a.grid {
-			a.drawTile(g, x, y, w, h, i == a.sel, hover)
-		} else {
-			a.drawRow(g, x, y, w, h, i == a.sel, hover)
-		}
-		// Only the visible part of an item is clickable.
-		cy, ch := max(y, ay), min(y+h, ay+ah)-max(y, ay)
-		a.hits = append(a.hits, hit{x: x, y: cy, w: w, h: ch, game: i})
-	}
-}
-
-func (a *app) emptyMessage() string {
-	switch {
-	case a.o.ROMDir.Path == "":
-		return "No ROM directory\nCreate a roms folder beside doszer, or set one:\ndoszer config set rom_dir DIR"
-	case a.scanErr != nil:
-		return "Can't read the ROM directory\n" + a.scanErr.Error()
-	case a.scanning && len(a.games) == 0:
-		return "Scanning\n" + a.o.ROMDir.Path
-	case len(a.games) == 0:
-		return "No games yet\nNo .dosz archives in " + a.o.ROMDir.Path
-	case len(a.view) == 0:
-		return "No matches\nNo game matches “" + a.query + "” (Esc clears the search)"
-	}
-	return ""
-}
-
-// card draws an item's background.
-func (a *app) card(x, y, w, h int32, sel, hover bool) {
-	r := a.px(10)
-	switch {
-	case sel:
-		a.outline(x, y, w, h, r, a.px(2), colAccent, colCardSel)
-	case hover:
-		a.round(x, y, w, h, r, colCardHover)
-	default:
-		a.round(x, y, w, h, r, colCard)
-	}
-}
-
-func (a *app) drawRow(g *library.Game, x, y, w, h int32, sel, hover bool) {
-	a.card(x, y, w, h, sel, hover)
-	is := a.px(64)
-	ix := x + a.px(12)
-	iy := y + (h-is)/2
-	a.drawIcon(g, ix, iy, is)
-
-	right := a.px(200)
-	tx := ix + is + a.px(16)
-	tw := w - (tx - x) - right - a.px(24)
-	ty := y + a.px(12)
-	a.text(a.ellipsize(g.Name, tw, 16, true), tx, ty, 16, true, colText)
-	ty += a.lineHeight(16, true) + a.px(2)
-	a.text(a.ellipsize(g.Rel, tw, 13, false), tx, ty, 13, false, colMuted)
-	ty += a.lineHeight(13, false) + a.px(6)
-	a.chip(g, tx, ty)
-
-	sx := x + w - right - a.px(12)
-	a.fill(sx, y+a.px(14), a.px(1), h-a.px(28), colLine)
-	rx := x + w - a.px(16)
-	ry := y + a.px(14)
-	lh := a.lineHeight(13, false) + a.px(4)
-	played := "Never played"
-	if !g.LastPlayed.IsZero() {
-		played = g.LastPlayed.Local().Format("Jan 2, 2006 3:04 PM")
-	}
-	lines := []string{played}
-	if g.PlayTime > 0 {
-		lines = append(lines, duration(g.PlayTime)+" played")
-	}
-	lines = append(lines, size(g.Size))
-	for i, l := range lines {
-		c := colMuted
-		if i == 0 {
-			c = colText
-		}
-		a.textRight(l, rx, ry+int32(i)*lh, 13, false, c)
-	}
-}
-
-func (a *app) drawTile(g *library.Game, x, y, w, h int32, sel, hover bool) {
-	a.card(x, y, w, h, sel, hover)
-	is := a.px(96)
-	a.drawIcon(g, x+(w-is)/2, y+a.px(18), is)
-	ty := y + a.px(18) + is + a.px(14)
-	name := a.ellipsize(g.Name, w-a.px(20), 14, true)
-	a.text(name, x+(w-a.textWidth(name, 14, true))/2, ty, 14, true, colText)
-	ty += a.lineHeight(14, true) + a.px(4)
-	label, c := kindLabel(g)
-	label = a.ellipsize(label, w-a.px(20), 12, false)
-	a.text(label, x+(w-a.textWidth(label, 12, false))/2, ty, 12, false, c)
-}
-
-// chip draws how the game boots as a coloured badge.
-func (a *app) chip(g *library.Game, x, y int32) {
-	label, c := kindLabel(g)
-	if g.Err != "" {
-		label, c = "Unreadable: "+g.Err, colError
-		label = a.ellipsize(label, a.px(420), 12, false)
-	}
-	w := a.textWidth(label, 12, false) + a.px(16)
-	h := a.lineHeight(12, false) + a.px(6)
-	a.round(x, y, w, h, a.px(5), rgba{c.r / 5, c.g / 5, c.b / 5, 255})
-	a.text(label, x+a.px(8), y+a.px(3), 12, false, c)
-}
-
-func kindLabel(g *library.Game) (string, rgba) {
-	switch g.Kind {
-	case library.KindShell:
-		return g.System + " (shell)", colShell
-	case library.KindOS:
-		return g.System, colOS
-	}
-	return "DOS", colDOS
-}
-
-// drawIcon draws the game's DOSZ.ICO, or a tile with its initial.
-func (a *app) drawIcon(g *library.Game, x, y, s int32) {
-	t, ok := a.icons[g.Path]
-	if !ok {
-		t = nil
-		if g.Icon != nil {
-			if img, err := icon.Decode(g.Icon, int(s)); err == nil {
-				b := img.Bounds()
-				n := image.NewNRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-				draw.Draw(n, n.Bounds(), img, b.Min, draw.Src)
-				t = a.upload(n, true)
-			}
-		}
-		a.icons[g.Path] = t
-	}
-	if t != nil {
-		a.image(t, x, y, s)
+	p := statePath()
+	if p == "" {
 		return
 	}
-	_, c := kindLabel(g)
-	a.round(x, y, s, s, s/6, rgba{c.r / 3, c.g / 3, c.b / 3, 255})
-	r, _ := utf8.DecodeRuneInString(strings.TrimLeft(g.Name, " ."))
-	initial := strings.ToUpper(string(r))
-	size := float64(s) / a.scale * 0.5
-	w := a.textWidth(initial, size, true)
-	lh := a.lineHeight(size, true)
-	a.text(initial, x+(s-w)/2, y+(s-lh)/2, size, true, c)
+	var ww, wh int32
+	sdl.GetWindowSize(a.win, &ww, &wh)
+	data, _ := json.MarshalIndent(guiState{Width: ww, Height: wh, Grid: a.grid, Sort: a.sort.String()}, "", "  ")
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	os.WriteFile(p, append(data, '\n'), 0o644)
+}
+
+// loadStats opens the play time file where the configuration now says;
+// unconfigured, play time is kept for the session only.
+func (a *app) loadStats() {
+	p := a.o.StatsPath
+	if p == "" && config.Configured() {
+		var err error
+		if p, err = config.StatsPath(); err != nil {
+			a.say("play time: "+err.Error(), true)
+		}
+	}
+	s, err := library.LoadStats(p, a.romDir.Path)
+	if err != nil {
+		a.say("play time: "+err.Error(), true)
+	}
+	a.stats = s
 }
 
 func spinner(frame int) string {

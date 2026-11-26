@@ -22,6 +22,7 @@ import (
 type Env struct {
 	SystemDir string // "" when none is configured or found
 	SaveDir   string
+	Temporary bool // SaveDir is removed after the session (Play, not set up)
 }
 
 // Discover settles DOSBox Pure's directories. A given directory must

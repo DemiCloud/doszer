@@ -47,7 +47,7 @@ internal/fat/        FAT12/16/32 reader with long names, as an io/fs.FS, for ins
 internal/vdisk/      DOSBox Pure's synthesized D: disk + .sav diffs (D: and -CDRIVE), for install
 internal/install/    doszer install and run: session content, launching the built-in DOSBox Pure, directory discovery, diffing, extraction
 internal/library/    the window's game list: .dosz archives under the ROM directory (name, boot, DOSZ.ICO), play time (playtime.json)
-internal/gui/        doszer gui: the SDL-drawn window (list/grid, search, sort), games run as `doszer run` child processes; TestScreenshot renders it to PNGs
+internal/gui/        doszer gui: the SDL-drawn window: Games (list/grid, search, sort; games run as `doszer run` child processes), Systems, Settings, the first-run dialog; widgets.go (fields, buttons, dropdowns, layers); os_*.go (Explorer/xdg-open, folder picker); TestScreenshot renders every page to PNGs (also as the Windows test binary through WSL interop)
 internal/libretro/   built-in frontend: hosts a libretro core in-process (environment, directory-only VFS, SDL window/input/audio)
 internal/sdl/        the few SDL2 functions internal/libretro uses, loaded at run time through purego
 internal/dl/         dlopen/LoadLibrary without cgo
@@ -94,6 +94,12 @@ README.md            doszer usage, configuration, install workflow
   sdl2-compat's `SDL2.dll` and `SDL3.dll`). No macOS support (dropped
   from releases, revisit if someone can build and test a core with
   Apple's SDK). The arm64 core is untested on hardware.
+- Until doszer is set up (`config.Configured`: a config file exists), it
+  writes no data of its own: `run` saves into a temporary folder removed
+  after the session, the window keeps play time in memory. Caches (the
+  extracted core, Redump's datfile) are not data and are kept. The
+  window's first run offers portable, user profile or neither (the
+  model of the sibling net-scope's config location dialog).
 - `install` and `run` run only the built-in frontend. RetroArch and
   standalone DOSBox Pure support was removed: driving an external
   frontend meant writing its configuration and option files and guessing
@@ -287,7 +293,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `info` | Implemented |
 | `env` | Implemented |
 | `config` | Implemented |
-| `gui` | Implemented; rendered on Linux (WSLg) and Windows (TestScreenshot), opened from a bare `doszer` without a terminal; launching a game from it not yet tried live |
+| `gui` | Implemented: Games, Systems, Settings, first-run dialog; every page rendered on Linux (WSLg) and Windows (TestScreenshot), setup choices tested; launching a game, Browse and saving settings not yet tried live |
 | `associate` | Implemented (Windows, HKCU); dry run checked on Windows, not yet applied live |
 | `version` | Implemented |
 

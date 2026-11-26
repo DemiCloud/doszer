@@ -1,21 +1,24 @@
 package gui
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/library"
 )
 
 func TestRefilter(t *testing.T) {
-	a := &app{scale: 1, h: 600, w: 800, games: []library.Game{
+	a := &app{scale: 1, h: 600, w: 800, games: games{list: []library.Game{
 		{Path: "/r/b.dosz", Rel: "dos/b.dosz", Name: "Beta", Size: 30, PlayTime: time.Hour},
 		{Path: "/r/a.dosz", Rel: "windows9x/a.dosz", Name: "alpha", System: "Windows 98", Size: 10, LastPlayed: time.Unix(200, 0)},
 		{Path: "/r/c.dosz", Rel: "dos/c.dosz", Name: "Gamma", Size: 20, LastPlayed: time.Unix(100, 0), PlayTime: 2 * time.Hour},
-	}}
+	}}}
 	names := func() (out []string) {
 		for _, i := range a.view {
-			out = append(out, a.games[i].Name)
+			out = append(out, a.list[i].Name)
 		}
 		return out
 	}
@@ -34,7 +37,7 @@ func TestRefilter(t *testing.T) {
 		{"nothing", sortName, nil},
 	}
 	for _, tt := range tests {
-		a.query, a.sort = tt.query, tt.sort
+		a.search.text, a.sort = tt.query, tt.sort
 		a.refilter("/r/c.dosz")
 		got := names()
 		if len(got) != len(tt.want) {
@@ -72,5 +75,51 @@ func TestDuration(t *testing.T) {
 		if got := duration(d); got != want {
 			t.Errorf("duration(%v) = %q, want %q", d, got, want)
 		}
+	}
+}
+
+func TestSetupChoices(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(home, "state"))
+	t.Chdir(t.TempDir())
+	newApp := func() *app {
+		a := &app{scale: 1, w: 800, h: 600, runCh: make(chan runResult, 1)}
+		a.initGames(guiState{})
+		a.initSystems()
+		a.initSettings()
+		return a
+	}
+	files := func() []string {
+		var out []string
+		filepath.Walk(home, func(p string, fi os.FileInfo, err error) error {
+			if err == nil && !fi.IsDir() {
+				out = append(out, p)
+			}
+			return nil
+		})
+		return out
+	}
+
+	// Don't save: nothing written, and what needed the setup isn't done.
+	a := newApp()
+	ran := false
+	a.whenSetUp(func() { ran = true })
+	a.setupChoose(2)
+	if ran || a.setup != nil || len(files()) != 0 || config.Configured() {
+		t.Fatalf("don't save: ran %v, dialog %v, files %v", ran, a.setup, files())
+	}
+
+	// User profile: the config file and the data folders, then the
+	// pending action.
+	a.whenSetUp(func() { ran = true })
+	a.setupChoose(1)
+	if !ran || a.setup != nil || !config.Configured() {
+		t.Fatalf("user profile: ran %v, dialog %v, configured %v (%s)", ran, a.setup, config.Configured(), a.message)
+	}
+	if a.romDir.Path != filepath.Join(home, "data", "doszer", "roms") {
+		t.Errorf("ROM dir %+v", a.romDir)
 	}
 }

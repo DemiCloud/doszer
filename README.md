@@ -577,7 +577,8 @@ Every setting can be given as a flag. Precedence, highest first:
 3. `./doszer.toml`
 4. The user config file: `doszer.toml` beside the doszer executable if
    there is one (portable mode), else `$XDG_CONFIG_HOME/doszer/config.toml`
-   (default `~/.config/doszer/config.toml`)
+   (default `~/.config/doszer/config.toml`, and `%APPDATA%\doszer\config.toml`
+   on Windows)
 5. Built-in defaults
 
 `doszer.toml` and the user config file take the settings at top level.
@@ -614,7 +615,7 @@ Unset directories have defaults, the first that exists:
 | Setting | Defaults |
 |---|---|
 | `system_dir` | `./system`, `system/` beside doszer, RetroDECK's `bios_path` |
-| `save_dir` | `./saves`, `saves/` beside doszer, for `run` RetroDECK's `saves_path/<folder>` for an archive under its `roms_path`, doszer's cache |
+| `save_dir` | `./saves`, `saves/` beside doszer, for `run` RetroDECK's `saves_path/<folder>` for an archive under its `roms_path`, doszer's cache - once set up (a config file exists); until then, a temporary folder per game, deleted after it |
 | `rom_dir` | `./roms`, `roms/` beside doszer, RetroDECK's `roms_path` |
 
 `doszer env` and `doszer config` show which applies, and where it came
@@ -776,24 +777,57 @@ DLL, which doszer doesn't ship.
 
 ## Window
 
-`doszer gui` opens a window listing every `.dosz` under the ROM
-directory (`rom_dir`, Configuration), at any depth: each archive's icon
-(`DOSZ.ICO`, else its initial), name, folder, how it boots (DOS, a
-Windows 3.x shell, an OS image), when it was last played, for how long,
-and its size. `doszer` with no arguments opens it too when started
-without a terminal: from Explorer, a shortcut or a desktop menu.
+`doszer gui` opens doszer's window; `doszer` with no arguments opens it
+too when started without a terminal (from Explorer, a shortcut or a
+desktop menu). It works the same on Windows and Linux. Three pages:
 
-Typing filters by name, folder or system (Esc clears); arrows, Page
-Up/Down, Home and End move; Enter or a double click plays the selected
-game with `doszer run` in its own process, one at a time. Ctrl+L and
-Ctrl+G switch between list and grid, F5 or Ctrl+R rescans. Sort cycles
-through name, last played, play time and size.
+- **Games**: every `.dosz` under the ROM directory, at any depth, as a
+  list or grid: each archive's icon (`DOSZ.ICO`, else its initial),
+  name, folder, how it boots (DOS, a Windows 3.x shell, an OS image,
+  flagged when the system folder lacks it), when it was last played,
+  for how long, and its size. Typing filters by name, folder or system
+  (Esc clears); arrows, Page Up/Down, Home and End move; Enter or a
+  double click plays the game with `doszer run` in its own process, one
+  at a time. Ctrl+L and Ctrl+G switch between list and grid.
+- **Systems**: the OS images and shells in the system directory, with
+  their kind (fixed or dynamic VHD, raw image, shell), size, which is
+  the default, and which games boot each; and the ones games boot that
+  the folder hasn't. The selected one can be made the default.
+- **Settings**: the folders (typed, or picked with Browse: Windows'
+  folder browser, zenity or kdialog on Linux), the default OS image and
+  shell, Ogg quality and the Redump datfile. Save writes the changes to
+  the config file, keeping its comments; empty fields fall back to the
+  defaults, shown greyed in them.
 
-Play time is kept in `playtime.json`: beside doszer when portable, else
-`$XDG_STATE_HOME/doszer` (default `~/.local/state/doszer`) on Linux and
-`%APPDATA%\doszer` on Windows. Archives under the ROM directory are
-recorded by their path inside it, so moving the whole folder (or a
-portable doszer to another drive) keeps their history.
+Ctrl+1, Ctrl+2 and Ctrl+3 switch pages, F5 or Ctrl+R rescans.
+
+### First run
+
+With no config file, the window asks where doszer should keep its
+settings, saves and play time:
+
+- **Portable**: everything beside doszer (`doszer.toml`, `roms/`,
+  `system/`, `saves/`), as `doszer env portable` sets up. Not offered
+  where doszer's folder can't be written to.
+- **User profile**: the user config file (`~/.config/doszer/config.toml`,
+  `%APPDATA%\doszer\config.toml` on Windows), with `roms`, `system` and
+  `saves` folders in `~/.local/share/doszer` (`%USERPROFILE%\doszer` on
+  Windows) - or RetroDECK's folders, when RetroDECK is installed.
+- **Don't save**: nothing is written, and the question comes back next
+  time.
+
+Until doszer is set up, it writes nothing of its own: `run` keeps a
+game's saves in a temporary folder deleted when the game closes, and
+the window keeps play time for the session only. (Caches - the
+extracted DOSBox Pure core, Redump's datfile - are not settings or
+saves, and are kept.)
+
+Play time is kept in `playtime.json`, and the window's size and view in
+`window.json`: beside doszer when portable, else `$XDG_STATE_HOME/doszer`
+(default `~/.local/state/doszer`) on Linux and `%APPDATA%\doszer` on
+Windows. Archives under the ROM directory are recorded by their path
+inside it, so moving the whole folder (or a portable doszer to another
+drive) keeps their history.
 
 ## DOSBox Pure in doszer
 

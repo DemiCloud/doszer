@@ -306,3 +306,33 @@ func TestDirOf(t *testing.T) {
 		t.Errorf("ROMDirOf = %+v, want the flag", d)
 	}
 }
+
+func TestSetupUser(t *testing.T) {
+	isolate(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	if Configured() {
+		t.Fatal("configured before setup")
+	}
+	p, err := SetupUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !Configured() {
+		t.Fatal("not configured after setup")
+	}
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := DataDir()
+	if cfg.ROMDir != filepath.Join(data, "roms") || cfg.SystemDir != filepath.Join(data, "system") {
+		t.Errorf("cfg = %+v", cfg)
+	}
+	if fi, err := os.Stat(cfg.SaveDir); err != nil || !fi.IsDir() {
+		t.Errorf("save dir not made: %v", err)
+	}
+	if xdg, _ := XDGConfigPath(); p != xdg {
+		t.Errorf("path = %s, want %s", p, xdg)
+	}
+}

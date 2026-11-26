@@ -189,6 +189,9 @@ var (
 	GetWindowDisplayIndex  func(w uintptr) int32
 	RaiseWindow            func(w uintptr)
 	SetWindowMinimumSize   func(w uintptr, width, height int32)
+	GetClipboardText       func() *byte
+	Free                   func(p unsafe.Pointer)
+	SetWindowSize          func(w uintptr, width, height int32)
 	RenderReadPixels       func(r uintptr, rect *Rect, format uint32, pixels unsafe.Pointer, pitch int32) int32
 )
 
@@ -263,6 +266,9 @@ func Load(handle uintptr, sym func(uintptr, string) (uintptr, error)) (err error
 	bind(&RaiseWindow, "SDL_RaiseWindow")
 	bind(&SetWindowMinimumSize, "SDL_SetWindowMinimumSize")
 	bind(&RenderReadPixels, "SDL_RenderReadPixels")
+	bind(&GetClipboardText, "SDL_GetClipboardText")
+	bind(&Free, "SDL_free")
+	bind(&SetWindowSize, "SDL_SetWindowSize")
 	if err == nil {
 		loaded = true
 	}
@@ -276,4 +282,22 @@ func Error(what string) error {
 		return errors.New(what)
 	}
 	return fmt.Errorf("%s: %s", what, msg)
+}
+
+// Clipboard returns the clipboard's text, or "".
+func Clipboard() string {
+	p := GetClipboardText()
+	if p == nil {
+		return ""
+	}
+	defer Free(unsafe.Pointer(p))
+	var b []byte
+	for i := 0; i < 1<<20; i++ {
+		c := *(*byte)(unsafe.Add(unsafe.Pointer(p), i))
+		if c == 0 {
+			break
+		}
+		b = append(b, c)
+	}
+	return string(b)
 }

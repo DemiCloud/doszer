@@ -38,6 +38,7 @@ type Game struct {
 	Name     string    // the manifest's, else the file name without extension
 	Kind     Kind      //
 	System   string    // the shell or OS image it boots, without directories ("Windows 98"), or ""
+	Boot     string    // the same as boot.shell or boot.os has it ("dosbox_pure/Windows 98"), or ""
 	Size     int64     //
 	Modified time.Time //
 	Icon     []byte    // DOSZ.ICO, or nil
@@ -113,7 +114,10 @@ func read(dir, p string) Game {
 		case strings.EqualFold(f.Name, "AUTOBOOT.DBP"):
 			if data, err := small(f, 4<<10); err == nil {
 				line, _, _ := strings.Cut(string(data), "\n")
-				g.Kind, g.System = kind(strings.TrimRight(line, "\r"))
+				g.Kind, g.Boot = kind(strings.TrimRight(line, "\r"))
+				if g.Boot != "" {
+					g.System = path.Base(g.Boot)
+				}
 			}
 		case f.Name == manifest.FileName:
 			if data, err := small(f, 1<<20); err == nil {
@@ -130,13 +134,14 @@ func read(dir, p string) Game {
 	return g
 }
 
-// kind reads AUTOBOOT.DBP's first line (spec §6.8.1).
+// kind reads AUTOBOOT.DBP's first line (spec §6.8.1): the boot model and
+// the shell or OS image path.
 func kind(line string) (Kind, string) {
 	switch {
 	case strings.HasPrefix(line, "S*"):
-		return KindShell, path.Base(line[2:])
+		return KindShell, line[2:]
 	case strings.HasPrefix(line, "O*"):
-		return KindOS, path.Base(line[2:])
+		return KindOS, line[2:]
 	}
 	return KindDOS, ""
 }
@@ -175,9 +180,13 @@ type Stats struct {
 }
 
 // LoadStats reads the statistics file at path (one that doesn't exist yet
-// is empty) for archives under romDir.
+// is empty) for archives under romDir. With path "", statistics are kept
+// in memory only.
 func LoadStats(path, romDir string) (*Stats, error) {
 	s := &Stats{path: path, romDir: romDir, Games: map[string]Played{}}
+	if path == "" {
+		return s, nil
+	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return s, nil
@@ -221,6 +230,10 @@ func (s *Stats) Add(archive string, start time.Time, d time.Duration) error {
 	p.Seconds += int64(d.Round(time.Second) / time.Second)
 	p.Sessions++
 	s.Games[k] = p
+	if s.path == "" {
+		s.mu.Unlock()
+		return nil // kept for the session only
+	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	s.mu.Unlock()
 	if err != nil {

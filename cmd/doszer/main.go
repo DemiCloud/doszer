@@ -191,7 +191,7 @@ const (
 	flagVersion    = "  -V, --version           show version\n"
 	flagOggQuality = "      --ogg-quality N     Ogg Vorbis quality, -1 to 10 (default: ogg_quality, else 6)\n"
 	flagStrict     = "      --strict            fail on any warning\n"
-	flagSaveDir    = "      --save-dir DIR      DOSBox Pure save directory (default: save_dir, else doszer's)\n"
+	flagSaveDir    = "      --save-dir DIR      DOSBox Pure save directory (default: save_dir, else ./saves, else doszer's once set up)\n"
 	flagSystemDir  = "      --system-dir DIR    DOSBox Pure system directory (default: system_dir, else ./system, else RetroDECK's)\n"
 	flagROMDir     = "      --rom-dir DIR       archive directory (default: rom_dir, else ./roms, else RetroDECK's)\n"
 )
@@ -1151,7 +1151,11 @@ Options:
 	env, err := install.Play(fs.Arg(0), stringOr(*systemDir, cfg.SystemDir), stringOr(*saveDir, cfg.SaveDir), opts)
 	endSteps(err)
 	if err == nil {
-		fmt.Printf("Saves: %s\n", env.SaveDir)
+		if env.Temporary {
+			fmt.Println("Saves: none kept (doszer isn't set up: run doszer gui, or doszer config init)")
+		} else {
+			fmt.Printf("Saves: %s\n", env.SaveDir)
+		}
 	}
 	return err
 }
@@ -2010,24 +2014,15 @@ Options:
 	if ok, err := parse(fs, args, help, 0, 0); !ok {
 		return err
 	}
-	cfg, err := config.Load("")
-	if err != nil {
-		return err
-	}
 	_, sdlLibs, err := builtin.Extract()
 	if err != nil {
 		return err
 	}
-	stats, err := config.StatsPath()
-	if err != nil {
-		return err
-	}
 	return gui.Run(gui.Options{
-		ROMDir:    config.ROMDirOf(cfg, *romDir),
+		ROMDir:    *romDir,
 		SystemDir: *systemDir,
 		SaveDir:   *saveDir,
 		SDL:       sdlLibs,
-		StatsPath: stats,
 		Version:   version,
 	})
 }

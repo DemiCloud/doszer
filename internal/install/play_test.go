@@ -196,3 +196,46 @@ func TestPlayUsesRetroDECKSaves(t *testing.T) {
 		t.Fatalf("save dir %q, err %v, want %q", got, err, given)
 	}
 }
+
+func TestPlayKeepsNothingUnconfigured(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // no RetroDECK
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Chdir(t.TempDir())
+	archive := filepath.Join(t.TempDir(), "Example Game.dosz")
+	os.WriteFile(archive, zipBytes(t, map[string]string{"GAME/GAME.EXE": "MZ"}), 0o644)
+
+	old := launch
+	var got string
+	launch = func(e Env, s *Session) error {
+		got = e.SaveDir
+		return os.WriteFile(filepath.Join(e.SaveDir, "Example Game.pure.zip"), []byte("save"), 0o644)
+	}
+	t.Cleanup(func() { launch = old })
+
+	env, err := Play(archive, "", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !env.Temporary {
+		t.Error("not set up, yet the saves were kept")
+	}
+	if _, err := os.Stat(got); !os.IsNotExist(err) {
+		t.Errorf("temporary save dir %s still there: %v", got, err)
+	}
+
+	// Set up (a config file), the saves are kept: in doszer's cache here.
+	cache := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", cache)
+	os.MkdirAll(filepath.Join(xdg, "doszer"), 0o755)
+	os.WriteFile(filepath.Join(xdg, "doszer", "config.toml"), nil, 0o644)
+	if env, err = Play(archive, "", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if env.Temporary || !strings.HasPrefix(got, cache) {
+		t.Errorf("set up: save dir %s (temporary %v), want doszer's cache under %s", got, env.Temporary, cache)
+	}
+	if _, err := os.Stat(filepath.Join(got, "Example Game.pure.zip")); err != nil {
+		t.Errorf("save not kept: %v", err)
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 
 	"github.com/pelletier/go-toml/v2"
@@ -131,10 +132,17 @@ func UserConfigPath() (string, error) {
 	return XDGConfigPath()
 }
 
-// XDGConfigPath returns $XDG_CONFIG_HOME/doszer/config.toml, or
-// ~/.config/doszer/config.toml if XDG_CONFIG_HOME is unset.
+// XDGConfigPath returns $XDG_CONFIG_HOME/doszer/config.toml, or, if
+// XDG_CONFIG_HOME is unset, %APPDATA%\doszer\config.toml on Windows and
+// ~/.config/doszer/config.toml elsewhere.
 func XDGConfigPath() (string, error) {
 	base := os.Getenv("XDG_CONFIG_HOME")
+	if base == "" && runtime.GOOS == "windows" {
+		var err error
+		if base, err = os.UserConfigDir(); err != nil {
+			return "", err
+		}
+	}
 	if base == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {

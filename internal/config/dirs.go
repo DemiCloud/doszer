@@ -54,6 +54,7 @@ const (
 	FromExe       = "beside doszer"  // <executable's directory>/<name>
 	FromRetroDECK = "RetroDECK"      // retrodeck.json's paths
 	FromCache     = "doszer's cache" // <user cache>/doszer/saves
+	FromTemp      = "not set up: a temporary folder per game, deleted after it"
 )
 
 // FindSystemDir returns the system directory used when none is set: the
@@ -155,12 +156,16 @@ func SystemDirOf(cfg Config, flag string) Dir {
 }
 
 // SaveDirOf returns the save directory: flag (--save-dir) if given, else
-// save_dir, else FindSaveDir, else doszer's cache (CacheSaveDir). run
-// also looks for RetroDECK's per-folder saves before the cache
-// (install.PlaySaveDir).
+// save_dir, else FindSaveDir, else doszer's cache (CacheSaveDir) - but
+// only once doszer is set up (Configured): until then, nothing is kept,
+// and run uses a temporary folder ("" with From FromTemp). run also looks
+// for RetroDECK's per-folder saves first (install.PlaySaveDir).
 func SaveDirOf(cfg Config, flag string) Dir {
 	d := dirOf(flag, "--save-dir", cfg.SaveDir, "save_dir", FindSaveDir)
 	if d.Path == "" {
+		if !Configured() {
+			return Dir{From: FromTemp}
+		}
 		if c, err := CacheSaveDir(); err == nil {
 			d = Dir{Path: c, From: FromCache}
 		}
@@ -209,4 +214,77 @@ func StatsPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "doszer", name), nil
+}
+
+// DataDir is where a user-profile (not portable) doszer keeps its own
+// system, save and ROM folders when it sets them up (the window's first
+// run): $XDG_DATA_HOME/doszer (default ~/.local/share/doszer) on Linux,
+// %USERPROFILE%\doszer on Windows, ~/doszer elsewhere.
+func DataDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	if runtime.GOOS == "linux" {
+		base := os.Getenv("XDG_DATA_HOME")
+		if base == "" {
+			base = filepath.Join(home, ".local", "share")
+		}
+		return filepath.Join(base, "doszer"), nil
+	}
+	return filepath.Join(home, "doszer"), nil
+}
+
+// Configured reports whether any config file exists for the window to
+// use: the portable or user config, or ./doszer.toml.
+func Configured() bool {
+	for _, l := range Layers("") {
+		if l.Found {
+			return true
+		}
+	}
+	return false
+}
+
+// SetupUser makes a user-profile configuration (not portable): the user
+// config file, with system, save and ROM folders in DataDir - unless
+// RetroDECK is installed, whose folders are then the defaults - and
+// returns the config's path.
+func SetupUser() (string, error) {
+	path, err := XDGConfigPath()
+	if err != nil {
+		return "", err
+	}
+	cfg, keys := Default(), map[string]bool{}
+	if RetroDECK() == (RetroDECKDirs{}) {
+		data, err := DataDir()
+		if err != nil {
+			return "", err
+		}
+		for k, p := range map[string]*string{"system": &cfg.SystemDir, "saves": &cfg.SaveDir, "roms": &cfg.ROMDir} {
+			*p = filepath.Join(data, k)
+			if err := os.MkdirAll(*p, 0o755); err != nil {
+				return "", err
+			}
+		}
+		keys = map[string]bool{"system_dir": true, "save_dir": true, "rom_dir": true}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(path); err == nil {
+		return path, nil // already there: kept
+	}
+	return path, os.WriteFile(path, []byte(Template(cfg, keys)), 0o644)
+}
+
+// Writable reports whether files can be created in dir.
+func Writable(dir string) bool {
+	f, err := os.CreateTemp(dir, ".doszer-write-test-*")
+	if err != nil {
+		return false
+	}
+	f.Close()
+	os.Remove(f.Name())
+	return true
 }

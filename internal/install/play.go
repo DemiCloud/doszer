@@ -8,14 +8,16 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/manifest"
 )
 
 // Play runs archive in DOSBox Pure and returns when its window closes.
 // Its saves are named after it, in saveDir, else PlaySaveDir's, else
-// Discover's,
-// so a later Play of the same archive continues from them. An archive that
+// Discover's, so a later Play of the same archive continues from them -
+// unless doszer isn't set up (config.Configured), when they go to a
+// temporary folder, removed after the session. An archive that
 // boots an OS image runs it under "Discard" (playOptions): the image is
 // never written to, and C: starts from it every time. options are more
 // DOSBox Pure core options, by key with or without its dosbox_pure_
@@ -39,7 +41,22 @@ func Play(archive, systemDir, saveDir string, options map[string]string) (Env, e
 			return Env{}, err
 		}
 	}
+	// Not set up, doszer keeps nothing: the saves live in a temporary
+	// folder for the session.
+	temp := false
+	if saveDir == "" && !config.Configured() {
+		if saveDir, err = os.MkdirTemp("", "doszer-saves-"); err != nil {
+			return Env{}, err
+		}
+		temp = true
+		done := interrupt.Remove(saveDir)
+		defer func() {
+			os.RemoveAll(saveDir)
+			done()
+		}()
+	}
 	env, err := Discover(systemDir, saveDir)
+	env.Temporary = temp
 	if err != nil {
 		return Env{}, err
 	}

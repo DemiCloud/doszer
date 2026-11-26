@@ -26,6 +26,8 @@ var (
 	colCardHover  = rgba{52, 52, 56, 255}
 	colCardSel    = rgba{58, 60, 66, 255}
 	colAccent     = rgba{90, 160, 250, 255}
+	colAccentDark = rgba{44, 98, 170, 255}
+	colPopup      = rgba{38, 38, 42, 255}
 	colText       = rgba{240, 240, 242, 255}
 	colMuted      = rgba{160, 160, 168, 255}
 	colFaint      = rgba{110, 110, 118, 255}
@@ -275,3 +277,7 @@ func (a *app) clearCaches() {
 		delete(a.faces, k)
 	}
 }
+
+func destroyTexture(t *texture) { sdl.DestroyTexture(t.t) }
+
+func raiseWindow(w uintptr) { sdl.RaiseWindow(w) }
