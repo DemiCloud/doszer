@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"unicode/utf16"
 	"unsafe"
 )
 
@@ -91,6 +92,7 @@ var (
 	getVolumeInformation  = kernel32.NewProc("GetVolumeInformationW")
 	setErrorMode          = kernel32.NewProc("SetErrorMode")
 	getOpenFileName       = syscall.NewLazyDLL("comdlg32.dll").NewProc("GetOpenFileNameW")
+	getSaveFileName       = syscall.NewLazyDLL("comdlg32.dll").NewProc("GetSaveFileNameW")
 )
 
 // opticalDrives lists the CD drives (GetDriveType's DRIVE_CDROM), each
@@ -102,7 +104,9 @@ func opticalDrives() []drive {
 	old, _, _ := setErrorMode.Call(0x0001) // SEM_FAILCRITICALERRORS
 	defer setErrorMode.Call(old)
 	var out []drive
-	for _, root := range strings.Split(syscall.UTF16ToString(buf[:n]), "\x00") {
+	// The roots are NUL-separated ("C:\\\x00D:\\\x00..."): UTF16ToString would
+	// stop at the first.
+	for _, root := range strings.Split(string(utf16.Decode(buf[:n])), "\x00") {
 		if root == "" {
 			continue
 		}
@@ -120,6 +124,12 @@ func opticalDrives() []drive {
 	return out
 }
 
+// pickSave asks where to save a PNG, with Windows' save dialog.
+func pickSave(title, name string) (string, bool) {
+	return fileDialog(getSaveFileName, title, utf16z("PNG images (*.png)\x00*.png\x00"), name,
+		0x2|0x800|0x8|0x80000) // OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER
+}
+
 // pickFile asks for a file of a kind (fileDisc, fileArchive) with
 // Windows' open dialog.
 func pickFile(title string, kind int) (string, bool) {
@@ -127,8 +137,15 @@ func pickFile(title string, kind int) (string, bool) {
 	if kind == fileArchive {
 		filter = utf16z("DOSBox Pure archives (*.dosz)\x00*.dosz\x00All files\x00*.*\x00")
 	}
+	return fileDialog(getOpenFileName, title, filter, "", 0x1000|0x800|0x8|0x80000) // OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER
+}
+
+// fileDialog runs GetOpenFileName or GetSaveFileName.
+func fileDialog(proc *syscall.LazyProc, title string, filter []uint16, name string, flags uint32) (string, bool) {
 	var file [1024]uint16
+	copy(file[:len(file)-1], utf16z(name))
 	t, _ := syscall.UTF16PtrFromString(title)
+	ext := utf16z("png")
 	ofn := struct {
 		size                 uint32
 		owner, instance      uintptr
@@ -146,12 +163,12 @@ func pickFile(title string, kind int) (string, bool) {
 		template             *uint16
 		reserved             uintptr
 		reserved2, flagsEx   uint32
-	}{filter: &filter[0], index: 1, file: &file[0], maxFile: uint32(len(file)), title: t,
-		flags: 0x1000 | 0x800 | 0x8 | 0x80000} // OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER
+	}{filter: &filter[0], index: 1, file: &file[0], maxFile: uint32(len(file)), title: t, flags: flags, defExt: &ext[0]}
 	ofn.size = uint32(unsafe.Sizeof(ofn))
-	r, _, _ := getOpenFileName.Call(uintptr(unsafe.Pointer(&ofn)))
+	r, _, _ := proc.Call(uintptr(unsafe.Pointer(&ofn)))
 	runtime.KeepAlive(filter)
 	runtime.KeepAlive(t)
+	runtime.KeepAlive(ext)
 	if r == 0 {
 		return "", false
 	}

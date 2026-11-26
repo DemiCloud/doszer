@@ -101,3 +101,27 @@ func pickFile(title string, kind int) (string, bool) {
 	p := strings.TrimSpace(string(out))
 	return p, p != ""
 }
+
+// pickSave asks where to save a file named name, with zenity or kdialog;
+// without either, it goes in the home folder.
+func pickSave(title, name string) (string, bool) {
+	var cmd *exec.Cmd
+	switch picker() {
+	case "zenity":
+		cmd = exec.Command("zenity", "--file-selection", "--save", "--confirm-overwrite", "--title="+title, "--filename="+name)
+	case "kdialog":
+		cmd = exec.Command("kdialog", "--getsavefilename", name, "--title", title)
+	default:
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", false
+		}
+		return filepath.Join(home, name), true
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return "", false
+	}
+	p := strings.TrimSpace(string(out))
+	return p, p != ""
+}

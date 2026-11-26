@@ -26,7 +26,7 @@ type Options struct {
 	SystemDir, SaveDir string // DOSBox Pure's directories; see Discover
 
 	Dir    string // folder to extract, relative to the drive root; chosen automatically if empty
-	Drive  string // OS image model: "C" to extract from C: changes instead of D:
+	Drive  string // OS image model: "C" or "D" to extract from that drive's changes; "" for D:, else C: when D: didn't change
 	Force  bool   // overwrite differing files in the source
 	DryRun bool   // report without writing
 	Keep   bool   // keep a session's save files after extracting
@@ -99,6 +99,7 @@ func osDriveDir(changes []Change) (string, error) {
 // Report is what an install found and did.
 type Report struct {
 	Drive     string   // the drive extracted from, as the guest saw it ("C:" or "D:")
+	Detected  bool     // Drive was chosen by what changed: C:, as D: didn't
 	Dir       string   // folder extracted
 	Changes   []Change // changes on that drive
 	Extracted *Extracted
@@ -130,14 +131,13 @@ func Run(opts Options) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch strings.ToUpper(strings.TrimSuffix(opts.Drive, ":")) {
-	case "", "D":
-		opts.Drive = ""
-	case "C":
+	switch d := strings.ToUpper(strings.TrimSuffix(opts.Drive, ":")); d {
+	case "":
+	case "C", "D":
 		if m.Model() != manifest.ModelOS {
 			return nil, errors.New("--drive applies only to an OS image session (boot.os)")
 		}
-		opts.Drive = "C"
+		opts.Drive = d
 	default:
 		return nil, fmt.Errorf("--drive %s: must be c or d", opts.Drive)
 	}
@@ -248,9 +248,16 @@ func collectOS(rep *Report, s *Session, env Env, opts Options) ([]string, error)
 		if err != nil {
 			return saves, err
 		}
+		// A setup that only installs to C: (common under Windows 9x)
+		// leaves D: unchanged: then C: is where the game is.
+		_, dErr := os.Stat(sf.DDrive)
+		if opts.Drive == "" && dErr != nil {
+			rep.Detected = true
+			opts.Drive = "C"
+		}
 		if opts.Drive == "C" {
 			rep.Drive = "C:"
-			if _, err := os.Stat(sf.DDrive); err == nil {
+			if dErr == nil {
 				saves = append(saves, sf.DDrive)
 			}
 			return saves, extractOverlay(rep, img, sf.CDrive, opts)

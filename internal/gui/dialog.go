@@ -20,6 +20,10 @@ type dialog struct {
 	scroll  int    // output lines scrolled up from the end
 	field   *field // an input below the lines (a file name), or nil
 	rows    []dialogRow
+	image   *texture // shown above the lines, centred (About)
+	imageS  int32    // its size, logical pixels
+	onImage func()   // a right click on the image (its menu)
+	center  bool     // centre the title and lines
 }
 
 // dialogRow is a row of a dialog's table: a name, a value, and a link
@@ -277,6 +281,9 @@ func (a *app) drawDialog() {
 	if d.field != nil {
 		h += a.px(44)
 	}
+	if d.image != nil {
+		h += a.px(float64(d.imageS) + 16)
+	}
 	rowH := a.lineHeight(13, false) + a.px(10)
 	h += int32(len(d.rows)) * rowH
 	if len(d.rows) > 0 {
@@ -291,7 +298,22 @@ func (a *app) drawDialog() {
 	a.round(x-a.px(1), y-a.px(1), w+a.px(2), h+a.px(2), a.px(12), colLine)
 	a.round(x, y, w, h, a.px(12), colPopup)
 	ty := y + p
-	a.text(a.ellipsize(d.title, w-2*p, 17, true), x+p, ty, 17, true, colText)
+	if d.image != nil {
+		is := a.px(float64(d.imageS))
+		ix := x + (w-is)/2
+		a.image(d.image, ix, ty, is)
+		if d.onImage != nil {
+			on := d.onImage
+			a.onClick(ix, ty, is, is, func(bool) { a.menuAt = on })
+		}
+		ty += is + a.px(16)
+	}
+	title := a.ellipsize(d.title, w-2*p, 17, true)
+	if d.center {
+		a.text(title, x+(w-a.textWidth(title, 17, true))/2, ty, 17, true, colText)
+	} else {
+		a.text(title, x+p, ty, 17, true, colText)
+	}
 	ty += a.lineHeight(17, true) + a.px(12)
 	for _, l := range lines {
 		c := colMuted
@@ -301,7 +323,12 @@ func (a *app) drawDialog() {
 		case d.job != nil:
 			c = colAccent // the command line
 		}
-		a.text(a.ellipsize(l, w-2*p, 13, false), x+p, ty, 13, false, c)
+		l = a.ellipsize(l, w-2*p, 13, false)
+		if d.center {
+			a.text(l, x+(w-a.textWidth(l, 13, false))/2, ty, 13, false, c)
+		} else {
+			a.text(l, x+p, ty, 13, false, c)
+		}
 		ty += lh
 	}
 

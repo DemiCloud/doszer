@@ -1,6 +1,11 @@
 package gui
 
 import (
+	"bytes"
+	_ "embed"
+	"image"
+	"image/draw"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,9 +74,8 @@ func (a *app) menus() []menu {
 	help := []menuItem{
 		{label: "Keyboard shortcuts", fn: a.showShortcuts},
 		{label: "Credits", fn: a.showCredits},
-	}
-	if canOpen() {
-		help = append(help, menuItem{label: "GitHub", fn: func() { a.open(homepage) }})
+		{label: "-"},
+		{label: "About doszer", fn: a.showAbout},
 	}
 	return []menu{{"File", file}, {"View", view}, {"Build", build}, {"Tools", tools}, {"Help", help}}
 }
@@ -94,8 +98,12 @@ func (a *app) drawMenuBar() {
 }
 
 // openMenuItems opens a menu's items at x, y; a submenu opens beside its
-// item when chosen.
+// item, the menu staying open.
 func (a *app) openMenuItems(x, y int32, items []menuItem) {
+	a.popup = a.menuPopup(x, y, items)
+}
+
+func (a *app) menuPopup(x, y int32, items []menuItem) *popup {
 	labels := make([]string, len(items))
 	for i, it := range items {
 		labels[i] = it.label
@@ -106,16 +114,19 @@ func (a *app) openMenuItems(x, y int32, items []menuItem) {
 			labels[i] += "\t" + it.keys
 		}
 	}
-	a.openMenu(x, y, labels, func(i int) {
-		it := items[i]
-		if it.sub != nil {
-			a.openMenuItems(x+a.px(190), y+a.px(30)*int32(i), it.sub)
-			return
-		}
-		if it.fn != nil {
-			it.fn()
-		}
-	})
+	return &popup{x: x, y: y, w: a.px(200), items: labels, current: -1, childOf: -1,
+		pick: func(i int) {
+			if items[i].fn != nil {
+				items[i].fn()
+			}
+		},
+		sub: func(i int) *popup {
+			if items[i].sub == nil {
+				return nil
+			}
+			return a.menuPopup(0, 0, items[i].sub)
+		},
+	}
 }
 
 // openFile asks for an archive and plays it (File > Open).
@@ -236,6 +247,51 @@ func (a *app) showCredits() {
 		rows = append(rows, dialogRow{p.Name, v, p.URL})
 	}
 	rows = append(rows, dialogRow{"Go fonts", "", "https://go.dev/blog/go-fonts"})
-	a.dialog = &dialog{title: "Credits", lines: []string{"doszer and the programs it embeds:"}, rows: rows,
+	a.dialog = &dialog{title: "Credits", rows: rows,
 		buttons: []dialogButton{{label: "Close", style: btnAccent}}}
+}
+
+// aboutIcon is doszer's icon at 256 pixels (`make icon`).
+//
+//go:embed icon256.png
+var aboutIcon []byte
+
+// showAbout shows doszer's icon, name, version and what it is. A right
+// click on the icon saves it.
+func (a *app) showAbout() {
+	if a.aboutTex == nil {
+		if img, err := png.Decode(bytes.NewReader(aboutIcon)); err == nil {
+			b := img.Bounds()
+			n := image.NewNRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+			draw.Draw(n, n.Bounds(), img, b.Min, draw.Src)
+			a.aboutTex = a.upload(n, true)
+		}
+	}
+	a.dialog = &dialog{
+		title:  "doszer",
+		center: true,
+		image:  a.aboutTex,
+		imageS: 160,
+		lines: []string{
+			"Version " + a.o.Version,
+			"Written by DemiCloud",
+			"",
+			"A .dosz packer and player for DOSBox Pure: it dumps discs,",
+			"installs and builds games, and runs them.",
+		},
+		onImage: func() {
+			a.openMenu(a.mx, a.my, []string{"Save image…"}, func(int) {
+				p, ok := pickSave("Save doszer's icon", "doszer.png")
+				if !ok {
+					return
+				}
+				if err := os.WriteFile(p, aboutIcon, 0o644); err != nil {
+					a.say(err.Error(), true)
+					return
+				}
+				a.say("Saved "+p, false)
+			})
+		},
+		buttons: []dialogButton{{label: "Close", style: btnAccent}},
+	}
 }

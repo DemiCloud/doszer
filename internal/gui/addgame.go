@@ -37,7 +37,6 @@ type addGame struct {
 	useFolder   bool
 	folder      field
 	hasManifest bool // it has a DOSZ.TOML: init isn't run
-	driveC      bool // install --drive c: the setup only installs to C:
 
 	// Once installed: choosing the program the game starts with.
 	plan       *addPlan
@@ -265,9 +264,6 @@ func (a *app) addGameRun() {
 		return
 	}
 	installArgs := []string{"install", "--format", "plain"}
-	if g.driveC {
-		installArgs = append(installArgs, "--drive", "c")
-	}
 	if a.o.SystemDir != "" {
 		installArgs = append(installArgs, "--system-dir", a.o.SystemDir)
 	}
@@ -546,8 +542,7 @@ func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {
 
 	row("Name")
 	a.drawField(&g.name, fx, y, fw)
-	y += a.px(38)
-	note("The archive's name, and its file name.", colFaint)
+	y += a.px(44)
 
 	if g.hasManifest {
 		row("Settings")
@@ -561,7 +556,7 @@ func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {
 			boots = append(boots, b.label)
 		}
 		dropdown(boots, &g.boot)
-		note("init picks from the programs it finds, and the shells and images in the system folder.", colFaint)
+		y += a.px(6)
 
 		row("CD audio")
 		dropdown([]string{"Ogg Vorbis (smaller)", "WAV (lossless, every track verifiable)"}, &g.audio)
@@ -590,8 +585,6 @@ func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {
 	y += a.px(34)
 	if g.install {
 		note("DOSBox Pure opens with the disc: run its setup, then close the window.", colFaint)
-		a.button(box(g.driveC, "Its setup only installs to C: (Windows 9x)"), fx, y-a.px(6), btnGhost, func() { g.driveC = !g.driveC })
-		y += a.px(34)
 	} else {
 		note("For a game that runs from its disc, or is installed already.", colFaint)
 	}

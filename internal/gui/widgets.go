@@ -316,22 +316,26 @@ func (a *app) blur() {
 	}
 }
 
-// popup is an open dropdown list.
+// popup is an open dropdown list or menu. An item can open a submenu
+// beside it (sub), on hover or click, keeping this one open.
 type popup struct {
 	x, y, w int32
 	items   []string
 	current int
 	pick    func(i int)
+	sub     func(i int) *popup // the submenu item i opens, or nil
+	child   *popup             // the submenu open
+	childOf int
 }
 
 // openPopup opens a dropdown under a button at x, y.
 func (a *app) openPopup(x, y, w int32, items []string, current int, pick func(int)) {
-	a.popup = &popup{x: x, y: y + a.px(36), w: w, items: items, current: current, pick: pick}
+	a.popup = &popup{x: x, y: y + a.px(36), w: w, items: items, current: current, pick: pick, childOf: -1}
 }
 
 // openMenu opens a context menu at x, y: items with no current one.
 func (a *app) openMenu(x, y int32, items []string, pick func(int)) {
-	a.popup = &popup{x: x, y: y, w: a.px(200), items: items, current: -1, pick: pick}
+	a.popup = &popup{x: x, y: y, w: a.px(200), items: items, current: -1, pick: pick, childOf: -1}
 }
 
 // rightClick selects what's under the mouse, then opens its menu.
@@ -345,12 +349,17 @@ func (a *app) rightClick() {
 }
 
 func (a *app) drawPopup() {
-	p := a.popup
-	if p == nil {
+	if a.popup == nil {
 		return
 	}
 	a.layer = layerPopup
 	a.onClick(0, 0, a.w, a.h, func(bool) { a.popup = nil }) // outside closes
+	a.drawPopupLevel(a.popup)
+	a.layer = layerPage
+}
+
+// drawPopupLevel draws one popup, then its open submenu over it.
+func (a *app) drawPopupLevel(p *popup) {
 	sep := 0
 	for _, it := range p.items {
 		if it == "-" {
@@ -370,6 +379,8 @@ func (a *app) drawPopup() {
 	}
 	a.round(x-a.px(1), y-a.px(1), w+a.px(2), h+a.px(2), a.px(8), colLine)
 	a.round(x, y, w, h, a.px(8), colPopup)
+	// The whole popup takes clicks, so one between items doesn't close it.
+	a.onClick(x, y, w, h, func(bool) {})
 	lh := a.lineHeight(13, false)
 	iy := y + a.px(4)
 	for i, it := range p.items {
@@ -378,25 +389,48 @@ func (a *app) drawPopup() {
 			iy += a.px(9)
 			continue
 		}
-		if a.hovered(x, iy, w, ih) {
+		hasSub := p.sub != nil && p.sub(i) != nil
+		open := func() {
+			if p.childOf != i {
+				c := p.sub(i)
+				c.x, c.y, c.childOf = x+w-a.px(4), iy-a.px(4), -1
+				p.child, p.childOf = c, i
+			}
+		}
+		hover := a.mx >= x && a.mx < x+w && a.my >= iy && a.my < iy+ih
+		if hover || (hasSub && p.childOf == i) {
 			a.round(x+a.px(4), iy, w-a.px(8), ih, a.px(5), colCardSel)
 		}
-		c := colText
+		// Hovering an item opens its submenu, or closes another's.
+		if hover {
+			switch {
+			case hasSub:
+				open()
+			case p.child != nil:
+				p.child, p.childOf = nil, -1
+			}
+		}
 		if i == p.current {
 			a.text("•", x+a.px(10), iy+(ih-lh)/2, 13, false, colAccent)
 		}
 		label, keys, _ := strings.Cut(it, "\t")
-		a.text(label, x+a.px(28), iy+(ih-lh)/2, 13, false, c)
+		a.text(label, x+a.px(28), iy+(ih-lh)/2, 13, false, colText)
 		if keys != "" {
 			a.textRight(keys, x+w-a.px(14), iy+(ih-lh)/2, 12, false, colFaint)
 		}
-		a.onClick(x, iy, w, ih, func(bool) {
-			a.popup = nil
-			p.pick(i)
-		})
+		if hasSub {
+			a.onClick(x, iy, w, ih, func(bool) { open() })
+		} else {
+			a.onClick(x, iy, w, ih, func(bool) {
+				a.popup = nil
+				p.pick(i)
+			})
+		}
 		iy += ih
 	}
-	a.layer = layerPage
+	if p.child != nil {
+		a.drawPopupLevel(p.child)
+	}
 }
 
 // SDL scancodes.

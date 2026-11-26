@@ -184,6 +184,12 @@ README.md            doszer usage, configuration, install workflow
   struct tagged alike for json, yaml and toml. Help is hand-written,
   man-page brief, uppercase placeholders (`SOURCE`, `FILE`), shared option
   lines in `flag*` constants.
+- Window text is terse, like help output: a title, a label or a short
+  line, never a sentence explaining what the user can see for
+  themselves ("Credits", not "doszer and the programs it embeds:").
+  Menu items are short nouns or verbs ("Environment", not "Show doszer's
+  environment"); one place per action (no menu item duplicating a
+  toolbar button or another menu's link).
 - Every configuration setting is also available as a flag. Precedence:
   flags, `<source>/DOSZ.TOML`, `./doszer.toml`,
   `$XDG_CONFIG_HOME/doszer/config.toml`, defaults.

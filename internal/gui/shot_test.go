@@ -49,7 +49,14 @@ func TestScreenshot(t *testing.T) {
 		},
 		"shortcuts.png": func(a *App) { a.showShortcuts() },
 		"credits.png":   func(a *App) { a.showCredits() },
-		"folder.png":    func(a *App) { a.openBuildFolder() },
+		"about.png":     func(a *App) { a.showAbout() },
+		"submenu.png": func(a *App) {
+			a.openMenuItems(a.px(60), a.menuH(), a.menus()[1].items)
+			p := a.popup
+			p.child, p.childOf = p.sub(5), 5 // View > Sort by
+			p.child.x, p.child.y, p.child.childOf = a.px(60)+a.px(196), a.menuH()+a.px(4)+a.px(30)*4+a.px(9), -1
+		},
+		"folder.png": func(a *App) { a.openBuildFolder() },
 		"folders.png": func(a *App) {
 			if items := a.filters(); len(items) > 0 {
 				a.openPopup(a.px(480), a.px(12), a.px(200), items, 0, func(int) {})

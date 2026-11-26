@@ -124,12 +124,13 @@ ICON_SIZES := 32 48 64 128 256
 ICON_TMP   := build/icon
 PNGFLAGS   := -define png:exclude-chunks=date,time +set date:create +set date:modify
 
-icon: ## Render the icon (assets/) into the .exe resource and the window icon
+icon: ## Render the icon (assets/) into the .exe resource, the window icon and About's
 	mkdir -p $(ICON_TMP)
 	for n in 16 24; do magick -background none assets/doszer-small.svg -resize $${n}x$${n} $(PNGFLAGS) $(ICON_TMP)/$$n.png; done
 	for n in $(ICON_SIZES); do magick -background none assets/doszer.svg -resize $${n}x$${n} $(PNGFLAGS) $(ICON_TMP)/$$n.png; done
 	go run ./assets/icogen assets/doszer.ico $(foreach n,16 24 $(ICON_SIZES),$(ICON_TMP)/$(n).png)
 	cp $(ICON_TMP)/64.png internal/libretro/icon.png
+	cp $(ICON_TMP)/256.png internal/gui/icon256.png
 	echo '1 ICON "assets/doszer.ico"' > $(ICON_TMP)/doszer.rc
 	$(MINGW64)windres -O coff -i $(ICON_TMP)/doszer.rc -o cmd/doszer/rsrc_windows_amd64.syso
 

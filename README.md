@@ -691,8 +691,9 @@ is unaffected. To convert one:
 An OS image session boots `--os`, else the image `install.os` maps
 `boot.os` to, else `boot.os` itself: an archive's own image may start the
 game through a custom shell, while installing wants a plain Windows
-desktop. `--drive c` extracts from C: instead of D:, for an installer that
-only works in its default folder on C:; the folder is `--dir`, or the one
+desktop. A session that left D: unchanged but changed C: is read from C:
+(an installer that only works in its default folder on C:, common under
+Windows 9x), and says so; `--drive c` or `--drive d` insists on one; the folder is `--dir`, or the one
 top-level folder outside `WINDOWS` every change is under. The game's paths
 then name C:, which the manifest's `[[layout.rewrite]]` rules can fix
 (`build --dry-run` suggests rules for paths that move).
@@ -841,7 +842,7 @@ action:
 | View | Games, Systems; list or grid, sort, refresh |
 | Build | Import a disc, Build a folder, Repack an archive, Prepare a shell or OS image |
 | Tools | Settings, Verify (an archive, or all games), Environment |
-| Help | Keyboard shortcuts, Credits (doszer and what it embeds, linked), GitHub |
+| Help | Keyboard shortcuts, Credits (doszer and what it embeds, linked), About (right-click the icon to save it) |
 
 A file dropped on the window plays (`.dosz`), starts an import (`.cue`,
 `.zip`) or a build (a folder). Below the menu bar, two pages:
@@ -899,8 +900,7 @@ folder, by the commands one would type:
    Windows 9x OS image), CD audio as Ogg Vorbis or WAV, which ROM folder
    (or system subfolder, e.g. RetroDECK's `windows9x`) it goes in, and
    whether to keep the dump.
-   And whether to install it first (on by default), and, for a Windows
-   9x setup that only installs to C:, `--drive c`.
+   And whether to install it first (on by default).
 3. **Build**: `doszer dump` (or `dump --from FILE`, once per disc) into
    `paths.sources/<name>` and `doszer init`, one after the other in a
    dialog with their output. Installing, it then says what comes next and

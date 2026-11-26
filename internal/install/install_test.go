@@ -505,6 +505,16 @@ func TestRunOSSessionDriveC(t *testing.T) {
 	if _, err := Run(opts); err != nil {
 		t.Fatalf("install_os: %v", err)
 	}
+	// Without --drive, a session that left D: alone is read from C:,
+	// and says so; --drive d still insists on D:.
+	opts.Drive = ""
+	if rep, err = Run(opts); err != nil || rep.Drive != "C:" || !rep.Detected {
+		t.Fatalf("detected: report %+v, err %v", rep, err)
+	}
+	opts.Drive = "d"
+	if _, err := Run(opts); err == nil {
+		t.Fatal("--drive d read C:")
+	}
 	plain := writeSource(t, "format = 1\nname = \"Example Game\"\n", map[string]string{"SETUP.EXE": "MZ"})
 	if _, err := Run(Options{Source: plain, SystemDir: systemDir, SaveDir: saveDir, Drive: "c"}); err == nil {
 		t.Fatal("--drive c accepted for a plain session")

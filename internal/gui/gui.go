@@ -74,10 +74,11 @@ type app struct {
 	dirty    bool
 	quit     bool
 
-	faces  map[faceKey]font.Face
-	texts  map[textKey]*texture
-	icons  map[string]*texture // by archive path; nil: no icon
-	circle *texture
+	faces    map[faceKey]font.Face
+	texts    map[textKey]*texture
+	icons    map[string]*texture // by archive path; nil: no icon
+	aboutTex *texture
+	circle   *texture
 
 	// What the configuration says now (reload).
 	cfg     config.Config
@@ -235,6 +236,9 @@ func (a *app) destroy() {
 	}
 	if a.circle != nil {
 		sdl.DestroyTexture(a.circle.t)
+	}
+	if a.aboutTex != nil {
+		sdl.DestroyTexture(a.aboutTex.t)
 	}
 }
 

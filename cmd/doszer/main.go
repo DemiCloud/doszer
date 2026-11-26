@@ -1027,7 +1027,7 @@ Usage: doszer install [options] SOURCE
 Options:
       --content FILE      archive a --from save was made over
       --dir PATH          folder to extract, relative to the drive root
-      --drive LETTER      OS image session: drive to extract from, c or d (default: d)
+      --drive LETTER      OS image session: drive to extract from, c or d (default: d, else c if d is unchanged)
   -n, --dry-run           report without writing
   -f, --force             overwrite differing files in the source
       --from FILE         extract from this .sav, .pure.zip, .vhd or .img instead
@@ -1177,6 +1177,9 @@ func printInstallReport(rep *install.Report, dryRun bool) {
 		fmt.Fprintf(os.Stderr, "[WARN] %s: left out of the install session\n", p)
 	}
 	if len(rep.Changes) > 0 {
+		if rep.Detected {
+			fmt.Printf("D: is unchanged: the setup installed to C:\n")
+		}
 		fmt.Printf("%s %d file(s) changed\n", rep.Drive, len(rep.Changes))
 	} else if rep.Drive != "" {
 		fmt.Printf("No files changed on %s (a file saved with the same content doesn't count): nothing to extract.\n", rep.Drive)
