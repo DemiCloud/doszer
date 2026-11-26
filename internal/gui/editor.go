@@ -2,7 +2,11 @@ package gui
 
 import (
 	"archive/zip"
+	"bytes"
 	"errors"
+	"image"
+	"image/draw"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,10 +15,12 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/DemiCloud/doszer/internal/chain"
+	"github.com/DemiCloud/doszer/internal/icon"
 	"github.com/DemiCloud/doszer/internal/library"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/platform"
 	"github.com/DemiCloud/doszer/internal/repack"
+	"github.com/DemiCloud/doszer/internal/sdl"
 	"github.com/DemiCloud/doszer/internal/start"
 )
 
@@ -28,30 +34,47 @@ import (
 type editDialog struct {
 	path, name string
 	m          *manifest.Manifest
-	tab        int // 0 Settings, 1 WINDOWS.BAT, 2 DOSZ.TOML
+	mode       int // editSettings, editBat, editToml
 	bat, toml  *textArea
 	err        string
 	changed    bool // the form changed
 
 	// The form.
-	fname        field
-	model        int    // 0 DOS, 1 Windows 3.x, 2 Windows 9x
-	exec         string // DOS: boot.exec
-	shell, os    string
-	parent       string
-	program      string // Windows: what WINDOWS.BAT starts (a path in the archive)
-	colors256    bool
-	dosProgs     []string // the archive's DOS programs and batch files, as DOS paths
-	winProgs     []string // its Windows programs, as paths
-	files        map[string]bool
-	parents      []string
-	tomlFromForm bool // the DOSZ.TOML tab shows what the form made
+	fname     field
+	model     int    // 0 DOS, 1 Windows 3.x, 2 Windows 9x
+	exec      string // DOS: boot.exec
+	shell, os string
+	parent    string
+	program   string // Windows: what WINDOWS.BAT starts (a path in the archive)
+	colors256 bool
+	dosProgs  []string // the archive's DOS programs and batch files, as DOS paths
+	winProgs  []string // its Windows programs, as paths
+	files     map[string]bool
+	parents   []string
+
+	// The icon: an archive path, or a file to add as one.
+	iconPath    string
+	iconAdd     string // a file on disk, added as iconPath (repack --add)
+	iconChanged bool
+	iconCands   []string // the archive's ICO files and programs with icons
+	iconData    []byte   // the icon shown
+	iconTex     *texture
 }
 
-var editTabs = []string{"Settings", "WINDOWS.BAT", manifest.FileName}
+// Edit modes: the settings form (Edit), or a file's text (Tools >
+// Advanced).
+const (
+	editSettings = iota
+	editBat
+	editToml
+)
 
-// openEditor opens the editor on a game's archive.
-func (a *app) openEditor(g *library.Game) {
+// openEditor opens the settings form on a game's archive.
+func (a *app) openEditor(g *library.Game) { a.openEditorMode(g, editSettings) }
+
+// openEditorMode opens the editor on a game's archive, as the settings
+// form or one file's text.
+func (a *app) openEditorMode(g *library.Game, mode int) {
 	data, bat, err := repack.EmbeddedManifest(g.Path)
 	if errors.Is(err, repack.ErrNoManifest) {
 		// Not built by doszer: a manifest to retrofit (repack --manifest).
@@ -71,7 +94,10 @@ func (a *app) openEditor(g *library.Game) {
 			bat = []byte(*f.Text)
 		}
 	}
-	e := &editDialog{path: g.Path, name: g.Name, m: m, bat: newTextArea(string(bat)), toml: newTextArea(string(data)), files: map[string]bool{}}
+	e := &editDialog{path: g.Path, name: g.Name, m: m, mode: mode, bat: newTextArea(string(bat)), toml: newTextArea(string(data)), files: map[string]bool{}}
+	if m.Icon != nil {
+		e.iconPath = m.Icon.Path
+	}
 	e.scan()
 	e.fromManifest()
 	// The parents it could have: archives beside it that wouldn't loop.
@@ -91,7 +117,15 @@ func (a *app) openEditor(g *library.Game) {
 			e.parents = append(e.parents, n)
 		}
 	}
-	a.edit, a.focus, a.focusArea, a.popup = e, &e.fname, nil, nil
+	a.edit, a.focus, a.focusArea, a.popup = e, nil, nil, nil
+	switch mode {
+	case editSettings:
+		a.focus = &e.fname
+	case editBat:
+		a.focusArea = e.bat
+	case editToml:
+		a.focusArea = e.toml
+	}
 }
 
 // scan lists the archive's programs, for the form's choices.
@@ -103,6 +137,15 @@ func (e *editDialog) scan() {
 	defer zr.Close()
 	for _, f := range zr.File {
 		e.files[strings.ToUpper(f.Name)] = true
+		up := strings.ToUpper(f.Name)
+		switch {
+		case up == "DOSZ.ICO":
+			e.iconData, _ = readZip(f)
+			continue
+		case strings.HasSuffix(up, ".ICO"):
+			e.iconCands = append(e.iconCands, f.Name)
+			continue
+		}
 		if strings.HasSuffix(strings.ToUpper(f.Name), ".BAT") && !strings.EqualFold(f.Name, "WINDOWS.BAT") {
 			if d, ok := platform.DOSPath(f.Name); ok {
 				e.dosProgs = append(e.dosProgs, d)
@@ -125,10 +168,82 @@ func (e *editDialog) scan() {
 			}
 		case platform.Win16, platform.Win32:
 			e.winProgs = append(e.winProgs, f.Name)
+			if data, err := readZip(f); err == nil {
+				if _, err := icon.Make(bytes.NewReader(data), int64(len(data)), 0); err == nil {
+					e.iconCands = append(e.iconCands, f.Name)
+				}
+			}
 		}
 	}
 	sort.Strings(e.dosProgs)
 	sort.Strings(e.winProgs)
+	sort.Strings(e.iconCands)
+}
+
+// readZip reads an archive entry of at most 32 MiB.
+func readZip(f *zip.File) ([]byte, error) {
+	if f.UncompressedSize64 > 32<<20 {
+		return nil, errors.New("too large")
+	}
+	rc, err := f.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return io.ReadAll(rc)
+}
+
+// setIcon shows data's icon (DOSZ.ICO as build makes it).
+func (a *app) setIcon(e *editDialog, data []byte) {
+	ico, err := icon.Make(bytes.NewReader(data), int64(len(data)), 0)
+	if err != nil {
+		e.err = err.Error()
+		return
+	}
+	e.iconData, e.err = ico, ""
+	if e.iconTex != nil {
+		sdl.DestroyTexture(e.iconTex.t)
+		e.iconTex = nil
+	}
+}
+
+// chooseIconFromArchive uses an archive file's icon.
+func (a *app) chooseIconFromArchive(e *editDialog, p string) {
+	zr, err := zip.OpenReader(e.path)
+	if err != nil {
+		e.err = err.Error()
+		return
+	}
+	defer zr.Close()
+	for _, f := range zr.File {
+		if f.Name == p {
+			if data, err := readZip(f); err == nil {
+				a.setIcon(e, data)
+				if e.err == "" {
+					e.iconPath, e.iconAdd, e.iconChanged = p, "", true
+				}
+			}
+			return
+		}
+	}
+}
+
+// chooseIconFile adds a file (an ICO, or a program to take it from) to
+// the archive as its icon.
+func (a *app) chooseIconFile(e *editDialog) {
+	p, ok := pickFile("Choose an icon", fileIcon)
+	if !ok {
+		return
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		e.err = err.Error()
+		return
+	}
+	a.setIcon(e, data)
+	if e.err == "" {
+		e.iconPath, e.iconAdd, e.iconChanged = filepath.Base(p), p, true
+	}
 }
 
 // fromManifest fills the form from e.m and the WINDOWS.BAT text.
@@ -191,40 +306,6 @@ func (a *app) regenerate() {
 	e.err = ""
 }
 
-// switchTab moves between the tabs, keeping them in step: the form makes
-// DOSZ.TOML, and an edited DOSZ.TOML refills the form, if it parses.
-func (a *app) switchTab(to int) {
-	e := a.edit
-	if e.tab == 2 && e.toml.changed {
-		m, err := manifest.Parse([]byte(e.toml.text()), e.name)
-		if err != nil {
-			e.err = strings.ReplaceAll(err.Error(), "\n", "; ")
-			return
-		}
-		e.m = m
-		e.fromManifest()
-		e.changed = true
-	}
-	if to == 2 {
-		e.toManifest()
-		if data, err := toml.Marshal(e.m); err == nil {
-			changed := e.toml.changed || e.changed
-			e.toml.set(string(data))
-			e.toml.changed = changed
-		}
-	}
-	e.err, e.tab = "", to
-	a.focus, a.focusArea = nil, nil
-	switch to {
-	case 0:
-		a.focus = &e.fname
-	case 1:
-		a.focusArea = e.bat
-	case 2:
-		a.focusArea = e.toml
-	}
-}
-
 func (a *app) editKey(sc int32, ctrl bool) {
 	switch {
 	case sc == scEscape:
@@ -240,28 +321,43 @@ func (a *app) editKey(sc int32, ctrl bool) {
 
 func (a *app) editChanged() bool {
 	e := a.edit
-	return e.changed || e.bat.changed || e.toml.changed || strings.TrimSpace(e.fname.text) != e.m.Name
+	return e.changed || e.iconChanged || e.bat.changed || e.toml.changed || strings.TrimSpace(e.fname.text) != e.m.Name
 }
 
 func (a *app) closeEditor() {
+	done := func() {
+		if t := a.edit.iconTex; t != nil {
+			sdl.DestroyTexture(t.t)
+		}
+		a.edit, a.focusArea, a.focus = nil, nil, nil
+	}
 	if a.editChanged() {
-		a.confirm("Discard your changes?", "Discard", func() { a.edit, a.focusArea, a.focus = nil, nil, nil }, "")
+		a.confirm("Discard your changes?", "Discard", done, "")
 		return
 	}
-	a.edit, a.focusArea, a.focus = nil, nil, nil
+	done()
 }
 
 // saveEditor checks the manifest and repacks the archive with it.
 func (a *app) saveEditor() {
 	e := a.edit
-	if e.tab == 2 {
-		a.switchTab(0) // the DOSZ.TOML tab's text, parsed
-		if e.err != "" {
-			e.tab = 2
+	switch e.mode {
+	case editToml:
+		m, err := manifest.Parse([]byte(e.toml.text()), e.name)
+		if err != nil {
+			e.err = strings.ReplaceAll(err.Error(), "\n", "; ")
 			return
 		}
+		e.m = m
+	case editSettings:
+		e.toManifest()
+		if e.iconChanged {
+			e.m.Icon = nil
+			if e.iconPath != "" {
+				e.m.Icon = &manifest.Icon{Path: e.iconPath}
+			}
+		}
 	}
-	e.toManifest()
 	m := e.m
 	// WINDOWS.BAT goes in the manifest, so every later build keeps it.
 	if e.bat.changed {
@@ -293,8 +389,15 @@ func (a *app) saveEditor() {
 	tmp.Write(data)
 	tmp.Close()
 	path, name := e.path, e.name
+	args := []string{"repack", "--format", "plain", "--manifest", tmp.Name()}
+	if e.iconAdd != "" {
+		args = append(args, "--add", e.iconPath+"="+e.iconAdd)
+	}
+	if e.iconTex != nil {
+		sdl.DestroyTexture(e.iconTex.t)
+	}
 	a.edit, a.focusArea, a.focus = nil, nil, nil
-	a.runDoszer("Repack: "+name, []string{"repack", "--format", "plain", "--manifest", tmp.Name(), path, path}, func(err error) {
+	a.runDoszer("Repack: "+name, append(args, path, path), func(err error) {
 		os.Remove(tmp.Name())
 		if err == nil {
 			a.rescan()
@@ -316,26 +419,22 @@ func (a *app) drawEditor() {
 	a.round(x-a.px(1), y-a.px(1), w+a.px(2), h+a.px(2), a.px(14), colLine)
 	a.round(x, y, w, h, a.px(14), colPopup)
 	p := a.px(20)
-	a.text(a.ellipsize(e.name, w/2, 17, true), x+p, y+p, 17, true, colText)
-	tx := x + w - p
-	for i := len(editTabs) - 1; i >= 0; i-- {
-		tx -= a.buttonW(editTabs[i])
-		style := btnNormal
-		if i == e.tab {
-			style = btnOn
-		}
-		idx := i
-		a.button(editTabs[i], tx, y+p-a.px(6), style, func() { a.switchTab(idx) })
-		tx -= a.px(4)
+	title := e.name
+	switch e.mode {
+	case editBat:
+		title += ": WINDOWS.BAT"
+	case editToml:
+		title += ": " + manifest.FileName
 	}
+	a.text(a.ellipsize(title, w-2*p, 17, true), x+p, y+p, 17, true, colText)
 	top := y + p + a.px(40)
 	bottom := y + h - p - a.px(44)
-	switch e.tab {
-	case 0:
+	switch e.mode {
+	case editSettings:
 		a.drawEditForm(e, x+p, top, w-2*p)
-	case 1:
+	case editBat:
 		a.drawTextArea(e.bat, x+p, top, w-2*p, bottom-top, a.focusArea == e.bat)
-	case 2:
+	case editToml:
 		a.drawTextArea(e.toml, x+p, top, w-2*p, bottom-top, a.focusArea == e.toml)
 	}
 
@@ -430,18 +529,53 @@ func (a *app) drawEditForm(e *editDialog, x, y, w int32) {
 		e.program = v
 		a.regenerate()
 	})
-	row("Display", e.model == 2)
-	box := "□  256 colours"
-	if e.colors256 {
-		box = "■  256 colours"
-	}
 	var toggle func()
 	if e.model == 2 && e.program != "" {
 		toggle = func() { e.colors256, e.changed = !e.colors256, true; a.regenerate() }
 	}
-	a.button(box, fx, y, btnGhost, toggle)
+	row("256 colours", toggle != nil)
+	a.checkbox(fx, y, e.colors256, "", toggle)
 	y += a.px(48)
 
 	row("Parent", true)
 	choose(true, e.parents, e.parent, "None", func(v string) { e.parent = v })
+
+	// The icon: what it shows now, and where to take another from.
+	row("Icon", true)
+	is := a.px(32)
+	if e.iconTex == nil && e.iconData != nil {
+		if img, err := icon.Decode(e.iconData, int(is)); err == nil {
+			b := img.Bounds()
+			n := image.NewNRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+			draw.Draw(n, n.Bounds(), img, b.Min, draw.Src)
+			e.iconTex = a.upload(n, true)
+		}
+	}
+	if e.iconTex != nil {
+		a.image(e.iconTex, fx, y, is)
+	} else {
+		a.round(fx, y, is, is, a.px(6), colField)
+	}
+	label := e.iconPath
+	if label == "" {
+		label = "None"
+	}
+	ix, iy := fx+is+a.px(12), y
+	items := append([]string{"From a file…", "None"}, e.iconCands...)
+	a.button(a.ellipsize(label, fw-is-a.px(60), 13, false)+" ▼", ix, iy, btnNormal, func() {
+		a.openPopup(ix, iy, a.px(260), items, -1, func(i int) {
+			switch i {
+			case 0:
+				a.chooseIconFile(e)
+			case 1:
+				e.iconPath, e.iconAdd, e.iconData, e.iconChanged = "", "", nil, true
+				if e.iconTex != nil {
+					sdl.DestroyTexture(e.iconTex.t)
+					e.iconTex = nil
+				}
+			default:
+				a.chooseIconFromArchive(e, items[i])
+			}
+		})
+	})
 }

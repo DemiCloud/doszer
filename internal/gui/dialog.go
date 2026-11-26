@@ -455,6 +455,7 @@ type drive struct {
 const (
 	fileDisc    = iota // a CUE sheet or a zip of one
 	fileArchive        // a .dosz
+	fileIcon           // an ICO file, or a Windows program to take one from
 )
 
 // copyAll is a job dialog's Copy button: its command lines and output,

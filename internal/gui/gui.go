@@ -78,6 +78,7 @@ type app struct {
 	texts    map[textKey]*texture
 	icons    map[string]*texture // by archive path; nil: no icon
 	aboutTex *texture
+	checkTex *texture
 	circle   *texture
 
 	// What the configuration says now (reload).
@@ -129,6 +130,9 @@ func Run(o Options) error {
 		return err
 	}
 	sdl.SetHint("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2")
+	// A click that focuses the window also clicks: after a drop from
+	// Explorer, the first click on Next is Next.
+	sdl.SetHint("SDL_MOUSE_FOCUS_CLICKTHROUGH", "1")
 	if sdl.Init(sdl.InitVideo|sdl.InitEvents) != 0 {
 		return sdl.Error("SDL_Init")
 	}
@@ -351,6 +355,7 @@ func (a *app) event(e *sdl.Event) {
 		}
 	case sdl.EventDropFile:
 		a.drop(e.DropFile())
+		sdl.RaiseWindow(a.win)
 	case sdl.EventTextInput:
 		if a.focusArea != nil && a.popup == nil && a.dialog == nil {
 			a.focusArea.insert(e.Text())

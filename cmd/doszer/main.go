@@ -1267,11 +1267,13 @@ func runRepack(args []string) error {
 	manifestPath := fs.String("manifest", "", "")
 	oggQuality := fs.Int("ogg-quality", 0, "")
 	strict := fs.Bool("strict", false, "")
+	add := fs.StringArray("add", nil, "")
 	const help = `doszer repack - rebuild an archive from its embedded manifest
 
 Usage: doszer repack [options] INPUT.dosz [OUTPUT.dosz]
 
 Options:
+      --add PATH=FILE     add FILE to the archive as PATH, replacing any (repeatable)
   -n, --dry-run           print the rebuild plan without writing an archive
       --manifest FILE     use this manifest instead of the archive's embedded one
 ` + flagOggQuality + flagStrict + flagFormatText + flagHelp
@@ -1289,6 +1291,16 @@ Options:
 		Strict:       *strict,
 		ManifestPath: *manifestPath,
 		OggQuality:   flagOr(fs, "ogg-quality", *oggQuality, cfg.Build.OggQuality),
+	}
+	for _, a := range *add {
+		p, f, ok := strings.Cut(a, "=")
+		if !ok || p == "" || f == "" {
+			return fmt.Errorf("--add %s: want PATH=FILE", a)
+		}
+		if opts.Add == nil {
+			opts.Add = map[string]string{}
+		}
+		opts.Add[strings.ReplaceAll(p, `\`, "/")] = f
 	}
 	if fs.NArg() == 2 {
 		opts.OutputPath = fs.Arg(1)

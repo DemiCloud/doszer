@@ -144,7 +144,7 @@ func (a *app) refilter(keep string) {
 		if a.filter != "" && !a.matchesFilter(&g) {
 			continue
 		}
-		if q == "" || strings.Contains(strings.ToLower(g.Name), q) || strings.Contains(strings.ToLower(g.Rel), q) || strings.Contains(strings.ToLower(g.System), q) {
+		if q == "" || matchesSearch(&g, q) {
 			a.view = append(a.view, i)
 		}
 	}
@@ -318,21 +318,20 @@ func (a *app) gamesToolbar(x, y int32) {
 	fx := x
 	flabel := "System: All ▼"
 	if a.filter != "" {
-		flabel = "System: " + a.filter + " ▼"
+		flabel = "System: " + filterName(a.filter) + " ▼"
 	}
 	x += a.button(flabel, x, y, btnNormal, func() {
-		items, cur := a.filters(), 0
-		for i, it := range items {
-			if it == a.filter {
+		values := a.filters()
+		items, cur := make([]string, len(values)), 0
+		for i, v := range values {
+			items[i] = filterName(v)
+			if v == a.filter {
 				cur = i
 			}
 		}
 		items[0] = "All"
 		a.openPopup(fx, y, a.buttonW(flabel), items, cur, func(i int) {
-			a.filter = ""
-			if i > 0 {
-				a.filter = items[i]
-			}
+			a.filter = values[i]
 			a.refilter(a.keepPath())
 		})
 	}) + a.px(4)
@@ -706,37 +705,60 @@ const (
 // filters lists the System filter's choices: "" (all), every system the
 // games boot, and the problems.
 func (a *app) filters() []string {
-	seen := map[string]bool{}
-	var labels []string
+	boots, needs := map[string]bool{}, map[string]bool{}
 	missing, broken := false, false
 	for i := range a.list {
 		g := &a.list[i]
 		l, _ := kindLabel(g)
-		if !seen[l] {
-			seen[l] = true
-			labels = append(labels, l)
-		}
-		if n := needLabel(g); n != "" && !seen[n] {
-			seen[n] = true
-			labels = append(labels, n)
+		boots[l] = true
+		if n := needLabel(g); n != "" {
+			needs[n] = true
 		}
 		missing = missing || g.Boot != "" && a.files != nil && !a.hasSystem(g.Boot, g.Kind == library.KindShell)
 		broken = broken || g.Broken != ""
 	}
-	sort.Strings(labels)
-	out := append([]string{""}, labels...)
-	if len(a.romDirs) > 1 {
-		for _, d := range a.romDirs {
-			out = append(out, filterIn+d.Path)
+	sorted := func(m map[string]bool) []string {
+		var out []string
+		for k := range m {
+			out = append(out, k)
+		}
+		sort.Strings(out)
+		return out
+	}
+	// What they boot, then what their programs need, then folders, then
+	// problems, each group apart.
+	out := append([]string{""}, sorted(boots)...)
+	group := func(items []string) {
+		if len(items) > 0 {
+			out = append(append(out, "-"), items...)
 		}
 	}
+	group(sorted(needs))
+	if len(a.romDirs) > 1 {
+		var dirs []string
+		for _, d := range a.romDirs {
+			dirs = append(dirs, filterIn+d.Path)
+		}
+		group(dirs)
+	}
+	var problems []string
 	if missing {
-		out = append(out, filterMissing)
+		problems = append(problems, filterMissing)
 	}
 	if broken {
-		out = append(out, filterBroken)
+		problems = append(problems, filterBroken)
 	}
+	group(problems)
 	return out
+}
+
+// filterName is a filter's name in the menu: a need without its
+// "Needs" (it's in its own group).
+func filterName(v string) string {
+	if n, ok := strings.CutPrefix(v, "Needs "); ok {
+		return n
+	}
+	return v
 }
 
 func (a *app) matchesFilter(g *library.Game) bool {
@@ -797,4 +819,16 @@ func (a *app) needBadge(g *library.Game) (string, bool) {
 		}
 	}
 	return label + ": none in the system folder", true
+}
+
+// matchesSearch reports whether a game's name, file, system, what its
+// programs need, disc hash or Redump name holds q (lower case).
+func matchesSearch(g *library.Game, q string) bool {
+	kind, _ := kindLabel(g)
+	for _, s := range []string{g.Name, g.Rel, g.System, g.Boot, kind, needLabel(g), g.Disc, g.Redump} {
+		if strings.Contains(strings.ToLower(s), q) {
+			return true
+		}
+	}
+	return false
 }

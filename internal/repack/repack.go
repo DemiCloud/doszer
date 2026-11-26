@@ -33,11 +33,12 @@ import (
 // Options configures a repack.
 type Options struct {
 	InputPath    string
-	OutputPath   string // defaults to "<effective name>.dosz" in the working directory
-	ManifestPath string // use this manifest instead of the archive's embedded one
-	OggQuality   int    // libvorbis quality for Ogg audio tracks (build.Options.OggQuality)
-	DryRun       bool   // compute and report the plan without writing an archive
-	Strict       bool   // fail if any §11 warning condition occurs
+	OutputPath   string            // defaults to "<effective name>.dosz" in the working directory
+	ManifestPath string            // use this manifest instead of the archive's embedded one
+	OggQuality   int               // libvorbis quality for Ogg audio tracks (build.Options.OggQuality)
+	DryRun       bool              // compute and report the plan without writing an archive
+	Strict       bool              // fail if any §11 warning condition occurs
+	Add          map[string]string // files to add or replace: path in the archive -> file on disk (an icon, a tool)
 
 	Provenance *build.Provenance // recorded in the archive comment, if set (§8.4)
 }
@@ -108,6 +109,28 @@ func Run(opts Options) (*build.Result, error) {
 	m, err := manifest.Parse(data, defaultName)
 	if err != nil {
 		return nil, fmt.Errorf("%s is invalid: %w", manifestSource, err)
+	}
+
+	// Added files replace an entry at the same path, before [[file]]
+	// entries, which still win.
+	for p, src := range opts.Add {
+		if err := manifest.CheckPath(p); err != nil {
+			return nil, fmt.Errorf("--add %s: %w", p, err)
+		}
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return nil, fmt.Errorf("--add %s: %w", p, err)
+		}
+		mod := build.Epoch
+		if fi, err := os.Stat(src); err == nil {
+			mod = fi.ModTime()
+		}
+		for q := range entries {
+			if strings.EqualFold(q, p) {
+				delete(entries, q)
+			}
+		}
+		entries[p] = build.Entry{Data: data, Modified: mod}
 	}
 
 	// §6.1's final layering step: [[file]] entries replace a collected

@@ -46,10 +46,7 @@ func TestScreenshot(t *testing.T) {
 		},
 		"edittoml.png": func(a *App) {
 			if len(a.view) > 0 {
-				a.openEditor(&a.list[a.view[0]])
-				if a.edit != nil {
-					a.switchTab(2)
-				}
+				a.openEditorMode(&a.list[a.view[0]], editToml)
 			}
 		},
 		"filter.png":    func(a *App) { a.Filter("Win31 (shell)") },
@@ -71,8 +68,13 @@ func TestScreenshot(t *testing.T) {
 		},
 		"folder.png": func(a *App) { a.openBuildFolder() },
 		"folders.png": func(a *App) {
-			if items := a.filters(); len(items) > 0 {
-				a.openPopup(a.px(480), a.px(12), a.px(200), items, 0, func(int) {})
+			if values := a.filters(); len(values) > 0 {
+				items := make([]string, len(values))
+				for i, v := range values {
+					items[i] = filterName(v)
+				}
+				items[0] = "All"
+				a.openPopup(a.px(290), a.menuH()+a.px(12), a.px(200), items, 0, func(int) {})
 			}
 		},
 		"prepare.png": func(a *App) {

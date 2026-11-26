@@ -170,8 +170,11 @@ func pickFiles(title string, kind int) []string {
 
 func pickFilesFlags(title string, kind int, flags uint32) []string {
 	types := [][2]string{{"Disc images (*.cue, *.zip)", "*.cue;*.zip"}, {"All files", "*.*"}}
-	if kind == fileArchive {
+	switch kind {
+	case fileArchive:
 		types = [][2]string{{"DOSBox Pure archives (*.dosz)", "*.dosz"}, {"All files", "*.*"}}
+	case fileIcon:
+		types = [][2]string{{"Icons and programs (*.ico, *.exe, *.dll)", "*.ico;*.exe;*.dll"}, {"All files", "*.*"}}
 	}
 	if paths, err := shellDialog(false, false, flags&0x200 != 0, title, "", "", "", types); err == nil {
 		return paths

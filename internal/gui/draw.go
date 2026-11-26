@@ -360,3 +360,43 @@ func (a *app) scrollbar(x, y, h int32, first, visible, total int) {
 	ty := y + (h-th)*int32(first)/int32(max(1, total-visible))
 	a.round(x, ty, w, th, w/2, rgba{255, 255, 255, 90})
 }
+
+// checkMark is a white anti-aliased check mark, the size of a checkbox,
+// drawn once per scale.
+func (a *app) checkMark() *texture {
+	s := int(a.px(20))
+	if a.checkTex != nil && int(a.checkTex.w) == s {
+		return a.checkTex
+	}
+	if a.checkTex != nil {
+		sdl.DestroyTexture(a.checkTex.t)
+	}
+	img := image.NewNRGBA(image.Rect(0, 0, s, s))
+	f := float64(s)
+	// Two strokes: (0.25,0.52)-(0.42,0.70)-(0.76,0.32), in box fractions.
+	segs := [][4]float64{{0.25, 0.52, 0.42, 0.70}, {0.42, 0.70, 0.76, 0.32}}
+	half := math.Max(1, f*0.07)
+	for y := 0; y < s; y++ {
+		for x := 0; x < s; x++ {
+			px, py := float64(x)+0.5, float64(y)+0.5
+			d := math.Inf(1)
+			for _, sg := range segs {
+				ax, ay, bx, by := sg[0]*f, sg[1]*f, sg[2]*f, sg[3]*f
+				vx, vy := bx-ax, by-ay
+				t := math.Max(0, math.Min(1, ((px-ax)*vx+(py-ay)*vy)/(vx*vx+vy*vy)))
+				d = math.Min(d, math.Hypot(px-(ax+t*vx), py-(ay+t*vy)))
+			}
+			cov := math.Max(0, math.Min(1, half-d+0.5))
+			o := img.PixOffset(x, y)
+			img.Pix[o], img.Pix[o+1], img.Pix[o+2], img.Pix[o+3] = 255, 255, 255, uint8(cov*255)
+		}
+	}
+	a.checkTex = a.upload(img, true)
+	return a.checkTex
+}
+
+func sdlColorMod(t *texture, c rgba) {
+	if t != nil {
+		sdl.SetTextureColorMod(t.t, c.r, c.g, c.b)
+	}
+}

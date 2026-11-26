@@ -93,8 +93,11 @@ func pickFiles(title string, kind int) []string { return pickFilesMulti(title, k
 
 func pickFilesMulti(title string, kind int, multi bool) []string {
 	pat, name := "*.cue *.CUE *.zip *.ZIP", "Disc images"
-	if kind == fileArchive {
+	switch kind {
+	case fileArchive:
 		pat, name = "*.dosz *.DOSZ", "DOSBox Pure archives"
+	case fileIcon:
+		pat, name = "*.ico *.ICO *.exe *.EXE *.dll *.DLL", "Icons and programs"
 	}
 	var cmd *exec.Cmd
 	switch picker() {

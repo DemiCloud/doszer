@@ -574,3 +574,49 @@ func (a *app) selMenu(h *selHit) {
 		}
 	})
 }
+
+// checkbox draws a checkbox at x, y (a row's control: the row's label says
+// what it is), with label beside it if given, both toggling it; returns
+// its width. A nil fn greys it.
+func (a *app) checkbox(x, y int32, on bool, label string, fn func()) int32 {
+	s := a.px(20)
+	by := y + (a.px(32)-s)/2
+	w := s
+	if label != "" {
+		w += a.px(10) + a.textWidth(label, 13, false)
+	}
+	hover := fn != nil && a.hovered(x, y, w, a.px(32))
+	border, fill := colLine, colField
+	switch {
+	case fn == nil:
+		border = rgba{55, 55, 60, 255}
+	case on:
+		border, fill = colAccent, colAccent
+		if hover {
+			border, fill = colText, colAccent
+		}
+	case hover:
+		border = colMuted
+	}
+	a.outline(x, by, s, s, a.px(5), a.px(1.5), border, fill)
+	if on {
+		c := colText
+		if fn == nil {
+			c = colFaint
+		}
+		sdlColorMod(a.checkMark(), c)
+		a.image(a.checkMark(), x, by, s)
+	}
+	if label != "" {
+		c := colText
+		if fn == nil {
+			c = colFaint
+		}
+		lh := a.lineHeight(13, false)
+		a.text(label, x+s+a.px(10), y+(a.px(32)-lh)/2, 13, false, c)
+	}
+	if fn != nil {
+		a.clipHit(x, y, w, a.px(32), func(bool) { fn() })
+	}
+	return w
+}

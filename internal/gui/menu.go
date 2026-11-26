@@ -29,6 +29,11 @@ func (a *app) gameMenu(g *library.Game) {
 				a.runDoszer("Repack: "+name, []string{"repack", "--format", "plain", path, path}, rescan)
 			}, "Rebuilds the archive from its embedded manifest, in place.")
 		}},
+		{label: "-"},
+		{label: "Advanced", sub: []menuItem{
+			{label: "Edit WINDOWS.BAT…", fn: func() { a.openEditorMode(g, editBat) }},
+			{label: "Edit DOSZ.TOML…", fn: func() { a.openEditorMode(g, editToml) }},
+		}},
 	}
 	change := []menuItem{{label: "Parent", sub: a.parentItems(g)}}
 	switch g.Kind {

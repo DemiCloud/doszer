@@ -445,11 +445,7 @@ func (a *app) drawAddGame() {
 		place("Back", btnNormal, func() { g.page = 0; a.focus = nil })
 	case 2:
 		if g.windows9x && len(g.candidates) > 0 {
-			box := "□  256 colours"
-			if g.colors256 {
-				box = "■  256 colours"
-			}
-			a.button(box, x+p-a.px(12), by, btnGhost, func() { g.colors256 = !g.colors256 })
+			a.checkbox(x+p, by, g.colors256, "256 colours", func() { g.colors256 = !g.colors256 })
 		}
 		if len(g.candidates) > 0 {
 			place("Build", btnAccent, func() { a.addGameFinish(true) })
@@ -734,26 +730,20 @@ func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {
 		note(filepath.Base(out), colFaint)
 	}
 
-	row("Install")
-	box := func(on bool, label string) string {
-		if on {
-			return "■  " + label
-		}
-		return "□  " + label
-	}
-	a.button(box(g.install, "Install first"), fx, y, btnGhost, func() { g.install = !g.install })
+	row("Install first")
+	a.checkbox(fx, y, g.install, "", func() { g.install = !g.install })
 	y += a.px(44)
 
 	srcs := config.SourcesDirOf(a.cfg)
 	if g.useFolder {
 		return y
 	}
-	row("Source files")
+	row("Keep source files")
 	if srcs.Path == "" {
 		a.text("Not kept (doszer isn't set up)", fx, y+a.px(7), 13, false, colMuted)
 		y += a.px(38)
 	} else {
-		a.button(box(g.keep, "Keep"), fx, y, btnGhost, func() { g.keep = !g.keep })
+		a.checkbox(fx, y, g.keep, "", func() { g.keep = !g.keep })
 		y += a.px(38)
 		note(filepath.Join(srcs.Path, safeName(g.name.text)), colFaint)
 	}
