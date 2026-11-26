@@ -35,7 +35,7 @@ type menu struct {
 func (a *app) menus() []menu {
 	file := []menuItem{
 		{label: "Open…", keys: "Ctrl+O", fn: a.openFile},
-		{label: "Export all games…", fn: func() { a.export("Export all games", nil) }},
+		{label: "Export all games…", fn: func() { a.openExport("Export all games", nil) }},
 		{label: "-"},
 		{label: "Quit", keys: "Ctrl+Q", fn: func() { a.quit = true }},
 	}

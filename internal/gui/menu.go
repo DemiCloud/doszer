@@ -30,7 +30,7 @@ func (a *app) gameMenu(g *library.Game) {
 				a.runDoszer("Repack: "+name, []string{"repack", "--format", "plain", path, path}, rescan)
 			}, "Rebuilds the archive from its embedded manifest, in place.")
 		}},
-		{label: "Export…", fn: func() { a.export("Export: "+name, []string{path}) }},
+		{label: "Export…", fn: func() { a.openExport("Export "+name, []string{path}) }},
 		{label: "Convert to parent…", fn: func() { a.convert(path, name, "dosp") }},
 		{label: "-"},
 		{label: "Advanced", sub: []menuItem{

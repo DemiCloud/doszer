@@ -2472,6 +2472,7 @@ Options:
 func runExport(args []string) error {
 	fs := newFlags("export")
 	all := fs.Bool("all", false, "")
+	to := fs.String("to", "retrodeck", "")
 	dir := fs.String("dir", "", "")
 	systemDir := fs.String("system-dir", "", "")
 	overwrite := fs.Bool("overwrite", false, "")
@@ -2483,7 +2484,8 @@ Usage: doszer export [options] FILE...
 
 Options:
       --all               export every .dosz under DIR (default: the ROM directories)
-      --dir DIR           RetroDECK's folder, holding roms and bios (default: RetroDECK's settings)
+      --to TYPE           frontend: retrodeck (default: retrodeck)
+      --dir DIR           folder holding roms and bios (default: RetroDECK's settings)
       --overwrite         replace archives that differ (never a shell or OS image)
   -n, --dry-run           show the copies without making them
 ` + flagSystemDir + flagFormatData + flagHelp
@@ -2518,6 +2520,9 @@ Options:
 		if len(paths) == 0 {
 			return fmt.Errorf("no .dosz files under %s", strings.Join(dirs, ", "))
 		}
+	}
+	if *to != "retrodeck" {
+		return fmt.Errorf("--to %s: want retrodeck", *to)
 	}
 	t, err := export.FindRetroDECK(*dir, sys)
 	if err != nil {

@@ -108,7 +108,8 @@ type app struct {
 	selText map[string][]string
 
 	setupDone       bool   // Options.Setup ran
-	exportDir       string // a RetroDECK folder chosen for Export, for the session
+	exportDir       string // the folder Export last used (window.json)
+	exp             *exportDialog
 	selectAfterScan string // an archive to select once the list is read again
 	mx, my          int32
 	scroll          [3]int32       // per page, pixels
@@ -438,6 +439,12 @@ func (a *app) key(sc int32, mod uint16) {
 		a.editKey(sc, ctrl)
 		return
 	}
+	if a.exp != nil && a.dialog == nil {
+		if a.popup == nil {
+			a.exportKey(sc, ctrl)
+		}
+		return
+	}
 	if a.settingsOpen {
 		if a.focus != nil && sc != scEscape && a.focus.key(sc, ctrl) {
 			return
@@ -557,6 +564,7 @@ func (a *app) render() {
 	a.drawStatus()
 	a.drawSettingsDialog()
 	a.drawEditor()
+	a.drawExport()
 	a.drawSetup()
 	a.drawAddGame()
 	a.drawDialog()
@@ -669,6 +677,7 @@ type guiState struct {
 	Height int32  `json:"height,omitempty"`
 	Grid   bool   `json:"grid,omitempty"`
 	Sort   string `json:"sort,omitempty"`
+	Export string `json:"export,omitempty"` // the folder Export last used
 }
 
 func statePath() string {
@@ -701,7 +710,7 @@ func (a *app) saveState() {
 	}
 	var ww, wh int32
 	sdl.GetWindowSize(a.win, &ww, &wh)
-	data, _ := json.MarshalIndent(guiState{Width: ww, Height: wh, Grid: a.grid, Sort: a.sort.String()}, "", "  ")
+	data, _ := json.MarshalIndent(guiState{Width: ww, Height: wh, Grid: a.grid, Sort: a.sort.String(), Export: a.exportDir}, "", "  ")
 	os.MkdirAll(filepath.Dir(p), 0o755)
 	os.WriteFile(p, append(data, '\n'), 0o644)
 }

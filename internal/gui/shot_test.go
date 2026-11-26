@@ -3,6 +3,7 @@ package gui
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,6 +15,7 @@ import (
 // configuration's), DOSZER_GUI_OUT
 // (where the PNGs go), DOSZER_GUI_SYSTEM (a system directory, optional),
 // DOSZER_GUI_STATS (a play time file, optional, only read),
+// DOSZER_GUI_ONLY (shot names, comma-separated: only those),
 // DOSZER_GUI_EXE (a doszer binary, optional: shots running a command),
 // DOSZER_GUI_CUE (a disc image, optional: Import a disc; with DOSZER_GUI_BUILD
 // set, built into the ROM folder). It
@@ -73,6 +75,7 @@ func TestScreenshot(t *testing.T) {
 			}
 		},
 		"folder.png": func(a *App) { a.openBuildFolder() },
+		"export.png": func(a *App) { a.openExport("Export all games", nil) },
 		"edgemenu.png": func(a *App) { // a game menu at the right edge: Tools opens left
 			a.OpenGameMenu(0)
 			p := a.popup
@@ -154,7 +157,11 @@ func TestScreenshot(t *testing.T) {
 		a.runSteps("Add Some Game", []step{{prompt: "Next, DOSBox Pure opens with the game's disc. Run its setup (SETUP.EXE or INSTALL.EXE: in Windows, from the CD drive), install the game, then close DOSBox Pure's window."}}, nil)
 		a.jobs = nil // the shot shows it waiting
 	}
+	only := os.Getenv("DOSZER_GUI_ONLY") // comma-separated shot names, without .png
 	for name, setup := range shots {
+		if only != "" && !slices.Contains(strings.Split(only, ","), strings.TrimSuffix(name, ".png")) {
+			continue
+		}
 		romFlag := roms
 		if roms == "-" {
 			romFlag = "" // the configuration's

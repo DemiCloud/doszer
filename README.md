@@ -62,7 +62,7 @@ doszer info    FILE.dosz|SOURCE...
 doszer deps    FILE... [--used-by] [--system-dir DIR]
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
-doszer export  FILE... | --all [DIR...] [--dir DIR] [--overwrite] [-n] [--system-dir DIR]
+doszer export  FILE... | --all [DIR...] [--to retrodeck] [--dir DIR] [--overwrite] [-n] [--system-dir DIR]
 doszer env     [--system-dir DIR] [--save-dir DIR] [--rom-dir DIR]
 doszer env portable [DIR] [--copy] [--from FILE] [-n] [-f]
 doszer gui     [--rom-dir DIR] [--system-dir DIR] [--save-dir DIR]
@@ -1099,9 +1099,11 @@ copy), else `--dir`: a folder holding `roms` and `bios`. A file already
 there with the same size and time is left alone; one that differs is
 kept unless `--overwrite`. A shell or OS image is only ever copied when
 missing, never replaced: the frontend's copy may have changed by being
-played. `-n` shows the copies without making them. The window's File >
-Export all games and a game's Tools > Export show that dry run first,
-then offer Export (and Overwrite when an archive differs).
+played. `-n` shows the copies without making them. `--to` names the
+frontend; `retrodeck` is the only one so far. The window's File > Export
+all games and a game's Tools > Export open a dialog: the type, the
+folder (the last one used, else the RetroDECK folder found), and
+Overwrite.
 
 ### Preparing a shell
 
