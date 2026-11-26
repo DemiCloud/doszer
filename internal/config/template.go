@@ -7,57 +7,64 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-// keyDocs describe each setting in a written config file.
-var keyDocs = map[string]string{
-	"system_dir":    "DOSBox Pure's system directory: OS images and shells.\nDefault: ./system, system/ beside doszer, RetroDECK's BIOS folder.",
-	"save_dir":      "DOSBox Pure's save directory.\nDefault: ./saves, saves/ beside doszer, RetroDECK's (run), doszer's cache.",
-	"rom_dir":       "Archives the window lists.\nDefault: ./roms, roms/ beside doszer, RetroDECK's ROM folder.",
-	"ogg_quality":   "Ogg Vorbis quality for CD audio, -1 to 10.",
-	"redump_dat":    "Datfile dump verifies against instead of Redump's.",
-	"default_shell": "init's shell for Windows 3.x games, in the system directory, without extension.",
-	"default_os":    "init's OS image for Windows 9x games, in the system directory, without extension.",
-}
-
-var tableDocs = map[string]string{
-	"templates":  "Pristine OS images install uses: image name = template file.",
-	"install_os": "Images install sessions boot, by boot.os: image name = install image.",
+// docs describe each setting in a written config file.
+var docs = map[string]string{
+	"paths.roms":        "Archives the window lists, at any depth: one folder, or a list of them.\nDefault: ./roms, roms/ beside doszer, RetroDECK's ROM folder.",
+	"paths.system":      "DOSBox Pure's system directory: OS images and shells.\nDefault: ./system, system/ beside doszer, RetroDECK's BIOS folder.",
+	"paths.saves":       "DOSBox Pure's save directory.\nDefault: ./saves, saves/ beside doszer, RetroDECK's (run), doszer's cache.",
+	"defaults.os":       "init's OS image for Windows 9x games, in the system directory, without extension.",
+	"defaults.shell":    "init's shell for Windows 3.x games, in the system directory, without extension.",
+	"build.ogg_quality": "Ogg Vorbis quality for CD audio, -1 to 10.",
+	"build.redump_dat":  "Datfile dump verifies against instead of Redump's.",
+	"install.os":        "Images install sessions boot, by boot.os: image name = install image.",
+	"install.templates": "Pristine OS images install uses: image name = template file.",
 }
 
 // Template returns a config file listing every setting with its
-// description. Settings in set are written as values; the rest are
-// commented out, showing the built-in default where there is one.
+// description, in its table. Settings in keys are written with set's
+// values; the rest are commented out, showing the built-in default where
+// there is one.
 func Template(set Config, keys map[string]bool) string {
 	var b strings.Builder
 	b.WriteString("# doszer configuration (README \"Configuration\").\n# Relative paths are relative to this file.\n")
 	def := Default()
+	table := ""
 	for _, k := range Keys {
-		b.WriteString("\n")
-		for _, l := range strings.Split(keyDocs[k], "\n") {
+		i := strings.LastIndexByte(k, '.')
+		t, name := k[:i], k[i+1:]
+		if t != table {
+			b.WriteString("\n[" + t + "]\n")
+			table = t
+		} else {
+			b.WriteString("\n")
+		}
+		for _, l := range strings.Split(docs[k], "\n") {
 			b.WriteString("# " + l + "\n")
 		}
 		var v, dv any
 		switch k {
-		case "ogg_quality":
-			v, dv = set.OggQuality, def.OggQuality
+		case "paths.roms":
+			v, dv = []string(set.Paths.ROMs), ""
+			if len(set.Paths.ROMs) == 1 {
+				v = set.Paths.ROMs[0]
+			}
+		case "build.ogg_quality":
+			v, dv = set.Build.OggQuality, def.Build.OggQuality
 		default:
 			v, dv = *field(&set, k), ""
 		}
 		if keys[k] {
-			b.WriteString(line(k, v))
-			continue
-		}
-		if k == "ogg_quality" {
-			b.WriteString("# " + line(k, dv))
+			b.WriteString(line(name, v))
 		} else {
-			b.WriteString("# " + k + " = ''\n")
+			b.WriteString("# " + line(name, dv))
 		}
 	}
 	for _, t := range tables {
-		m := set.Templates
-		if t == "install_os" {
-			m = set.InstallOS
+		m := set.Install.OS
+		if t == "install.templates" {
+			m = set.Install.Templates
 		}
-		b.WriteString("\n# " + tableDocs[t] + "\n")
+		b.WriteString("\n# " + docs[t] + "\n")
 		var names []string
 		for n := range m {
 			if keys[t+"."+n] {
@@ -77,7 +84,8 @@ func Template(set Config, keys map[string]bool) string {
 	return b.String()
 }
 
-// line is k = v as TOML (string and int values can't fail to encode).
+// line is k = v as TOML (strings, string lists and ints can't fail to
+// encode).
 func line(k string, v any) string {
 	out, _ := toml.Marshal(map[string]any{k: v})
 	return string(out)

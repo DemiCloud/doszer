@@ -119,7 +119,7 @@ func TestSetupChoices(t *testing.T) {
 	if !ran || a.setup != nil || !config.Configured() {
 		t.Fatalf("user profile: ran %v, dialog %v, configured %v (%s)", ran, a.setup, config.Configured(), a.message)
 	}
-	if a.romDir.Path != filepath.Join(home, "data", "doszer", "roms") {
-		t.Errorf("ROM dir %+v", a.romDir)
+	if len(a.romDirs) != 1 || a.romDirs[0].Path != filepath.Join(home, "data", "doszer", "roms") {
+		t.Errorf("ROM dirs %+v", a.romDirs)
 	}
 }

@@ -31,7 +31,7 @@ internal/manifest/   DOSZ.TOML parsing, key checking, validation, init template
 internal/build/      build pipeline (spec §6), archive-content validation (§11)
 internal/zipw/       deterministic ZIP writer (spec §8)
 internal/icon/       DOSZ.ICO (spec §6.8.4): ICO file or NE/PE icon group to ICO; ICO decoding (PNG, DIB) for the window
-internal/config/     configuration layering (README "Configuration"), portable mode, default directories (system, saves, ROMs) and RetroDECK's
+internal/config/     configuration layering (README "Configuration": [paths] roms/system/saves, [defaults], [build], [install.os], [install.templates]; keys dotted), portable mode, default directories (system, saves, ROMs - several) and RetroDECK's
 internal/cue/        CUE parsing, track byte ranges, normalized track hash (§7.2)
 internal/iso9660/    ISO 9660 reader, for [[extract]] (§5.7)
 internal/padmap/     [[input.pad]] (§5.9): PADMAP.DBP and DOS.YML encoding (§6.8.2, §6.8.3)
@@ -107,9 +107,9 @@ README.md            doszer usage, configuration, install workflow
   at its directories. doszer reads no frontend's configuration, with one
   exception: RetroDECK's `retrodeck.json` (`paths.bios_path`, `roms_path`,
   `saves_path`), read-only, as the last fallback for the system directory
-  (after `system_dir`, `./system` and `system/` beside the executable),
-  for the ROM directory (after `rom_dir`, `./roms`, `roms/` beside it) and
-  for `run`'s save directory (after `save_dir`, `./saves` and `saves/`
+  (after `paths.system`, `./system` and `system/` beside the executable),
+  for the ROM directory (after `paths.roms`, `./roms`, `roms/` beside it) and
+  for `run`'s save directory (after `paths.saves`, `./saves` and `saves/`
   beside the executable): `<saves_path>/<archive's folder>` for an archive
   under `roms_path`, matching RetroArch's sort-by-content-directory, so
   `run` shares saves with RetroDECK. `install` never searches: its
@@ -469,7 +469,7 @@ waits on a game that needs it.
    the new image once under Keep, headless, without risking Windows'
    unclean-shutdown marker. Writing `USER.DAT`
    directly would need `w9xreg` to rewrite a real registry, not just
-   encode test fixtures. (Done: `install_os` keeps a clean image for
+   encode test fixtures. (Done: `install.os` keeps a clean image for
    `install`; `init` picks the boot model and image.) Other registry
    presets would follow the same path.
 7. A 16-bit PRESSKEY for Windows 3.x launchers, only once a game needs
@@ -482,8 +482,8 @@ waits on a game that needs it.
    only programs reading their message queue.
 
 `internal/config` is implemented (README "Configuration"); `build` and
-`repack` consume `ogg_quality`, `install` and `run` the rest. With the OS image
-session using "Save Difference Per Content", `templates` only matter for
+`repack` consume `build.ogg_quality`, `install` and `run` the rest. With the OS image
+session using "Save Difference Per Content", `install.templates` only matter for
 `install --from` a whole `.vhd`/`.img`.
 
 ## Resolved questions

@@ -27,7 +27,7 @@ func writeFile(t *testing.T, path, content string) {
 }
 
 func TestDefault(t *testing.T) {
-	if got := Default().OggQuality; got != 6 {
+	if got := Default().Build.OggQuality; got != 6 {
 		t.Errorf("OggQuality = %d, want 6", got)
 	}
 }
@@ -51,14 +51,14 @@ func TestLoadUserConfigLayer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, userPath, `ogg_quality = 8`)
+	writeFile(t, userPath, "[build]\nogg_quality = 8")
 
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.OggQuality != 8 {
-		t.Errorf("OggQuality = %d, want 8", cfg.OggQuality)
+	if cfg.Build.OggQuality != 8 {
+		t.Errorf("OggQuality = %d, want 8", cfg.Build.OggQuality)
 	}
 }
 
@@ -69,28 +69,28 @@ func TestLoadCwdOverridesUserConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, userPath, `ogg_quality = 8`)
-	writeFile(t, FileName, `ogg_quality = 3`)
+	writeFile(t, userPath, "[build]\nogg_quality = 8")
+	writeFile(t, FileName, "[build]\nogg_quality = 3")
 
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.OggQuality != 3 {
-		t.Errorf("OggQuality = %d, want 3", cfg.OggQuality)
+	if cfg.Build.OggQuality != 3 {
+		t.Errorf("OggQuality = %d, want 3", cfg.Build.OggQuality)
 	}
 }
 
 func TestLoadSourceOverridesCwd(t *testing.T) {
 	isolate(t)
 
-	writeFile(t, FileName, `ogg_quality = 3`)
+	writeFile(t, FileName, "[build]\nogg_quality = 3")
 
 	source := t.TempDir()
 	writeFile(t, filepath.Join(source, "DOSZ.TOML"), `
 format = 1
 
-[x-doszer]
+[x-doszer.build]
 ogg_quality = 9
 `)
 
@@ -98,8 +98,8 @@ ogg_quality = 9
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.OggQuality != 9 {
-		t.Errorf("OggQuality = %d, want 9", cfg.OggQuality)
+	if cfg.Build.OggQuality != 9 {
+		t.Errorf("OggQuality = %d, want 9", cfg.Build.OggQuality)
 	}
 }
 
@@ -136,12 +136,12 @@ func TestLoadMergesTemplatesByKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, userPath, `
-[templates]
+[install.templates]
 a = "user-a"
 b = "user-b"
 `)
 	writeFile(t, FileName, `
-[templates]
+[install.templates]
 b = "cwd-b"
 c = "cwd-c"
 `)
@@ -154,15 +154,15 @@ c = "cwd-c"
 	cwd, _ := os.Getwd()
 	userDir := filepath.Dir(userPath)
 	want := map[string]string{"a": filepath.Join(userDir, "user-a"), "b": filepath.Join(cwd, "cwd-b"), "c": filepath.Join(cwd, "cwd-c")}
-	if !reflect.DeepEqual(cfg.Templates, want) {
-		t.Errorf("Templates = %v, want %v", cfg.Templates, want)
+	if !reflect.DeepEqual(cfg.Install.Templates, want) {
+		t.Errorf("Templates = %v, want %v", cfg.Install.Templates, want)
 	}
 }
 
 func TestLoadRejectsUnknownKeyInOwnFile(t *testing.T) {
 	isolate(t)
 
-	writeFile(t, FileName, `ogg_qualityy = 3`)
+	writeFile(t, FileName, "[build]\nogg_qualityy = 3")
 
 	if _, err := Load(""); err == nil {
 		t.Fatal("Load should reject an unknown key in doszer.toml")
@@ -210,7 +210,7 @@ func TestLoadResolvesRelativePaths(t *testing.T) {
 	isolate(t)
 	userPath, _ := UserConfigPath()
 	abs := filepath.Join(t.TempDir(), "saves")
-	writeFile(t, userPath, "system_dir = \"system\"\nsave_dir = '"+abs+"'\nrom_dir = \"../roms\"\ndefault_os = \"dosbox_pure/Win98\"\n")
+	writeFile(t, userPath, "[paths]\nsystem = \"system\"\nsaves = '"+abs+"'\nroms = [\"../roms\", \"more\"]\n[defaults]\nos = \"dosbox_pure/Win98\"\n")
 
 	cfg, origins, err := LoadOrigins("")
 	if err != nil {
@@ -218,23 +218,24 @@ func TestLoadResolvesRelativePaths(t *testing.T) {
 	}
 	dir := filepath.Dir(userPath)
 	tests := []struct{ got, want string }{
-		{cfg.SystemDir, filepath.Join(dir, "system")},
-		{cfg.SaveDir, abs},
-		{cfg.ROMDir, filepath.Join(filepath.Dir(dir), "roms")},
-		{cfg.DefaultOS, "dosbox_pure/Win98"}, // a system directory path, not a host one
+		{cfg.Paths.System, filepath.Join(dir, "system")},
+		{cfg.Paths.Saves, abs},
+		{cfg.Paths.ROMs[0], filepath.Join(filepath.Dir(dir), "roms")},
+		{cfg.Paths.ROMs[1], filepath.Join(dir, "more")},
+		{cfg.Defaults.OS, "dosbox_pure/Win98"}, // a system directory path, not a host one
 	}
 	for _, tt := range tests {
 		if tt.got != tt.want {
 			t.Errorf("got %q, want %q", tt.got, tt.want)
 		}
 	}
-	for _, k := range []string{"system_dir", "save_dir", "rom_dir", "default_os"} {
+	for _, k := range []string{"paths.system", "paths.saves", "paths.roms", "defaults.os"} {
 		if origins[k] != userPath {
 			t.Errorf("origins[%s] = %q, want %q", k, origins[k], userPath)
 		}
 	}
-	if _, ok := origins["ogg_quality"]; ok {
-		t.Error("ogg_quality has an origin but no file sets it")
+	if _, ok := origins["build.ogg_quality"]; ok {
+		t.Error("build.ogg_quality has an origin but no file sets it")
 	}
 }
 
@@ -245,7 +246,7 @@ func TestPortable(t *testing.T) {
 	t.Cleanup(func() { executable = os.Executable })
 
 	xdg, _ := XDGConfigPath()
-	writeFile(t, xdg, "ogg_quality = 2")
+	writeFile(t, xdg, "[build]\nogg_quality = 2")
 	if Portable() {
 		t.Fatal("portable without a doszer.toml beside the executable")
 	}
@@ -254,7 +255,7 @@ func TestPortable(t *testing.T) {
 	}
 
 	portable := filepath.Join(exeDir, FileName)
-	writeFile(t, portable, "ogg_quality = 4")
+	writeFile(t, portable, "[build]\nogg_quality = 4")
 	if !Portable() {
 		t.Fatal("not portable with a doszer.toml beside the executable")
 	}
@@ -262,8 +263,8 @@ func TestPortable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.OggQuality != 4 {
-		t.Errorf("OggQuality = %d, want the portable file's 4 (XDG's ignored)", cfg.OggQuality)
+	if cfg.Build.OggQuality != 4 {
+		t.Errorf("OggQuality = %d, want the portable file's 4 (XDG's ignored)", cfg.Build.OggQuality)
 	}
 
 	// Run from the executable's directory, ./doszer.toml is the same file:
@@ -289,21 +290,21 @@ func TestDirOf(t *testing.T) {
 	isolate(t)
 	t.Setenv("HOME", t.TempDir())
 	cfg := Default()
-	if d := ROMDirOf(cfg, ""); d != (Dir{}) {
-		t.Errorf("ROMDirOf with nothing = %+v", d)
+	if d := ROMDirsOf(cfg, ""); d != nil {
+		t.Errorf("ROMDirsOf with nothing = %+v", d)
 	}
 	rd := t.TempDir()
 	home, _ := os.UserHomeDir()
 	writeFile(t, filepath.Join(home, RetroDECKConfig), `{"paths": {"roms_path": "`+rd+`"}}`)
-	if d := ROMDirOf(cfg, ""); d != (Dir{Path: rd, From: FromRetroDECK}) {
-		t.Errorf("ROMDirOf = %+v, want RetroDECK's", d)
+	if d := ROMDirsOf(cfg, ""); !reflect.DeepEqual(d, []Dir{{Path: rd, From: FromRetroDECK}}) {
+		t.Errorf("ROMDirsOf = %+v, want RetroDECK's", d)
 	}
-	cfg.ROMDir = "/r"
-	if d := ROMDirOf(cfg, ""); d != (Dir{Path: "/r", From: "rom_dir"}) {
-		t.Errorf("ROMDirOf = %+v, want rom_dir", d)
+	cfg.Paths.ROMs = List{"/r", "/s"}
+	if d := ROMDirsOf(cfg, ""); !reflect.DeepEqual(d, []Dir{{Path: "/r", From: "paths.roms"}, {Path: "/s", From: "paths.roms"}}) {
+		t.Errorf("ROMDirsOf = %+v, want paths.roms", d)
 	}
-	if d := ROMDirOf(cfg, "/f"); d != (Dir{Path: "/f", From: "--rom-dir"}) {
-		t.Errorf("ROMDirOf = %+v, want the flag", d)
+	if d := ROMDirsOf(cfg, "/f"); !reflect.DeepEqual(d, []Dir{{Path: "/f", From: "--rom-dir"}}) {
+		t.Errorf("ROMDirsOf = %+v, want the flag", d)
 	}
 }
 
@@ -326,10 +327,10 @@ func TestSetupUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, _ := DataDir()
-	if cfg.ROMDir != filepath.Join(data, "roms") || cfg.SystemDir != filepath.Join(data, "system") {
+	if len(cfg.Paths.ROMs) != 1 || cfg.Paths.ROMs[0] != filepath.Join(data, "roms") || cfg.Paths.System != filepath.Join(data, "system") {
 		t.Errorf("cfg = %+v", cfg)
 	}
-	if fi, err := os.Stat(cfg.SaveDir); err != nil || !fi.IsDir() {
+	if fi, err := os.Stat(cfg.Paths.Saves); err != nil || !fi.IsDir() {
 		t.Errorf("save dir not made: %v", err)
 	}
 	if xdg, _ := XDGConfigPath(); p != xdg {

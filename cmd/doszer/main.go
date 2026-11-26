@@ -191,11 +191,11 @@ const (
 	flagFormatText = "      --format FMT        output: fancy, plain (default: fancy on a terminal)\n"
 	flagFormatData = "      --format FMT        output: fancy, plain, json, yaml, toml, csv (default: fancy on a terminal)\n"
 	flagVersion    = "  -V, --version           show version\n"
-	flagOggQuality = "      --ogg-quality N     Ogg Vorbis quality, -1 to 10 (default: ogg_quality, else 6)\n"
+	flagOggQuality = "      --ogg-quality N     Ogg Vorbis quality, -1 to 10 (default: build.ogg_quality, else 6)\n"
 	flagStrict     = "      --strict            fail on any warning\n"
-	flagSaveDir    = "      --save-dir DIR      DOSBox Pure save directory (default: save_dir, else ./saves, else doszer's once set up)\n"
-	flagSystemDir  = "      --system-dir DIR    DOSBox Pure system directory (default: system_dir, else ./system, else RetroDECK's)\n"
-	flagROMDir     = "      --rom-dir DIR       archive directory (default: rom_dir, else ./roms, else RetroDECK's)\n"
+	flagSaveDir    = "      --save-dir DIR      DOSBox Pure save directory (default: paths.saves, else ./saves, else doszer's once set up)\n"
+	flagSystemDir  = "      --system-dir DIR    DOSBox Pure system directory (default: paths.system, else ./system, else RetroDECK's)\n"
+	flagROMDir     = "      --rom-dir DIR       archive directory (default: paths.roms, else ./roms, else RetroDECK's)\n"
 )
 
 // newFlags returns a command's flag set: GNU-style (pflag), options
@@ -328,7 +328,7 @@ Options:
 		// Redump's datfile, to record which Redump dump each disc is; none
 		// (not embedded or cached) just leaves those fields out.
 		var db *redump.DB
-		if sel, err := redump.Current(cfg.RedumpDAT); err == nil && sel != nil {
+		if sel, err := redump.Current(cfg.Build.RedumpDAT); err == nil && sel != nil {
 			db = sel.DB
 		}
 		media, skipped, err := build.IdentifyMedia(source, db)
@@ -376,7 +376,7 @@ Options:
 		if err != nil {
 			return err
 		}
-		if err := chooseBoot(&o, source, stringOr(*systemDir, cfg.SystemDir), *boot, cfg); err != nil {
+		if err := chooseBoot(&o, source, stringOr(*systemDir, cfg.Paths.System), *boot, cfg); err != nil {
 			return err
 		}
 	} else if *boot != "" {
@@ -479,7 +479,7 @@ Options:
 		Name:       *name,
 		DryRun:     *dryRun,
 		Strict:     *strict,
-		OggQuality: flagOr(fs, "ogg-quality", *oggQuality, cfg.OggQuality),
+		OggQuality: flagOr(fs, "ogg-quality", *oggQuality, cfg.Build.OggQuality),
 	}
 	if fs.NArg() == 2 {
 		opts.OutputPath = fs.Arg(1)
@@ -497,7 +497,7 @@ Options:
 		return err
 	}
 
-	warnMissingImage(&res.Manifest.Boot, cfg.SystemDir)
+	warnMissingImage(&res.Manifest.Boot, cfg.Paths.System)
 	if opts.DryRun {
 		fmt.Printf("Dry run: would write %s (%d entries)\n", res.OutputPath, len(res.Entries))
 	} else {
@@ -758,7 +758,7 @@ func runDump(args []string) error {
 Usage: doszer dump [options] DIR
 
 Options:
-      --dat FILE          datfile to verify against (default: redump_dat, else Redump's)
+      --dat FILE          datfile to verify against (default: build.redump_dat, else Redump's)
       --drive DRIVE       drive to read, e.g. E: or /dev/sg1 (default: first drive with a disc)
       --from FILE         import this BIN/CUE image (.cue, or a .zip of one) instead of reading a drive
       --offset SAMPLES    --from: drive read offset the image's audio wasn't corrected for
@@ -770,7 +770,7 @@ Options:
 	if err != nil {
 		return err
 	}
-	dat2 := stringOr(*dat, cfg.RedumpDAT)
+	dat2 := stringOr(*dat, cfg.Build.RedumpDAT)
 	if *from != "" {
 		if *drive != "" {
 			return errors.New("--from and --drive exclude each other")
@@ -892,7 +892,7 @@ func runRedump(args []string) error {
 Usage: doszer redump [options] [SHA1|FILE|IMAGE|FILE.dosz...]
 
 Options:
-      --dat FILE          datfile to use (default: redump_dat, else Redump's)
+      --dat FILE          datfile to use (default: build.redump_dat, else Redump's)
       --offset SAMPLES    drive read offset a CUE image's audio wasn't corrected for
       --update            fetch Redump's current datfile now
 ` + flagFormatText + flagHelp
@@ -903,7 +903,7 @@ Options:
 	if err != nil {
 		return err
 	}
-	external := stringOr(*dat, cfg.RedumpDAT)
+	external := stringOr(*dat, cfg.Build.RedumpDAT)
 	if *update {
 		status.Step("Fetching Redump's datfile")
 		db, err := redump.Update()
@@ -1030,7 +1030,7 @@ Options:
   -f, --force             overwrite differing files in the source
       --from FILE         extract from this .sav, .pure.zip, .vhd or .img instead
       --keep              keep the session's save files
-      --os PATH           OS image to boot instead of boot.os (default: install_os, else boot.os)
+      --os PATH           OS image to boot instead of boot.os (default: install.os, else boot.os)
 ` + flagSaveDir + flagSystemDir + `      --template FILE     pristine image to compare a --from image against
 ` + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
@@ -1043,19 +1043,19 @@ Options:
 	}
 	opts := install.Options{
 		Source:    fs.Arg(0),
-		SystemDir: stringOr(*systemDir, cfg.SystemDir),
-		SaveDir:   stringOr(*saveDir, cfg.SaveDir),
+		SystemDir: stringOr(*systemDir, cfg.Paths.System),
+		SaveDir:   stringOr(*saveDir, cfg.Paths.Saves),
 		Dir:       *dir,
 		Drive:     *drive,
 		OS:        *osImage,
-		InstallOS: cfg.InstallOS,
+		InstallOS: cfg.Install.OS,
 		Force:     *force,
 		DryRun:    *dryRun,
 		Keep:      *keep,
 		From:      *from,
 		Content:   *content,
 		Template:  *template,
-		Templates: cfg.Templates,
+		Templates: cfg.Install.Templates,
 	}
 
 	if opts.From == "" {
@@ -1131,7 +1131,7 @@ Usage: doszer run [options] ARCHIVE.dosz
 
 Options:
       --option KEY=VALUE  DOSBox Pure core option for this session (repeatable)
-      --save-dir DIR      DOSBox Pure save directory (default: save_dir, else ./saves, else RetroDECK's)
+      --save-dir DIR      DOSBox Pure save directory (default: paths.saves, else ./saves, else RetroDECK's)
 ` + flagSystemDir + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
@@ -1150,7 +1150,7 @@ Options:
 	}
 	fmt.Fprintln(os.Stderr, windowHelp)
 	status.Step("Playing %s", filepath.Base(fs.Arg(0)))
-	env, err := install.Play(fs.Arg(0), stringOr(*systemDir, cfg.SystemDir), stringOr(*saveDir, cfg.SaveDir), opts)
+	env, err := install.Play(fs.Arg(0), stringOr(*systemDir, cfg.Paths.System), stringOr(*saveDir, cfg.Paths.Saves), opts)
 	endSteps(err)
 	if err == nil {
 		if env.Temporary {
@@ -1282,7 +1282,7 @@ Options:
 		DryRun:       *dryRun,
 		Strict:       *strict,
 		ManifestPath: *manifestPath,
-		OggQuality:   flagOr(fs, "ogg-quality", *oggQuality, cfg.OggQuality),
+		OggQuality:   flagOr(fs, "ogg-quality", *oggQuality, cfg.Build.OggQuality),
 	}
 	if fs.NArg() == 2 {
 		opts.OutputPath = fs.Arg(1)
@@ -1300,7 +1300,7 @@ Options:
 		return err
 	}
 
-	warnMissingImage(&res.Manifest.Boot, cfg.SystemDir)
+	warnMissingImage(&res.Manifest.Boot, cfg.Paths.System)
 	if opts.DryRun {
 		fmt.Printf("Dry run: would write %s (%d entries)\n", res.OutputPath, len(res.Entries))
 	} else {
@@ -1412,8 +1412,10 @@ Options:
 		add("system_dir_from", r.SystemDir.From)
 		add("save_dir", r.SaveDir.Path)
 		add("save_dir_from", r.SaveDir.From)
-		add("rom_dir", r.ROMDir.Path)
-		add("rom_dir_from", r.ROMDir.From)
+		for _, d := range r.ROMDirs {
+			add("rom_dir", d.Path)
+			add("rom_dir_from", d.From)
+		}
 		for _, i := range r.Shells {
 			add("shell", i.Name)
 		}
@@ -1562,7 +1564,7 @@ Options:
 			k := res.After.Shell + "\x00" + res.After.OS
 			if !warned[k] {
 				warned[k] = true
-				defer warnMissingImage(&res.After, cfg.SystemDir)
+				defer warnMissingImage(&res.After, cfg.Paths.System)
 			}
 		}
 		if format.Structured() {
@@ -1645,8 +1647,8 @@ func describeBoot(b manifest.Boot) string {
 // chooseBoot sets init's boot model from what the source's programs need
 // (platform.Needs), or the model boot forces ("dos", "shell", "os"): DOS
 // for a DOS game or one with a DOS version, a shell for Windows 3.x, an
-// OS image for Windows 9x. The shell or image is default_shell or
-// default_os if configured, else the first well-known name found in the
+// OS image for Windows 9x. The shell or image is defaults.shell or
+// defaults.os if configured, else the first well-known name found in the
 // system directory here, which init says, since the archive may be played
 // elsewhere. A DOS game with exactly one program to start gets exec. It
 // prints one line saying what it chose and why.
@@ -1674,12 +1676,12 @@ func chooseBoot(o *manifest.TemplateOptions, source, systemDir, boot string, cfg
 	win98 := platform.Target{Platform: platform.Win32, Major: 4, Minor: 10}
 	pick := func(key, configured string, shell bool, names []string) (string, string) {
 		if configured != "" {
-			return configured, key + " = " + configured + " (default_" + key + ")"
+			return configured, key + " = " + configured + " (defaults." + key + ")"
 		}
 		if p := install.FindSystemFile(systemDir, shell, names); p != "" {
-			return p, key + " = " + p + " (found here; default_" + key + " picks one everywhere)"
+			return p, key + " = " + p + " (found here; defaults." + key + " picks one everywhere)"
 		}
-		msg := "no " + key + " found here: set boot." + key + " in the manifest, --" + key + " or default_" + key
+		msg := "no " + key + " found here: set boot." + key + " in the manifest, --" + key + " or defaults." + key
 		if !shell && game.Platform == platform.Win32 && !game.Less(win98) {
 			if p := install.FindSystemFile(systemDir, false, install.Win95Names); p != "" {
 				msg += " (" + p + " is Windows 95, too old)"
@@ -1752,13 +1754,13 @@ func chooseBoot(o *manifest.TemplateOptions, source, systemDir, boot string, cfg
 			msg += "; " + strings.Join(names, ", ") + " could start it (--exec)"
 		}
 	case "shell":
-		o.Shell, msg = pick("shell", cfg.DefaultShell, true, install.ShellNames)
+		o.Shell, msg = pick("shell", cfg.Defaults.Shell, true, install.ShellNames)
 	case "os":
 		names := install.Win95Names
 		if game.Platform == platform.Win32 && !game.Less(win98) {
 			names = install.Win98Names // a Windows 95 image won't do
 		}
-		o.OS, msg = pick("os", cfg.DefaultOS, false, names)
+		o.OS, msg = pick("os", cfg.Defaults.OS, false, names)
 	}
 	fmt.Printf("%s: %s\n", why, msg)
 	if winME := (platform.Target{Platform: platform.Win32, Major: 4, Minor: 90}); model == "os" && game.Platform == platform.Win32 && winME.Less(game) {
@@ -1777,7 +1779,7 @@ func runConfig(args []string) error {
 
 Usage: doszer config [options]
        doszer config get KEY
-       doszer config set KEY VALUE
+       doszer config set KEY VALUE...
        doszer config unset KEY
        doszer config init [FILE]
 
@@ -1786,7 +1788,7 @@ Options:
       --current           init: write the settings in effect, not only defaults
   -f, --force             init: overwrite FILE
 ` + flagFormatData + flagHelp
-	if ok, err := parse(fs, args, help, 0, 3); !ok {
+	if ok, err := parse(fs, args, help, 0, 1<<20); !ok {
 		return err
 	}
 	a := fs.Args()
@@ -1855,14 +1857,15 @@ Options:
 		}
 		return nil // a table entry no file sets
 	case "set":
-		if err := need(3); err != nil {
-			return err
+		if len(a) < 3 {
+			fmt.Fprint(os.Stderr, help)
+			return errUsage
 		}
 		p, err := target()
 		if err != nil {
 			return err
 		}
-		if err := config.Set(p, a[1], a[2]); err != nil {
+		if err := config.Set(p, a[1], a[2:]...); err != nil {
 			return err
 		}
 		fmt.Printf("Set %s in %s\n", a[1], p)
@@ -1945,10 +1948,13 @@ func runPortable(dir, systemDir, saveDir, romDir, from string, copyFiles, dryRun
 		return err
 	}
 	src := settings
-	for p, v := range map[*string]string{&src.SystemDir: systemDir, &src.SaveDir: saveDir, &src.ROMDir: romDir} {
+	for p, v := range map[*string]string{&src.Paths.System: systemDir, &src.Paths.Saves: saveDir} {
 		if v != "" {
 			*p = v
 		}
+	}
+	if romDir != "" {
+		src.Paths.ROMs = config.List{romDir}
 	}
 	acts, err := env.Portable(env.PortableOptions{Dir: dir, Settings: settings, Keys: keys, Copy: copyFiles, From: src, DryRun: dryRun, Force: force})
 	endSteps(err)

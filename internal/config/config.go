@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 
@@ -24,30 +25,63 @@ import (
 // beside the executable.
 const FileName = "doszer.toml"
 
-// Config holds every doszer setting (README "Configuration").
+// Config holds every doszer setting (README "Configuration"), in the
+// config file's tables.
 type Config struct {
-	SystemDir  string            `toml:"system_dir"`
-	SaveDir    string            `toml:"save_dir"`
-	ROMDir     string            `toml:"rom_dir"` // archives the window lists
-	OggQuality int               `toml:"ogg_quality"`
-	Templates  map[string]string `toml:"templates"`
-	InstallOS  map[string]string `toml:"install_os"` // OS image install sessions boot, by boot.os
-	RedumpDAT  string            `toml:"redump_dat"` // datfile dump verifies against instead of Redump's (internal/redump)
-
-	// init's shell and OS image for a game whose programs need Windows 3.x
-	// or Windows 9x: paths in the system directory without extension, as
-	// boot.shell and boot.os take them.
-	DefaultShell string `toml:"default_shell"`
-	DefaultOS    string `toml:"default_os"`
+	Paths    Paths    `toml:"paths"`
+	Defaults Defaults `toml:"defaults"`
+	Build    Build    `toml:"build"`
+	Install  Install  `toml:"install"`
 }
 
-// pathKeys are the settings holding a host path: a relative one is
+// Paths are the folders doszer uses.
+type Paths struct {
+	ROMs   List   `toml:"roms"`   // archives the window lists: one folder or several
+	System string `toml:"system"` // DOSBox Pure's system directory: OS images and shells
+	Saves  string `toml:"saves"`  // DOSBox Pure's save directory
+}
+
+// Defaults are init's shell and OS image for a game whose programs need
+// Windows 3.x or Windows 9x: paths in the system directory without
+// extension, as boot.shell and boot.os take them.
+type Defaults struct {
+	OS    string `toml:"os"`
+	Shell string `toml:"shell"`
+}
+
+// Build settings.
+type Build struct {
+	OggQuality int    `toml:"ogg_quality"`
+	RedumpDAT  string `toml:"redump_dat"` // datfile dump verifies against instead of Redump's (internal/redump)
+}
+
+// Install settings.
+type Install struct {
+	OS        map[string]string `toml:"os"`        // OS image install sessions boot, by boot.os
+	Templates map[string]string `toml:"templates"` // pristine OS images, by image
+}
+
+// List is a setting that takes one value or several: a string or an
+// array of strings.
+type List []string
+
+// UnmarshalText takes a single string (go-toml calls it for a string;
+// an array decodes as a slice).
+func (l *List) UnmarshalText(b []byte) error {
+	*l = List{string(b)}
+	return nil
+}
+
+// pathKeys are the settings holding host paths: a relative one is
 // relative to the directory of the file that sets it.
-var pathKeys = []string{"system_dir", "save_dir", "rom_dir", "redump_dat"}
+var pathKeys = []string{"paths.roms", "paths.system", "paths.saves", "build.redump_dat"}
+
+// tables are the settings that map names to values: install.os.NAME.
+var tables = []string{"install.os", "install.templates"}
 
 // Default returns doszer's built-in defaults.
 func Default() Config {
-	return Config{OggQuality: 6}
+	return Config{Build: Build{OggQuality: 6}}
 }
 
 // Layer is one configuration file, lowest precedence first in Layers.
@@ -103,7 +137,7 @@ func Load(sourceDir string) (Config, error) {
 }
 
 // LoadOrigins is Load, also returning which file set each key: setting
-// key ("system_dir", "templates.<name>") to the layer's path.
+// key ("paths.system", "install.templates.<name>") to the layer's path.
 func LoadOrigins(sourceDir string) (Config, map[string]string, error) {
 	cfg := Default()
 	origins := map[string]string{}
@@ -181,6 +215,9 @@ func mergeLayer(cfg *Config, l Layer) ([]string, error) {
 		}
 		*cfg = wrapper.X
 	} else {
+		if unknown := unknownKeys(raw); len(unknown) > 0 {
+			return nil, fmt.Errorf("%s: %s", l.Path, strings.Join(unknown, "; "))
+		}
 		dec := toml.NewDecoder(bytes.NewReader(data)).DisallowUnknownFields()
 		if err := dec.Decode(cfg); err != nil {
 			return nil, fmt.Errorf("%s: %w", l.Path, err)
@@ -193,45 +230,73 @@ func mergeLayer(cfg *Config, l Layer) ([]string, error) {
 			*p = filepath.Join(base, filepath.FromSlash(*p))
 		}
 	}
-	var keys []string
-	for k, v := range raw {
-		if t, ok := v.(map[string]any); ok {
-			for name := range t {
-				keys = append(keys, k+"."+name)
-				if k == "templates" {
-					v := cfg.Templates[name]
-					resolve(&v)
-					cfg.Templates[name] = v
-				}
-			}
-			continue
+	keys := flatten(raw, "")
+	set := map[string]bool{}
+	for _, k := range keys {
+		set[k] = true
+		if name, ok := strings.CutPrefix(k, "install.templates."); ok {
+			v := cfg.Install.Templates[name]
+			resolve(&v)
+			cfg.Install.Templates[name] = v
 		}
-		keys = append(keys, k)
+	}
+	if set["paths.roms"] {
+		for i := range cfg.Paths.ROMs {
+			resolve(&cfg.Paths.ROMs[i])
+		}
 	}
 	for _, k := range pathKeys {
-		if _, ok := raw[k]; ok {
-			resolve(field(cfg, k))
+		if f := field(cfg, k); f != nil && set[k] {
+			resolve(f)
 		}
 	}
-	sort.Strings(keys)
 	return keys, nil
 }
 
-// field returns the string setting k of cfg, or nil.
+// flatten lists a decoded file's keys, dotted: "paths.system", and a
+// table setting's entries by name ("install.os.<name>").
+func flatten(m map[string]any, prefix string) []string {
+	var out []string
+	for k, v := range m {
+		key := prefix + k
+		t, isTable := v.(map[string]any)
+		switch {
+		case isTable && isTableKey(key):
+			for name := range t {
+				out = append(out, key+"."+name)
+			}
+		case isTable:
+			out = append(out, flatten(t, key+".")...)
+		default:
+			out = append(out, key)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func isTableKey(k string) bool {
+	for _, t := range tables {
+		if t == k {
+			return true
+		}
+	}
+	return false
+}
+
+// field returns the single-string setting k of cfg, or nil.
 func field(cfg *Config, k string) *string {
 	switch k {
-	case "system_dir":
-		return &cfg.SystemDir
-	case "save_dir":
-		return &cfg.SaveDir
-	case "rom_dir":
-		return &cfg.ROMDir
-	case "redump_dat":
-		return &cfg.RedumpDAT
-	case "default_shell":
-		return &cfg.DefaultShell
-	case "default_os":
-		return &cfg.DefaultOS
+	case "paths.system":
+		return &cfg.Paths.System
+	case "paths.saves":
+		return &cfg.Paths.Saves
+	case "build.redump_dat":
+		return &cfg.Build.RedumpDAT
+	case "defaults.os":
+		return &cfg.Defaults.OS
+	case "defaults.shell":
+		return &cfg.Defaults.Shell
 	}
 	return nil
 }
@@ -253,4 +318,39 @@ func LoadFile(path string) (Config, map[string]bool, error) {
 		keys[k] = true
 	}
 	return cfg, keys, err
+}
+
+// moved are the settings' names before they were grouped in tables.
+var moved = map[string]string{
+	"system_dir": "paths.system", "save_dir": "paths.saves", "rom_dir": "paths.roms",
+	"default_os": "defaults.os", "default_shell": "defaults.shell",
+	"ogg_quality": "build.ogg_quality", "redump_dat": "build.redump_dat",
+	"install_os": "install.os", "templates": "install.templates",
+}
+
+// unknownKeys names a config file's keys that aren't settings, saying
+// where a moved one went.
+func unknownKeys(raw map[string]any) []string {
+	var out []string
+	for _, k := range flatten(raw, "") {
+		known := false
+		for _, s := range Keys {
+			known = known || k == s
+		}
+		for _, t := range tables {
+			known = known || strings.HasPrefix(k, t+".")
+		}
+		if known {
+			continue
+		}
+		top, _, _ := strings.Cut(k, ".")
+		if to, ok := moved[top]; ok {
+			i := strings.LastIndexByte(to, '.')
+			out = append(out, fmt.Sprintf("%s: moved to [%s] %s", top, to[:i], to[i+1:]))
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s: not a setting", k))
+	}
+	sort.Strings(out)
+	return out
 }

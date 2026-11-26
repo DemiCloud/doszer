@@ -34,10 +34,10 @@ func TestRead(t *testing.T) {
 	write("dosbox_pure/odd.img", 8<<20+1) // not whole sectors: skipped too
 
 	cfg := config.Default()
-	cfg.SystemDir = "/nonexistent" // --system-dir wins
-	cfg.DefaultShell = "dosbox_pure/Win31"
-	cfg.DefaultOS = "dosbox_pure/Win95"
-	cfg.InstallOS = map[string]string{"dosbox_pure/Win98": "dosbox_pure/Win98"}
+	cfg.Paths.System = "/nonexistent" // --system-dir wins
+	cfg.Defaults.Shell = "dosbox_pure/Win31"
+	cfg.Defaults.OS = "dosbox_pure/Win95"
+	cfg.Install.OS = map[string]string{"dosbox_pure/Win98": "dosbox_pure/Win98"}
 
 	r, err := Read(cfg, sys, "", "")
 	if err != nil {
@@ -53,9 +53,9 @@ func TestRead(t *testing.T) {
 		t.Errorf("images = %+v", r.Images)
 	}
 	want := []Setting{
-		{"default_shell", "dosbox_pure/Win31", true},
-		{"default_os", "dosbox_pure/Win95", false},
-		{"install_os.dosbox_pure/Win98", "dosbox_pure/Win98", true},
+		{"defaults.shell", "dosbox_pure/Win31", true},
+		{"defaults.os", "dosbox_pure/Win95", false},
+		{"install.os.dosbox_pure/Win98", "dosbox_pure/Win98", true},
 	}
 	if len(r.Settings) != len(want) {
 		t.Fatalf("settings = %+v", r.Settings)

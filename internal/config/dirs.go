@@ -150,18 +150,18 @@ func RetroDECK() RetroDECKDirs {
 }
 
 // SystemDirOf returns the system directory: flag (--system-dir) if given,
-// else system_dir, else FindSystemDir.
+// else paths.system, else FindSystemDir.
 func SystemDirOf(cfg Config, flag string) Dir {
-	return dirOf(flag, "--system-dir", cfg.SystemDir, "system_dir", FindSystemDir)
+	return dirOf(flag, "--system-dir", cfg.Paths.System, "paths.system", FindSystemDir)
 }
 
 // SaveDirOf returns the save directory: flag (--save-dir) if given, else
-// save_dir, else FindSaveDir, else doszer's cache (CacheSaveDir) - but
+// paths.saves, else FindSaveDir, else doszer's cache (CacheSaveDir) - but
 // only once doszer is set up (Configured): until then, nothing is kept,
 // and run uses a temporary folder ("" with From FromTemp). run also looks
 // for RetroDECK's per-folder saves first (install.PlaySaveDir).
 func SaveDirOf(cfg Config, flag string) Dir {
-	d := dirOf(flag, "--save-dir", cfg.SaveDir, "save_dir", FindSaveDir)
+	d := dirOf(flag, "--save-dir", cfg.Paths.Saves, "paths.saves", FindSaveDir)
 	if d.Path == "" {
 		if !Configured() {
 			return Dir{From: FromTemp}
@@ -173,10 +173,34 @@ func SaveDirOf(cfg Config, flag string) Dir {
 	return d
 }
 
-// ROMDirOf returns the ROM directory: flag (--rom-dir) if given, else
-// rom_dir, else FindROMDir.
-func ROMDirOf(cfg Config, flag string) Dir {
-	return dirOf(flag, "--rom-dir", cfg.ROMDir, "rom_dir", FindROMDir)
+// ROMDirsOf returns the ROM directories: flag (--rom-dir) if given, else
+// paths.roms (one or several), else FindROMDir, or none.
+func ROMDirsOf(cfg Config, flag string) []Dir {
+	switch {
+	case flag != "":
+		return []Dir{{Path: flag, From: "--rom-dir"}}
+	case len(cfg.Paths.ROMs) > 0:
+		var out []Dir
+		for _, p := range cfg.Paths.ROMs {
+			if p != "" {
+				out = append(out, Dir{Path: p, From: "paths.roms"})
+			}
+		}
+		return out
+	}
+	if d := FindROMDir(); d.Path != "" {
+		return []Dir{d}
+	}
+	return nil
+}
+
+// DirPaths returns the paths of dirs.
+func DirPaths(dirs []Dir) []string {
+	out := make([]string, len(dirs))
+	for i, d := range dirs {
+		out[i] = d.Path
+	}
+	return out
 }
 
 func dirOf(flag, flagName, setting, key string, find func() Dir) Dir {
@@ -261,13 +285,13 @@ func SetupUser() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		for k, p := range map[string]*string{"system": &cfg.SystemDir, "saves": &cfg.SaveDir, "roms": &cfg.ROMDir} {
-			*p = filepath.Join(data, k)
-			if err := os.MkdirAll(*p, 0o755); err != nil {
+		cfg.Paths = Paths{ROMs: List{filepath.Join(data, "roms")}, System: filepath.Join(data, "system"), Saves: filepath.Join(data, "saves")}
+		for _, p := range []string{cfg.Paths.ROMs[0], cfg.Paths.System, cfg.Paths.Saves} {
+			if err := os.MkdirAll(p, 0o755); err != nil {
 				return "", err
 			}
 		}
-		keys = map[string]bool{"system_dir": true, "save_dir": true, "rom_dir": true}
+		keys = map[string]bool{"paths.roms": true, "paths.system": true, "paths.saves": true}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err

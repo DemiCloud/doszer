@@ -36,7 +36,7 @@ func TestScan(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "broken.dosz"), []byte("not a zip"), 0o644)
 	os.WriteFile(filepath.Join(dir, "other.zip"), []byte("ignored"), 0o644)
 
-	stats, err := LoadStats(filepath.Join(t.TempDir(), "s", "playtime.json"), dir)
+	stats, err := LoadStats(filepath.Join(t.TempDir(), "s", "playtime.json"), []string{dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,11 +47,11 @@ func TestScan(t *testing.T) {
 	stats.Add(filepath.Join(dir, "windows9x", "Beta.dosz"), start.Add(time.Hour), 30*time.Second)
 
 	// Read back from the file, as a later session would.
-	stats, err = LoadStats(stats.path, dir)
+	stats, err = LoadStats(stats.path, []string{dir})
 	if err != nil {
 		t.Fatal(err)
 	}
-	games, err := Scan(dir, stats)
+	games, err := Scan([]string{dir}, stats)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,5 +84,23 @@ func TestScan(t *testing.T) {
 	}
 	if k := stats.key(filepath.Join(dir, "windows9x", "Beta.dosz")); k != "windows9x/Beta.dosz" {
 		t.Errorf("key = %q, want relative to the ROM directory", k)
+	}
+}
+
+func TestScanSeveralFolders(t *testing.T) {
+	a, b := t.TempDir(), t.TempDir()
+	writeArchive(t, filepath.Join(a, "dos", "One.dosz"), map[string]string{"AUTOBOOT.DBP": "C:\\ONE.EXE"})
+	writeArchive(t, filepath.Join(b, "Two.dosz"), map[string]string{"AUTOBOOT.DBP": "C:\\TWO.EXE"})
+	stats, _ := LoadStats("", []string{a, b})
+	stats.Add(filepath.Join(b, "Two.dosz"), time.Now(), time.Minute)
+	if k := stats.key(filepath.Join(b, "Two.dosz")); k != "Two.dosz" {
+		t.Errorf("key = %q, want relative to its own folder", k)
+	}
+	games, err := Scan([]string{a, b, filepath.Join(a, "missing")}, stats)
+	if err == nil {
+		t.Error("a missing folder wasn't reported")
+	}
+	if len(games) != 2 || games[0].Root != a || games[0].Rel != "dos/One.dosz" || games[1].Root != b || games[1].PlayTime != time.Minute {
+		t.Errorf("games = %+v", games)
 	}
 }

@@ -13,16 +13,13 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-// Keys are the scalar settings, in display order. templates and
-// install_os take a name: templates.<name>, install_os.<name>.
-var Keys = []string{"system_dir", "save_dir", "rom_dir", "ogg_quality", "redump_dat", "default_shell", "default_os"}
-
-// tables are the settings that map names to values.
-var tables = []string{"templates", "install_os"}
+// Keys are the settings, in display order. The tables take a name:
+// install.os.<name>, install.templates.<name>.
+var Keys = []string{"paths.roms", "paths.system", "paths.saves", "defaults.os", "defaults.shell", "build.ogg_quality", "build.redump_dat"}
 
 // Setting is one setting's effective value and where it came from: a
 // file's path, or "default" (with the default's own source, if it was
-// found: "default: beside doszer").
+// found: "default: beside doszer"). paths.roms has a Setting per folder.
 type Setting struct {
 	Key   string `json:"key" yaml:"key" toml:"key"`
 	Value string `json:"value" yaml:"value" toml:"value"`
@@ -37,44 +34,46 @@ func Settings(sourceDir string) ([]Setting, error) {
 		return nil, err
 	}
 	def := Default()
+	from := func(k string, d Dir) string {
+		if o := origins[k]; o != "" {
+			return o
+		}
+		if d.From != "" {
+			return "default: " + d.From
+		}
+		return "default"
+	}
 	var out []Setting
 	for _, k := range Keys {
-		s := Setting{Key: k, From: origins[k]}
 		switch k {
-		case "ogg_quality":
-			s.Value = strconv.Itoa(cfg.OggQuality)
-			if s.From == "" && cfg.OggQuality == def.OggQuality {
+		case "paths.roms":
+			dirs := ROMDirsOf(cfg, "")
+			if len(dirs) == 0 {
+				out = append(out, Setting{Key: k, From: "default"})
+			}
+			for _, d := range dirs {
+				out = append(out, Setting{Key: k, Value: d.Path, From: from(k, d)})
+			}
+		case "paths.system":
+			d := SystemDirOf(cfg, "")
+			out = append(out, Setting{Key: k, Value: d.Path, From: from(k, d)})
+		case "paths.saves":
+			d := SaveDirOf(cfg, "")
+			out = append(out, Setting{Key: k, Value: d.Path, From: from(k, d)})
+		case "build.ogg_quality":
+			s := Setting{Key: k, Value: strconv.Itoa(cfg.Build.OggQuality), From: origins[k]}
+			if s.From == "" && cfg.Build.OggQuality == def.Build.OggQuality {
 				s.From = "default"
 			}
-		case "system_dir", "save_dir", "rom_dir":
-			var d Dir
-			switch k {
-			case "system_dir":
-				d = SystemDirOf(cfg, "")
-			case "save_dir":
-				d = SaveDirOf(cfg, "")
-			default:
-				d = ROMDirOf(cfg, "")
-			}
-			s.Value = d.Path
-			if s.From == "" {
-				s.From = "default"
-				if d.From != "" {
-					s.From += ": " + d.From
-				}
-			}
+			out = append(out, s)
 		default:
-			s.Value = *field(&cfg, k)
-			if s.From == "" {
-				s.From = "default"
-			}
+			out = append(out, Setting{Key: k, Value: *field(&cfg, k), From: from(k, Dir{})})
 		}
-		out = append(out, s)
 	}
 	for _, t := range tables {
-		m := cfg.Templates
-		if t == "install_os" {
-			m = cfg.InstallOS
+		m := cfg.Install.OS
+		if t == "install.templates" {
+			m = cfg.Install.Templates
 		}
 		names := make([]string, 0, len(m))
 		for n := range m {
@@ -88,7 +87,8 @@ func Settings(sourceDir string) ([]Setting, error) {
 	return out, nil
 }
 
-// splitKey checks key and splits a table key into table and name.
+// splitKey checks key and splits it into its table and name:
+// "paths.system" is system in [paths], "install.os.X" X in [install.os].
 func splitKey(key string) (table, name string, err error) {
 	for _, t := range tables {
 		if n, ok := strings.CutPrefix(key, t+"."); ok && n != "" {
@@ -97,15 +97,16 @@ func splitKey(key string) (table, name string, err error) {
 	}
 	for _, k := range Keys {
 		if k == key {
-			return "", key, nil
+			i := strings.LastIndexByte(k, '.')
+			return k[:i], k[i+1:], nil
 		}
 	}
-	return "", "", fmt.Errorf("unknown setting %q (settings: %s, templates.NAME, install_os.NAME)", key, strings.Join(Keys, ", "))
+	return "", "", fmt.Errorf("unknown setting %q (settings: %s, install.os.NAME, install.templates.NAME)", key, strings.Join(Keys, ", "))
 }
 
-// isPathKey reports whether key holds a host path.
+// isPathKey reports whether key holds host paths.
 func isPathKey(key string) bool {
-	if strings.HasPrefix(key, "templates.") {
+	if strings.HasPrefix(key, "install.templates.") {
 		return true
 	}
 	for _, k := range pathKeys {
@@ -116,28 +117,41 @@ func isPathKey(key string) bool {
 	return false
 }
 
-// Set writes key = value into the config file path, creating it if
-// missing and keeping every other line, comments included. A relative
+// Set writes key = values into the config file path, creating it if
+// missing and keeping every other line, comments included. Only
+// paths.roms takes several values (written as an array). A relative
 // path value is taken from the working directory, and stored relative to
 // the file when it lies under the file's directory (so a portable
 // doszer.toml stays portable).
-func Set(path, key, value string) error {
+func Set(path, key string, values ...string) error {
 	table, name, err := splitKey(key)
 	if err != nil {
 		return err
 	}
-	var v any = value
+	if len(values) == 0 {
+		return fmt.Errorf("%s: no value", key)
+	}
+	if len(values) > 1 && key != "paths.roms" {
+		return fmt.Errorf("%s takes one value", key)
+	}
+	var v any = values[0]
 	switch {
-	case key == "ogg_quality":
-		n, err := strconv.Atoi(value)
+	case key == "build.ogg_quality":
+		n, err := strconv.Atoi(values[0])
 		if err != nil || n < -1 || n > 10 {
-			return fmt.Errorf("ogg_quality: %q is not a number from -1 to 10", value)
+			return fmt.Errorf("build.ogg_quality: %q is not a number from -1 to 10", values[0])
 		}
 		v = n
 	case isPathKey(key):
-		v, err = storedPath(path, value)
-		if err != nil {
-			return err
+		stored := make([]string, len(values))
+		for i, p := range values {
+			if stored[i], err = storedPath(path, p); err != nil {
+				return err
+			}
+		}
+		v = stored[0]
+		if len(stored) > 1 {
+			v = stored
 		}
 	}
 	line, err := toml.Marshal(map[string]any{name: v})

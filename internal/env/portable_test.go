@@ -1,6 +1,7 @@
 package env
 
 import (
+	"archive/zip"
 	"os"
 	"path/filepath"
 	"sort"
@@ -29,16 +30,19 @@ func TestPortable(t *testing.T) {
 	write("bios/psx/scph1001.bin", 10) // another system's BIOS: left alone
 	write("roms/dos/Game.dosz", 50)
 	write("roms/snes/Other.sfc", 50) // not an archive
+	// A game over a shared shell archive: the parent comes along.
+	zipFile(t, filepath.Join(src, "roms", "win3x", "BOWEP.shell"), map[string]string{"AUTOBOOT.DBP": "S*dosbox_pure/Win31"})
+	zipFile(t, filepath.Join(src, "roms", "win3x", "SkiFree.dosz"), map[string]string{"BOWEP.shell.parent": ""})
 	write("saves/Game.pure.zip", 5)
 	write("saves/Game-CDRIVE.sav", 5)
 	write("saves/Gamer.pure.zip", 5) // another game's
 
 	from := config.Default()
-	from.SystemDir = filepath.Join(src, "bios")
-	from.ROMDir = filepath.Join(src, "roms")
-	from.SaveDir = filepath.Join(src, "saves")
-	from.DefaultOS = "dosbox_pure/Win98"
-	keys := map[string]bool{"system_dir": true, "rom_dir": true, "save_dir": true, "default_os": true}
+	from.Paths.System = filepath.Join(src, "bios")
+	from.Paths.ROMs = config.List{filepath.Join(src, "roms")}
+	from.Paths.Saves = filepath.Join(src, "saves")
+	from.Defaults.OS = "dosbox_pure/Win98"
+	keys := map[string]bool{"paths.system": true, "paths.roms": true, "paths.saves": true, "defaults.os": true}
 
 	dir := filepath.Join(t.TempDir(), "doszer")
 	opts := PortableOptions{Dir: dir, Settings: from, Keys: keys, Copy: true, From: from}
@@ -58,6 +62,7 @@ func TestPortable(t *testing.T) {
 	want := []string{
 		filepath.Base(exe), "doszer.toml",
 		"roms/dos/Game.dosz",
+		"roms/win3x/BOWEP.shell", "roms/win3x/SkiFree.dosz",
 		"saves/Game-CDRIVE.sav", "saves/Game.pure.zip",
 		"system/GeneralUser.sf2", "system/MT32_CONTROL.ROM",
 		"system/dosbox_pure/Win31.dosz", "system/dosbox_pure/Win98.img",
@@ -73,7 +78,7 @@ func TestPortable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.DefaultOS != "dosbox_pure/Win98" || set["system_dir"] || set["rom_dir"] || set["save_dir"] {
+	if cfg.Defaults.OS != "dosbox_pure/Win98" || set["paths.system"] || set["paths.roms"] || set["paths.saves"] {
 		t.Errorf("doszer.toml: %+v, keys %v", cfg, set)
 	}
 
@@ -87,4 +92,20 @@ func TestPortable(t *testing.T) {
 			t.Errorf("second run: %+v", a)
 		}
 	}
+}
+
+func zipFile(t *testing.T, p string, files map[string]string) {
+	t.Helper()
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := zip.NewWriter(f)
+	for name, data := range files {
+		fw, _ := w.Create(name)
+		fw.Write([]byte(data))
+	}
+	w.Close()
+	f.Close()
 }

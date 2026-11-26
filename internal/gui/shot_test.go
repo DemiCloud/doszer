@@ -9,7 +9,8 @@ import (
 )
 
 // TestScreenshot draws the window over a real ROM directory and saves it
-// as PNGs, to look at: DOSZER_GUI_ROMS (the ROM directory), DOSZER_GUI_OUT
+// as PNGs, to look at: DOSZER_GUI_ROMS (the ROM directory; - for the
+// configuration's), DOSZER_GUI_OUT
 // (where the PNGs go), DOSZER_GUI_SYSTEM (a system directory, optional),
 // DOSZER_GUI_STATS (a play time file, optional, only read),
 // DOSZER_GUI_EXE (a doszer binary, optional: shots running a command). It
@@ -37,6 +38,11 @@ func TestScreenshot(t *testing.T) {
 		"setup.png":    func(a *App) { a.OpenSetup() },
 		"menu.png":     func(a *App) { a.OpenGameMenu(0) },
 		"filter.png":   func(a *App) { a.Filter("Win31 (shell)") },
+		"folders.png": func(a *App) {
+			if items := a.filters(); len(items) > 0 {
+				a.openPopup(a.px(480), a.px(12), a.px(200), items, 0, func(int) {})
+			}
+		},
 		"prepare.png": func(a *App) {
 			a.Show("systems")
 			for _, f := range a.files {
@@ -52,8 +58,12 @@ func TestScreenshot(t *testing.T) {
 		shots["deps.png"] = func(a *App) { a.RunDeps(0) }
 	}
 	for name, setup := range shots {
+		romFlag := roms
+		if roms == "-" {
+			romFlag = "" // the configuration's
+		}
 		err := Run(Options{
-			ROMDir:     roms,
+			ROMDir:     romFlag,
 			SystemDir:  os.Getenv("DOSZER_GUI_SYSTEM"),
 			Version:    "test",
 			SDL:        sdlLibs,

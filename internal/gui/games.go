@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/icon"
 	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/library"
@@ -95,14 +96,14 @@ func (a *app) rescan() {
 	if a.scanning {
 		return
 	}
-	if a.romDir.Path == "" {
+	if len(a.romDirs) == 0 {
 		a.list, a.view, a.scanErr = []library.Game{}, nil, nil
 		return
 	}
 	a.scanning = true
-	dir, stats := a.romDir.Path, a.stats
+	dirs, stats := config.DirPaths(a.romDirs), a.stats
 	go func() {
-		list, err := library.Scan(dir, stats)
+		list, err := library.Scan(dirs, stats)
 		a.scanCh <- scanResult{list, err}
 	}()
 }
@@ -331,19 +332,21 @@ func (a *app) gamesToolbar(x, y int32) {
 	tx := x
 	a.button("Tools ▼", x, y, btnNormal, func() {
 		items := []string{"Refresh", "Verify all games"}
-		if canOpen() && a.romDir.Path != "" {
-			items = append(items, "Open the ROM folder")
+		if canOpen() {
+			for _, d := range a.romDirs {
+				items = append(items, "Open "+d.Path)
+			}
 		}
 		a.openPopup(tx, y, a.buttonW("Tools ▼"), items, -1, func(i int) {
 			switch i {
 			case 0:
 				a.rescan()
 			case 1:
-				if a.romDir.Path != "" {
-					a.runDoszer("Verify all games", []string{"verify", "--format", "plain", "--all", a.romDir.Path}, nil)
+				if len(a.romDirs) > 0 {
+					a.runDoszer("Verify all games", append([]string{"verify", "--format", "plain", "--all"}, config.DirPaths(a.romDirs)...), nil)
 				}
-			case 2:
-				a.open(a.romDir.Path)
+			default:
+				a.open(a.romDirs[i-2].Path)
 			}
 		})
 	})
@@ -365,15 +368,19 @@ func (a *app) gamesStatus() string {
 	if total > 0 {
 		s += "  |  Total play time: " + duration(total)
 	}
-	if a.romDir.Path != "" {
-		s += "  |  " + a.romDir.Path
+	switch len(a.romDirs) {
+	case 0:
+	case 1:
+		s += "  |  " + a.romDirs[0].Path
+	default:
+		s += "  |  " + plural(len(a.romDirs), "ROM folder")
 	}
 	return s
 }
 
 func (a *app) drawGames() {
 	switch {
-	case a.romDir.Path == "":
+	case len(a.romDirs) == 0:
 		a.emptyMessage("No ROM folder", "Choose one in Settings, or create a roms folder beside doszer.")
 		a.centerButton("Open Settings", func() { a.show(pageSettings) })
 		return
@@ -381,12 +388,12 @@ func (a *app) drawGames() {
 		a.emptyMessage("Can't read the ROM folder", a.scanErr.Error())
 		return
 	case a.scanning && len(a.list) == 0:
-		a.emptyMessage("Scanning", a.romDir.Path)
+		a.emptyMessage("Scanning", strings.Join(config.DirPaths(a.romDirs), ", "))
 		return
 	case len(a.list) == 0:
-		a.emptyMessage("No games yet", "No .dosz archives in "+a.romDir.Path)
+		a.emptyMessage("No games yet", "No .dosz archives in "+strings.Join(config.DirPaths(a.romDirs), ", "))
 		if canOpen() {
-			a.centerButton("Open the ROM folder", func() { a.open(a.romDir.Path) })
+			a.centerButton("Open the ROM folder", func() { a.open(a.romDirs[0].Path) })
 		}
 		return
 	case len(a.view) == 0:
@@ -677,6 +684,7 @@ func (t *tailBuffer) lastError() string {
 const (
 	filterMissing = "Missing its system"
 	filterBroken  = "Broken parent chain"
+	filterIn      = "In " // + a ROM folder
 )
 
 // filters lists the System filter's choices: "" (all), every system the
@@ -701,6 +709,11 @@ func (a *app) filters() []string {
 	}
 	sort.Strings(labels)
 	out := append([]string{""}, labels...)
+	if len(a.romDirs) > 1 {
+		for _, d := range a.romDirs {
+			out = append(out, filterIn+d.Path)
+		}
+	}
 	if missing {
 		out = append(out, filterMissing)
 	}
@@ -716,6 +729,9 @@ func (a *app) matchesFilter(g *library.Game) bool {
 		return g.Boot != "" && a.files != nil && !a.hasSystem(g.Boot, g.Kind == library.KindShell)
 	case filterBroken:
 		return g.Broken != ""
+	}
+	if root, ok := strings.CutPrefix(a.filter, filterIn); ok {
+		return g.Root == root
 	}
 	if strings.HasPrefix(a.filter, "Needs ") {
 		return needLabel(g) == a.filter

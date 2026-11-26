@@ -62,7 +62,7 @@ func Play(archive, systemDir, saveDir string, options map[string]string) (Env, e
 	}
 	if kind, p, ok := strings.Cut(boot, "*"); ok && (kind == "O" || kind == "S") {
 		if env.SystemDir == "" {
-			return env, fmt.Errorf("%s boots %s from the system directory, and none is configured or found (set system_dir or pass --system-dir)", filepath.Base(archive), p)
+			return env, fmt.Errorf("%s boots %s from the system directory, and none is configured or found (set paths.system or pass --system-dir)", filepath.Base(archive), p)
 		}
 		if kind == "O" {
 			if _, err := osImagePath(env.SystemDir, p); err != nil {

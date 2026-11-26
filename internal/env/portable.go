@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/DemiCloud/doszer/internal/chain"
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/interrupt"
@@ -37,8 +38,8 @@ type PortableAction struct {
 // doszer.toml (which makes it portable: config.PortableConfigPath) and
 // system/, saves/ and roms/, which it finds by default. With o.Copy it
 // copies in the shells and OS images (and sound fonts, MT-32 ROMs) of
-// o.From's system directory, the archives under its ROM directory, and
-// those archives' saves. A file already there with the same size is
+// o.From's system directory, the archives under its ROM directories with
+// their parent archives, and those archives' saves. A file already there with the same size is
 // skipped, so a second run only copies what's new.
 func Portable(o PortableOptions) ([]PortableAction, error) {
 	var acts []PortableAction
@@ -76,7 +77,7 @@ func Portable(o PortableOptions) ([]PortableAction, error) {
 	cfgPath := filepath.Join(dir, config.FileName)
 	keys := map[string]bool{}
 	for k, v := range o.Keys {
-		if v && k != "system_dir" && k != "save_dir" && k != "rom_dir" {
+		if v && !strings.HasPrefix(k, "paths.") {
 			keys[k] = true // directories: the portable ones, by default
 		}
 	}
@@ -96,7 +97,6 @@ func Portable(o PortableOptions) ([]PortableAction, error) {
 		return acts, nil
 	}
 	sys := config.SystemDirOf(o.From, "").Path
-	roms := config.ROMDirOf(o.From, "").Path
 	type job struct{ src, dst string }
 	var jobs []job
 
@@ -114,14 +114,28 @@ func Portable(o PortableOptions) ([]PortableAction, error) {
 			return nil
 		})
 	}
-	if roms != "" && !sameFile(roms, filepath.Join(dir, "roms")) {
-		saved := map[string]string{} // portable save name -> archive, to report clashes
+	saved := map[string]string{} // portable save name -> archive, to report clashes
+	queued := map[string]bool{}
+	for _, rd := range config.ROMDirsOf(o.From, "") {
+		roms := rd.Path
+		if sameFile(roms, filepath.Join(dir, "roms")) {
+			continue
+		}
 		filepath.WalkDir(roms, func(p string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() || !strings.EqualFold(filepath.Ext(p), ".dosz") {
 				return nil
 			}
 			rel, _ := filepath.Rel(roms, p)
-			jobs = append(jobs, job{p, filepath.Join(dir, "roms", rel)})
+			// The archive and its parents (a shared shell archive), each
+			// beside the one naming it, as DOSBox Pure looks them up.
+			for i, l := range chain.Resolve(p).Links {
+				if (i > 0 && !l.Found) || queued[l.Path] {
+					continue // the archive itself goes even if it can't be read
+				}
+				queued[l.Path] = true
+				lrel, _ := filepath.Rel(roms, l.Path)
+				jobs = append(jobs, job{l.Path, filepath.Join(dir, "roms", lrel)})
+			}
 			name := strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))
 			for _, s := range saveFiles(o.From, p, name) {
 				base := filepath.Base(s)
@@ -159,7 +173,7 @@ func midiFile(p string) bool {
 // for it: <name>.pure.zip, <name>-CDRIVE.sav and <name>-<HASH>.sav
 // (DOSBox Pure's DBP_GetSaveFile).
 func saveFiles(cfg config.Config, archive, name string) []string {
-	dir := cfg.SaveDir
+	dir := cfg.Paths.Saves
 	if dir == "" {
 		dir, _ = install.PlaySaveDirNoCreate(archive)
 	}

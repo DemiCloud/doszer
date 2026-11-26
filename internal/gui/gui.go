@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -80,9 +81,9 @@ type app struct {
 	circle *texture
 
 	// What the configuration says now (reload).
-	cfg    config.Config
-	romDir config.Dir
-	sysDir config.Dir
+	cfg     config.Config
+	romDirs []config.Dir
+	sysDir  config.Dir
 
 	page   page
 	layer  int
@@ -244,10 +245,10 @@ func (a *app) reload() {
 		a.say(err.Error(), true)
 	}
 	a.cfg = cfg
-	rom, sys := config.ROMDirOf(cfg, a.o.ROMDir), config.SystemDirOf(cfg, a.o.SystemDir)
-	romChanged := rom.Path != a.romDir.Path || a.games.list == nil
+	rom, sys := config.ROMDirsOf(cfg, a.o.ROMDir), config.SystemDirOf(cfg, a.o.SystemDir)
+	romChanged := strings.Join(config.DirPaths(rom), "\x00") != strings.Join(config.DirPaths(a.romDirs), "\x00") || a.games.list == nil
 	sysChanged := sys.Path != a.sysDir.Path || a.systems.files == nil
-	a.romDir, a.sysDir = rom, sys
+	a.romDirs, a.sysDir = rom, sys
 	a.loadStats()
 	if romChanged {
 		a.rescan()
@@ -617,7 +618,7 @@ func (a *app) loadStats() {
 			a.say("play time: "+err.Error(), true)
 		}
 	}
-	s, err := library.LoadStats(p, a.romDir.Path)
+	s, err := library.LoadStats(p, config.DirPaths(a.romDirs))
 	if err != nil {
 		a.say("play time: "+err.Error(), true)
 	}

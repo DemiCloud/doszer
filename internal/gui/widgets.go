@@ -280,7 +280,10 @@ func (a *app) drawField(f *field, x, y, w int32) {
 	} else {
 		// Scrolled so the caret stays in view.
 		cx := a.textWidth(f.text[:f.cur], 13, false)
-		shift := max(0, cx-inner)
+		shift := int32(0)
+		if focused {
+			shift = max(0, cx-inner)
+		}
 		tx := x + a.px(12) - shift
 		a.text(f.text, tx, ty, 13, false, colText)
 		if focused {
@@ -290,7 +293,10 @@ func (a *app) drawField(f *field, x, y, w int32) {
 	a.clipHit(x, y, w, h, func(bool) {
 		a.focus = f
 		// The caret goes where the click was.
-		rel := a.mx - (x + a.px(12)) + max(0, a.textWidth(f.text[:f.cur], 13, false)-inner)
+		rel := a.mx - (x + a.px(12))
+		if focused {
+			rel += max(0, a.textWidth(f.text[:f.cur], 13, false)-inner)
+		}
 		f.cur = len(f.text)
 		for i := range f.text {
 			if a.textWidth(f.text[:i], 13, false) >= rel {

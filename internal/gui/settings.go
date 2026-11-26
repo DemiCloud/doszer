@@ -13,19 +13,27 @@ import (
 // file (the one the page writes), not the effective ones, which show as
 // placeholders.
 type settings struct {
-	fROM, fSys, fSave, fDat field
-	defOS, defShell         string
-	ogg                     int
-	saved                   map[string]string // the file's values when loaded
-	effective               map[string]config.Setting
-	cfgPath                 string
-	settingsH               int32
+	fROMs             []*field // paths.roms: one field per folder
+	fSys, fSave, fDat field
+	defOS, defShell   string
+	ogg               int
+	saved             map[string]string // the file's values when loaded; paths.roms joined by NUL
+	effective         map[string]config.Setting
+	cfgPath           string
+	settingsH         int32
 }
 
 func (a *app) initSettings() {
-	for _, f := range []*field{&a.fROM, &a.fSys, &a.fSave, &a.fDat} {
+	for _, f := range []*field{&a.fSys, &a.fSave, &a.fDat} {
 		f.onEnter = a.saveSettings
 	}
+}
+
+// romField is a new ROM folder field.
+func (a *app) romField(v string) *field {
+	f := &field{onEnter: a.saveSettings}
+	f.set(v)
+	return f
 }
 
 // loadSettings reads the user config file's values into the form.
@@ -44,44 +52,62 @@ func (a *app) loadSettings() {
 		}
 		return ""
 	}
-	a.saved = map[string]string{
-		"rom_dir":       str("rom_dir", file.ROMDir),
-		"system_dir":    str("system_dir", file.SystemDir),
-		"save_dir":      str("save_dir", file.SaveDir),
-		"redump_dat":    str("redump_dat", file.RedumpDAT),
-		"default_os":    str("default_os", file.DefaultOS),
-		"default_shell": str("default_shell", file.DefaultShell),
-		"ogg_quality":   strconv.Itoa(file.OggQuality),
+	var roms []string
+	if keys["paths.roms"] {
+		roms = file.Paths.ROMs
 	}
-	a.fROM.set(a.saved["rom_dir"])
-	a.fSys.set(a.saved["system_dir"])
-	a.fSave.set(a.saved["save_dir"])
-	a.fDat.set(a.saved["redump_dat"])
-	a.defOS, a.defShell = a.saved["default_os"], a.saved["default_shell"]
-	a.ogg = file.OggQuality
+	a.saved = map[string]string{
+		"paths.roms":        strings.Join(roms, "\x00"),
+		"paths.system":      str("paths.system", file.Paths.System),
+		"paths.saves":       str("paths.saves", file.Paths.Saves),
+		"build.redump_dat":  str("build.redump_dat", file.Build.RedumpDAT),
+		"defaults.os":       str("defaults.os", file.Defaults.OS),
+		"defaults.shell":    str("defaults.shell", file.Defaults.Shell),
+		"build.ogg_quality": strconv.Itoa(file.Build.OggQuality),
+	}
+	a.fROMs = nil
+	for _, r := range roms {
+		a.fROMs = append(a.fROMs, a.romField(r))
+	}
+	if len(a.fROMs) == 0 {
+		a.fROMs = []*field{a.romField("")}
+	}
+	a.fSys.set(a.saved["paths.system"])
+	a.fSave.set(a.saved["paths.saves"])
+	a.fDat.set(a.saved["build.redump_dat"])
+	a.defOS, a.defShell = a.saved["defaults.os"], a.saved["defaults.shell"]
+	a.ogg = file.Build.OggQuality
 
 	a.effective = map[string]config.Setting{}
 	if list, err := config.Settings(""); err == nil {
 		for _, s := range list {
-			a.effective[s.Key] = s
+			if _, dup := a.effective[s.Key]; !dup {
+				a.effective[s.Key] = s
+			}
 		}
 	}
-	a.fROM.placeholder = a.defaultHint("rom_dir")
-	a.fSys.placeholder = a.defaultHint("system_dir")
-	a.fSave.placeholder = a.defaultHint("save_dir")
+	a.fROMs[0].placeholder = a.defaultHint("paths.roms")
+	a.fSys.placeholder = a.defaultHint("paths.system")
+	a.fSave.placeholder = a.defaultHint("paths.saves")
 	a.fDat.placeholder = "Redump's own, embedded and updated weekly"
 }
 
 // form is the page's values, keyed like the config file.
 func (a *app) form() map[string]string {
+	var roms []string
+	for _, f := range a.fROMs {
+		if t := strings.TrimSpace(f.text); t != "" {
+			roms = append(roms, t)
+		}
+	}
 	return map[string]string{
-		"rom_dir":       a.fROM.text,
-		"system_dir":    a.fSys.text,
-		"save_dir":      a.fSave.text,
-		"redump_dat":    a.fDat.text,
-		"default_os":    a.defOS,
-		"default_shell": a.defShell,
-		"ogg_quality":   strconv.Itoa(a.ogg),
+		"paths.roms":        strings.Join(roms, "\x00"),
+		"paths.system":      a.fSys.text,
+		"paths.saves":       a.fSave.text,
+		"build.redump_dat":  a.fDat.text,
+		"defaults.os":       a.defOS,
+		"defaults.shell":    a.defShell,
+		"build.ogg_quality": strconv.Itoa(a.ogg),
 	}
 }
 
@@ -96,19 +122,16 @@ func (a *app) settingsChanged() bool {
 
 // defaultHint is a folder field's placeholder: what doszer uses unset.
 func (a *app) defaultHint(k string) string {
-	switch k {
-	case "save_dir":
-		if !config.Configured() {
-			return "None: a temporary folder, deleted after each game"
-		}
+	if k == "paths.saves" && !config.Configured() {
+		return "None: a temporary folder, deleted after each game"
 	}
 	var d config.Dir
 	switch k {
-	case "rom_dir":
+	case "paths.roms":
 		d = config.FindROMDir()
-	case "system_dir":
+	case "paths.system":
 		d = config.FindSystemDir()
-	case "save_dir":
+	case "paths.saves":
 		if d = config.FindSaveDir(); d.Path == "" {
 			if c, err := config.CacheSaveDir(); err == nil {
 				d = config.Dir{Path: c, From: config.FromCache}
@@ -142,7 +165,7 @@ func (a *app) saveSettings() {
 			if v == "" {
 				err = config.Unset(p, k)
 			} else {
-				err = config.Set(p, k, v)
+				err = config.Set(p, k, strings.Split(v, "\x00")...)
 			}
 			if err != nil {
 				a.say(err.Error(), true)
@@ -194,8 +217,9 @@ func (a *app) drawSettings() {
 	}
 	// overridden notes a layer above the user config file setting k.
 	overridden := func(k string) {
-		if flag := map[string]string{"rom_dir": a.o.ROMDir, "system_dir": a.o.SystemDir, "save_dir": a.o.SaveDir}[k]; flag != "" {
-			note("This window was started with --"+strings.ReplaceAll(k, "_", "-")+" "+flag+", which takes precedence", colShell)
+		if flag := map[string]string{"paths.roms": a.o.ROMDir, "paths.system": a.o.SystemDir, "paths.saves": a.o.SaveDir}[k]; flag != "" {
+			name := map[string]string{"paths.roms": "--rom-dir", "paths.system": "--system-dir", "paths.saves": "--save-dir"}[k]
+			note("This window was started with "+name+" "+flag+", which takes precedence", colShell)
 			return
 		}
 		if s, ok := a.effective[k]; ok && s.From != "" && s.From != a.cfgPath && filepath.IsAbs(s.From) {
@@ -253,11 +277,52 @@ func (a *app) drawSettings() {
 		y += a.px(38)
 		overridden(k)
 	}
-	folder("Games (ROMs)", "rom_dir", &a.fROM)
-	note("The .dosz archives the Games page lists, at any depth.", colFaint)
-	folder("System", "system_dir", &a.fSys)
+	// The ROM folders: one or several.
+	for i, f := range a.fROMs {
+		name := "Games (ROMs)"
+		if i > 0 {
+			name = ""
+		}
+		label(name)
+		bw := a.buttonW("×") + a.px(8)
+		if canPick() {
+			bw += a.buttonW("Browse…") + a.px(8)
+		}
+		a.drawField(f, fx, y, fw-bw)
+		bx := fx + fw - bw + a.px(8)
+		if canPick() {
+			bx += a.button("Browse…", bx, y, btnNormal, func() {
+				start := f.text
+				if start == "" {
+					start = a.effective["paths.roms"].Value
+				}
+				if dir, ok := pickFolder("games", start); ok {
+					f.set(dir)
+					a.focus = nil
+				}
+			}) + a.px(8)
+		}
+		idx := i
+		a.button("×", bx, y, btnGhost, func() {
+			if len(a.fROMs) == 1 {
+				a.fROMs[0].set("")
+				return
+			}
+			a.fROMs = append(a.fROMs[:idx], a.fROMs[idx+1:]...)
+			a.fROMs[0].placeholder = a.defaultHint("paths.roms")
+		})
+		y += a.px(38)
+	}
+	a.button("Add a folder", fx, y-a.px(2), btnGhost, func() {
+		a.fROMs = append(a.fROMs, a.romField(""))
+		a.focus = a.fROMs[len(a.fROMs)-1]
+	})
+	y += a.px(38)
+	overridden("paths.roms")
+	note("The .dosz archives the Games page lists, each folder at any depth.", colFaint)
+	folder("System", "paths.system", &a.fSys)
 	note("OS images and Windows 3.x shells, as DOSBox Pure's system directory.", colFaint)
-	folder("Saves", "save_dir", &a.fSave)
+	folder("Saves", "paths.saves", &a.fSave)
 	note("DOSBox Pure's save files, named after each archive.", colFaint)
 
 	// Systems.

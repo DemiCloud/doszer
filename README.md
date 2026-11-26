@@ -62,7 +62,7 @@ doszer env     [--system-dir DIR] [--save-dir DIR] [--rom-dir DIR]
 doszer env portable [DIR] [--copy] [--from FILE] [-n] [-f]
 doszer gui     [--rom-dir DIR] [--system-dir DIR] [--save-dir DIR]
 doszer
-doszer config  [get KEY | set KEY VALUE | unset KEY | init [FILE] [--current] [-f]] [--file FILE]
+doszer config  [get KEY | set KEY VALUE... | unset KEY | init [FILE] [--current] [-f]] [--file FILE]
 doszer associate [--remove] [-n]
 doszer version
 ```
@@ -94,7 +94,7 @@ exits 1.
 DOSBox Pure's system and save directories and where each came from
 (option, setting, `./system`, beside doszer, RetroDECK), the shells and
 OS images DOSBox Pure would list (a dynamic VHD flagged: `install`
-refuses one), whether `default_shell`, `default_os` and `install_os`
+refuses one), whether `defaults.shell`, `defaults.os` and `install.os`
 name images present here, the Redump datfiles, and ffmpeg. It describes
 only this machine; archives may be played somewhere else.
 
@@ -156,7 +156,7 @@ cards) don't count when there's anything else. DOS programs need nothing.
 A game with both DOS and Windows programs has a DOS version, so it gets
 the plain model too; `--shell` or `--os` choose the Windows version.
 Windows 3.x programs get a shell, Windows 95 and 98 programs an OS image:
-`default_shell` or `default_os` if configured, else the first of these
+`defaults.shell` or `defaults.os` if configured, else the first of these
 found in the system directory (any folder, as DOSBox Pure finds them):
 `Windows 3.1`, `Windows 3.11`, `Win31`, `Win311`, `WFW311` for a shell;
 `Windows 98 (games)`, `Windows 98`, `Win98`, `Windows 98 SE`, `Win98SE`,
@@ -279,7 +279,7 @@ as zeros, as they almost always are on the disc, and reported.
 The dump is then checked against Redump's IBM PC datfile, matching every
 track's size and SHA-1: `Verified`, or the closest disc and the tracks
 that differ, or no match (a bad dump, or a disc not in Redump yet). The
-datfile is, in order: `--dat`/`redump_dat` (any Logiqx datfile); a copy
+datfile is, in order: `--dat`/`build.redump_dat` (any Logiqx datfile); a copy
 fetched from redump.org at most weekly and cached in the user cache
 directory; the snapshot built into doszer (`make dat`). `doszer redump`
 shows which is in use, `--update` fetches the current one, and given
@@ -318,7 +318,7 @@ data tracks become ISO images, audio tracks stored as raw CD-DA become Ogg
 Vorbis or WAV, and the CUE sheet is rewritten to match. Implementation
 details:
 
-- Ogg Vorbis is encoded by `ffmpeg`'s `libvorbis` at `ogg_quality`
+- Ogg Vorbis is encoded by `ffmpeg`'s `libvorbis` at `build.ogg_quality`
   (default 6; see Configuration), with `-fflags +bitexact -flags +bitexact`
   so the same `ffmpeg` and `libvorbis` versions produce identical files.
   WAV files are written directly.
@@ -582,32 +582,36 @@ Every setting can be given as a flag. Precedence, highest first:
    on Windows)
 5. Built-in defaults
 
-`doszer.toml` and the user config file take the settings at top level.
-A relative path is relative to the file that sets it:
+`doszer.toml` and the user config file group the settings in tables. A
+relative path is relative to the file that sets it:
 
 ```toml
-system_dir  = "/path/to/system"      # DOSBox Pure's system directory (OS images, shells)
-save_dir    = "/path/to/saves"       # DOSBox Pure's save directory
-rom_dir     = "/path/to/roms"        # archives the window lists
+[paths]
+roms   = "/path/to/roms"           # archives the window lists; or a list:
+                                   # roms = ["/path/to/roms", "/other/roms"]
+system = "/path/to/system"         # DOSBox Pure's system directory (OS images, shells)
+saves  = "/path/to/saves"          # DOSBox Pure's save directory
+
+[defaults]
+os    = "dosbox_pure/Windows 98 (games)" # init's OS image for Windows 9x games
+shell = "dosbox_pure/Windows 3.1"        # init's shell for Windows 3.x games
+
+[build]
 ogg_quality = 6
+redump_dat  = "/path/to/datfile.dat"     # dump and redump check against it instead of Redump's
 
-[templates]                          # pristine OS images used by install
-"path/to/image" = "/path/to/image.template"
-
-[install_os]                         # image install sessions boot, by boot.os
+[install.os]                       # image install sessions boot, by boot.os
 "path/to/image" = "path/to/install-image"
-```
 
-```toml
-default_shell = "dosbox_pure/Windows 3.1"       # init's shell for Windows 3.x games
-default_os    = "dosbox_pure/Windows 98 (games)" # init's OS image for Windows 9x games
+[install.templates]                # pristine OS images used by install
+"path/to/image" = "/path/to/image.template"
 ```
 
 A manifest overrides them the same way, under `[x-doszer]` (spec §5.10's
 extension-key namespace, so the manifest schema doesn't reject it):
 
 ```toml
-[x-doszer]
+[x-doszer.build]
 ogg_quality = 10
 ```
 
@@ -615,9 +619,9 @@ Unset directories have defaults, the first that exists:
 
 | Setting | Defaults |
 |---|---|
-| `system_dir` | `./system`, `system/` beside doszer, RetroDECK's `bios_path` |
-| `save_dir` | `./saves`, `saves/` beside doszer, for `run` RetroDECK's `saves_path/<folder>` for an archive under its `roms_path`, doszer's cache - once set up (a config file exists); until then, a temporary folder per game, deleted after it |
-| `rom_dir` | `./roms`, `roms/` beside doszer, RetroDECK's `roms_path` |
+| `paths.roms` | `./roms`, `roms/` beside doszer, RetroDECK's `roms_path` (whose `dos/`, `windows3x/`, `windows9x/` are found within: every folder is searched at any depth) |
+| `paths.system` | `./system`, `system/` beside doszer, RetroDECK's `bios_path` |
+| `paths.saves` | `./saves`, `saves/` beside doszer, for `run` RetroDECK's `saves_path/<folder>` for an archive under its `roms_path`, doszer's cache - once set up (a config file exists); until then, a temporary folder per game, deleted after it |
 
 `doszer env` and `doszer config` show which applies, and where it came
 from.
@@ -632,22 +636,24 @@ executable, the three folders, and a commented `doszer.toml` carrying
 the current settings except the directories. `--copy` also copies, from
 the directories in effect, the shells and OS images (and sound fonts and
 MT-32 ROMs) of the system directory, every `.dosz` under the ROM
-directory, and those archives' saves; `--from FILE` takes the settings
+directories with the parent archives they need, and those archives'
+saves; `--from FILE` takes the settings
 and directories from FILE instead (and implies `--copy`). A file already
 there with the same size is skipped, so running it again copies only
 what's new. Other systems' BIOS files and ROMs are left behind.
 
 `doszer config` lists every setting with its value and source (a file,
-or `default` and the default's own source). `config set KEY VALUE` and
+or `default` and the default's own source). Keys are dotted:
+`paths.system`, `build.ogg_quality`. `config set KEY VALUE...` and
 `config unset KEY` edit the user config file (`--file` another one),
-keeping its other lines and comments; a relative path is taken from the
-working directory and stored relative to the file when it lies under the
-file's directory. Table entries are `templates.NAME` and
-`install_os.NAME`. `config init [FILE]` writes a commented file listing
+keeping its other lines and comments; only `paths.roms` takes several
+values. A relative path is taken from the working directory and stored
+relative to the file when it lies under the file's directory. Table
+entries are `install.os.NAME` and `install.templates.NAME`. `config init [FILE]` writes a commented file listing
 every setting (`-` for standard output); `--current` writes the settings
 the config files set now instead of only defaults.
 
-`templates` and `install_os` merge by key across layers; every other setting is replaced
+`install.os` and `install.templates` merge by key across layers; every other setting is replaced
 whole by the most specific layer that sets it. `repack` has no source
 directory, so it skips the `[x-doszer]` layer.
 
@@ -679,7 +685,7 @@ changes). `install` refuses a dynamic VHD; "Discard", which `run` uses,
 is unaffected. To convert one:
 `qemu-img convert -O vpc -o subformat=fixed dynamic.vhd fixed.vhd`.
 
-An OS image session boots `--os`, else the image `install_os` maps
+An OS image session boots `--os`, else the image `install.os` maps
 `boot.os` to, else `boot.os` itself: an archive's own image may start the
 game through a custom shell, while installing wants a plain Windows
 desktop. `--drive c` extracts from C: instead of D:, for an installer that
@@ -741,7 +747,7 @@ save or disk image:
 | `--from` | Also needs |
 |---|---|
 | `<content>-<HASH>.sav` (D:) | `--content`, the archive it was made over; the hash must match |
-| `<content>-CDRIVE.sav` (C:) | the image it was made over: `--os`, `install_os` or `boot.os` |
+| `<content>-CDRIVE.sav` (C:) | the image it was made over: `--os`, `install.os` or `boot.os` |
 | `.pure.zip` | (`--content` to tell modified files from added ones) |
 | `.vhd`, `.img` | `--template` or a configured template to compare against, else `--dir` |
 
@@ -878,21 +884,21 @@ core is unpacked to the user cache directory on first use. doszer passes
 the core its options directly, so no frontend's configuration is read or
 changed.
 
-- OS images and shells come from `system_dir` (`--system-dir`), else a
+- OS images and shells come from `paths.system` (`--system-dir`), else a
   `system/` folder in the working directory, else one beside the doszer
   executable (as standalone DOSBox Pure keeps its own), else RetroDECK's
   BIOS folder (`bios_path` in
   `~/.var/app/net.retrodeck.retrodeck/config/retrodeck/retrodeck.json`).
   A manifest's `os = 'dosbox_pure/Win98'` is then
   `system/dosbox_pure/Win98.vhd` (or `.img`).
-- `run`'s saves go to `save_dir` (`--save-dir`), else a `saves/` folder
+- `run`'s saves go to `paths.saves` (`--save-dir`), else a `saves/` folder
   in the working directory, else one beside the doszer executable, else,
   for an archive in RetroDECK's ROM folders (`roms_path`), RetroDECK's own:
   `<saves_path>/<the archive's folder>`, as RetroArch sorts saves by
   content directory (`roms/dos/Game.dosz` saves in `saves/dos`,
   `roms/windows9x/Game.dosz` in `saves/windows9x`), so `run` and RetroDECK
   continue each other's games. Otherwise, and always for `install`, whose
-  session saves are throwaway, `save_dir` or `doszer/saves` in the user
+  session saves are throwaway, `paths.saves` or `doszer/saves` in the user
   cache directory.
 
 #### Hotkeys
@@ -996,7 +1002,7 @@ doszer prepare os "Windows 98.vhd" "Windows 98 (games).vhd"
 As with a shell, the output is a new image built for running games, not
 a copy of the original: keep the original, and install games with it,
 since a prepared image has no Explorer desktop for installers. Map the
-prepared image to the original in `install_os` (Configuration), and
+prepared image to the original in `install.os` (Configuration), and
 `install` boots the original for any game whose `boot.os` names the
 prepared one. The input is a VHD (fixed or dynamic) or a raw `.img` and is
 only read; the output is a fixed VHD (a raw image for raw input) of the

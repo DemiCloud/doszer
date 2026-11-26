@@ -36,7 +36,8 @@ const (
 // Game is one archive.
 type Game struct {
 	Path     string        // absolute
-	Rel      string        // relative to the ROM directory, slash-separated
+	Root     string        // the ROM directory it was found under
+	Rel      string        // relative to Root, slash-separated
 	Name     string        // the manifest's, else the file name without extension
 	Kind     Kind          //
 	System   string        // the shell or OS image it boots, without directories ("Windows 98"), or ""
@@ -53,37 +54,42 @@ type Game struct {
 	PlayTime   time.Duration
 }
 
-// Scan lists the .dosz archives under dir, at any depth, sorted by name,
-// with their play statistics from stats (nil for none). Shells, which
-// live in the system directory, aren't games; an archive that can't be
-// read is listed with Err set.
-func Scan(dir string, stats *Stats) ([]Game, error) {
-	var paths []string
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if p == dir {
-				return err
+// Scan lists the .dosz archives under each of dirs, at any depth, sorted
+// by name, with their play statistics from stats (nil for none). Shells,
+// which live in the system directory, aren't games; an archive that
+// can't be read is listed with Err set. A directory that can't be read
+// is an error; the others are still listed.
+func Scan(dirs []string, stats *Stats) ([]Game, error) {
+	type found struct{ root, path string }
+	var paths []found
+	var errs []error
+	for _, dir := range dirs {
+		err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				if p == dir {
+					return err
+				}
+				return nil // an unreadable subdirectory: skipped
 			}
-			return nil // an unreadable subdirectory: skipped
+			if !d.IsDir() && strings.EqualFold(filepath.Ext(p), ".dosz") {
+				paths = append(paths, found{dir, p})
+			}
+			return nil
+		})
+		if err != nil {
+			errs = append(errs, err)
 		}
-		if !d.IsDir() && strings.EqualFold(filepath.Ext(p), ".dosz") {
-			paths = append(paths, p)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 
 	games := make([]Game, len(paths))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 8)
-	for i, p := range paths {
+	for i, f := range paths {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func() {
 			defer func() { <-sem; wg.Done() }()
-			games[i] = read(dir, p)
+			games[i] = read(f.root, f.path)
 		}()
 	}
 	wg.Wait()
@@ -96,7 +102,7 @@ func Scan(dir string, stats *Stats) ([]Game, error) {
 	sort.SliceStable(games, func(i, j int) bool {
 		return strings.ToLower(games[i].Name) < strings.ToLower(games[j].Name)
 	})
-	return games, nil
+	return games, errors.Join(errs...)
 }
 
 // read reads one archive's entry.
@@ -104,7 +110,7 @@ func read(dir, p string) Game {
 	abs, _ := filepath.Abs(p)
 	rel, _ := filepath.Rel(dir, p)
 	stem := strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))
-	g := Game{Path: abs, Rel: filepath.ToSlash(rel), Name: stem}
+	g := Game{Path: abs, Root: dir, Rel: filepath.ToSlash(rel), Name: stem}
 	if fi, err := os.Stat(p); err == nil {
 		g.Size, g.Modified = fi.Size(), fi.ModTime()
 	}
@@ -191,20 +197,21 @@ type Played struct {
 func (p Played) Duration() time.Duration { return time.Duration(p.Seconds) * time.Second }
 
 // Stats records how long archives have been played, in a JSON file keyed
-// by each archive's path relative to the ROM directory (so a portable
-// doszer's statistics survive a change of drive letter), or its absolute
-// path outside it.
+// by each archive's path relative to the ROM directory holding it (so a
+// portable doszer's statistics survive a change of drive letter), or its
+// absolute path outside them.
 type Stats struct {
-	path, romDir string
-	mu           sync.Mutex
-	Games        map[string]Played `json:"games"`
+	path    string
+	romDirs []string
+	mu      sync.Mutex
+	Games   map[string]Played `json:"games"`
 }
 
 // LoadStats reads the statistics file at path (one that doesn't exist yet
-// is empty) for archives under romDir. With path "", statistics are kept
+// is empty) for archives under romDirs. With path "", statistics are kept
 // in memory only.
-func LoadStats(path, romDir string) (*Stats, error) {
-	s := &Stats{path: path, romDir: romDir, Games: map[string]Played{}}
+func LoadStats(path string, romDirs []string) (*Stats, error) {
+	s := &Stats{path: path, romDirs: romDirs, Games: map[string]Played{}}
 	if path == "" {
 		return s, nil
 	}
@@ -226,8 +233,8 @@ func LoadStats(path, romDir string) (*Stats, error) {
 
 // key is archive's key in the file.
 func (s *Stats) key(archive string) string {
-	if s.romDir != "" {
-		if rel, err := filepath.Rel(s.romDir, archive); err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
+	for _, d := range s.romDirs {
+		if rel, err := filepath.Rel(d, archive); err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
 			return filepath.ToSlash(rel)
 		}
 	}

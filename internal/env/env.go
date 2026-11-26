@@ -26,7 +26,7 @@ type Report struct {
 	Config    []ConfigFile `json:"config" yaml:"config" toml:"config"`
 	SystemDir Dir          `json:"system_dir" yaml:"system_dir" toml:"system_dir"`
 	SaveDir   Dir          `json:"save_dir" yaml:"save_dir" toml:"save_dir"`
-	ROMDir    Dir          `json:"rom_dir" yaml:"rom_dir" toml:"rom_dir"`
+	ROMDirs   []Dir        `json:"rom_dirs" yaml:"rom_dirs" toml:"rom_dirs"`
 	RetroDECK *RetroDECK   `json:"retrodeck,omitempty" yaml:"retrodeck,omitempty" toml:"retrodeck,omitempty"`
 	Shells    []Image      `json:"shells,omitempty" yaml:"shells,omitempty" toml:"shells,omitempty"`
 	Images    []Image      `json:"images,omitempty" yaml:"images,omitempty" toml:"images,omitempty"`
@@ -62,7 +62,7 @@ type Image struct {
 // Setting is a configured shell or image name, and whether the system
 // directory has it.
 type Setting struct {
-	Key   string `json:"key" yaml:"key" toml:"key"` // default_shell, default_os, install_os.<name>
+	Key   string `json:"key" yaml:"key" toml:"key"` // defaults.shell, defaults.os, install.os.<name>
 	Value string `json:"value" yaml:"value" toml:"value"`
 	Found bool   `json:"found" yaml:"found" toml:"found"`
 }
@@ -72,7 +72,7 @@ type Redump struct {
 	Embedded string `json:"embedded,omitempty" yaml:"embedded,omitempty" toml:"embedded,omitempty"` // version
 	Cached   string `json:"cached,omitempty" yaml:"cached,omitempty" toml:"cached,omitempty"`       // version
 	Checked  string `json:"checked,omitempty" yaml:"checked,omitempty" toml:"checked,omitempty"`    // when the cached copy was last fetched or checked
-	External string `json:"external,omitempty" yaml:"external,omitempty" toml:"external,omitempty"` // redump_dat
+	External string `json:"external,omitempty" yaml:"external,omitempty" toml:"external,omitempty"` // build.redump_dat
 }
 
 // Read gathers the report. systemDir, saveDir and romDir are what
@@ -88,7 +88,7 @@ func Read(cfg config.Config, systemDir, saveDir, romDir string) (*Report, error)
 		r.RetroDECK = &RetroDECK{rd.BIOS, rd.ROMs, rd.Saves}
 	}
 	r.SaveDir = config.SaveDirOf(cfg, saveDir)
-	r.ROMDir = config.ROMDirOf(cfg, romDir)
+	r.ROMDirs = config.ROMDirsOf(cfg, romDir)
 
 	files := install.SystemFiles(r.SystemDir.Path)
 	for _, f := range files {
@@ -109,14 +109,14 @@ func Read(cfg config.Config, systemDir, saveDir, romDir string) (*Report, error)
 		}
 		return false
 	}
-	if cfg.DefaultShell != "" {
-		r.Settings = append(r.Settings, Setting{"default_shell", cfg.DefaultShell, has(cfg.DefaultShell, true)})
+	if cfg.Defaults.Shell != "" {
+		r.Settings = append(r.Settings, Setting{"defaults.shell", cfg.Defaults.Shell, has(cfg.Defaults.Shell, true)})
 	}
-	if cfg.DefaultOS != "" {
-		r.Settings = append(r.Settings, Setting{"default_os", cfg.DefaultOS, has(cfg.DefaultOS, false)})
+	if cfg.Defaults.OS != "" {
+		r.Settings = append(r.Settings, Setting{"defaults.os", cfg.Defaults.OS, has(cfg.Defaults.OS, false)})
 	}
-	for _, k := range slices.Sorted(maps.Keys(cfg.InstallOS)) {
-		r.Settings = append(r.Settings, Setting{"install_os." + k, cfg.InstallOS[k], has(cfg.InstallOS[k], false)})
+	for _, k := range slices.Sorted(maps.Keys(cfg.Install.OS)) {
+		r.Settings = append(r.Settings, Setting{"install.os." + k, cfg.Install.OS[k], has(cfg.Install.OS[k], false)})
 	}
 
 	if emb, err := redump.Embedded(); err == nil && emb != nil {
@@ -125,7 +125,7 @@ func Read(cfg config.Config, systemDir, saveDir, romDir string) (*Report, error)
 	if cached, checked, err := redump.Cached(); err == nil && cached != nil {
 		r.Redump.Cached, r.Redump.Checked = cached.Version, checked.Format("2006-01-02 15:04")
 	}
-	r.Redump.External = cfg.RedumpDAT
+	r.Redump.External = cfg.Build.RedumpDAT
 
 	if p, err := exec.LookPath("ffmpeg"); err == nil {
 		r.FFmpeg = p
@@ -191,7 +191,16 @@ func Print(w io.Writer, r *Report) {
 	}
 	dir("System dir", r.SystemDir)
 	dir("Save dir", r.SaveDir)
-	dir("ROM dir", r.ROMDir)
+	if len(r.ROMDirs) == 0 {
+		dir("ROM dir", Dir{})
+	}
+	for i, d := range r.ROMDirs {
+		k := ""
+		if i == 0 {
+			k = "ROM dir"
+		}
+		dir(k, d)
+	}
 	if rd := r.RetroDECK; rd != nil {
 		if rd.ROMs != "" && rd.Saves != "" && (r.SaveDir.From == config.FromCache || r.SaveDir.From == config.FromTemp) {
 			line("", "run: %s for archives under %s (RetroDECK)", filepath.Join(rd.Saves, "<folder>"), rd.ROMs)
@@ -232,7 +241,7 @@ func Print(w io.Writer, r *Report) {
 	}
 	var dats []string
 	if r.Redump.External != "" {
-		dats = append(dats, "redump_dat "+r.Redump.External+" (in use)")
+		dats = append(dats, "build.redump_dat "+r.Redump.External+" (in use)")
 	}
 	if r.Redump.Cached != "" {
 		dats = append(dats, "cached "+r.Redump.Cached+", checked "+r.Redump.Checked)

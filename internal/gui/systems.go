@@ -234,13 +234,13 @@ func (a *app) drawSystemRow(f *systemFile, i int, x, y, w, h int32) {
 	default:
 		bx += a.badge(f.kind+", "+size(f.Size), c, bx, ty) + a.px(6)
 	}
-	if !f.Shell && f.Name == a.cfg.DefaultOS {
+	if !f.Shell && f.Name == a.cfg.Defaults.OS {
 		bx += a.badge("default OS", colAccent, bx, ty) + a.px(6)
 	}
-	if f.Shell && f.Name == a.cfg.DefaultShell {
+	if f.Shell && f.Name == a.cfg.Defaults.Shell {
 		bx += a.badge("default shell", colAccent, bx, ty) + a.px(6)
 	}
-	for k, v := range a.cfg.InstallOS {
+	for k, v := range a.cfg.Install.OS {
 		if !f.Shell && v == f.Name {
 			bx += a.badge("install image for "+filepath.Base(k), colShell, bx, ty) + a.px(6)
 		}
@@ -269,9 +269,9 @@ func (a *app) drawSystemRow(f *systemFile, i int, x, y, w, h int32) {
 	ax := rx - a.buttonW("Prepare…")
 	sf := *f
 	a.button("Prepare…", ax, by, btnNormal, func() { a.prepare(sf) })
-	k, cur, label := "default_os", a.cfg.DefaultOS, "Set as default OS"
+	k, cur, label := "defaults.os", a.cfg.Defaults.OS, "Set as default OS"
 	if f.Shell {
-		k, cur, label = "default_shell", a.cfg.DefaultShell, "Set as default shell"
+		k, cur, label = "defaults.shell", a.cfg.Defaults.Shell, "Set as default shell"
 	}
 	if cur == f.Name {
 		return
