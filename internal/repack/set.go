@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/DemiCloud/doszer/internal/build"
+	"github.com/DemiCloud/doszer/internal/chain"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/zipw"
 )
@@ -37,6 +38,10 @@ type SetOptions struct {
 	OS     *Change // applies only to an archive that boots an OS image
 	Shell  *Change // applies only to an archive that boots a shell
 	DryRun bool
+	// Retrofit gives an archive with no embedded manifest (one not built
+	// by doszer) a minimal one - its name and current parent - to change,
+	// instead of refusing it.
+	Retrofit bool
 
 	Provenance *build.Provenance
 }
@@ -79,17 +84,24 @@ func Set(opts SetOptions) (*SetResult, error) {
 		}
 		entries[name] = build.Entry{Source: rawSource(f), Modified: zipw.DOSModified(&f.FileHeader)}
 	}
-	if mf == nil {
-		return nil, fmt.Errorf("%s: no embedded %s (repack --manifest adds one)", opts.Path, manifest.FileName)
-	}
-	data, err := readEntry(mf)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %s: %w", opts.Path, manifest.FileName, err)
-	}
 	defaultName := strings.TrimSuffix(filepath.Base(opts.Path), filepath.Ext(opts.Path))
-	m, err := manifest.Parse(data, defaultName)
-	if err != nil {
-		return nil, fmt.Errorf("%s's embedded %s is invalid: %w", opts.Path, manifest.FileName, err)
+	var m *manifest.Manifest
+	switch {
+	case mf == nil && opts.Retrofit:
+		m = &manifest.Manifest{Format: manifest.FormatVersion, Name: defaultName}
+		if links := chain.Resolve(opts.Path).Links; len(links) > 1 {
+			m.Boot.Parent = links[1].Name
+		}
+	case mf == nil:
+		return nil, fmt.Errorf("%s: no embedded %s (repack --manifest adds one)", opts.Path, manifest.FileName)
+	default:
+		data, err := readEntry(mf)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %s: %w", opts.Path, manifest.FileName, err)
+		}
+		if m, err = manifest.Parse(data, defaultName); err != nil {
+			return nil, fmt.Errorf("%s's embedded %s is invalid: %w", opts.Path, manifest.FileName, err)
+		}
 	}
 
 	res := &SetResult{Before: m.Boot}

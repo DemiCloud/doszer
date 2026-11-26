@@ -45,7 +45,8 @@ func (a *app) menus() []menu {
 	}
 	view := []menuItem{
 		{label: "Games", keys: "Ctrl+1", fn: func() { a.show(pageGames) }},
-		{label: "Systems", keys: "Ctrl+2", fn: func() { a.show(pageSystems) }},
+		{label: "Parents", keys: "Ctrl+2", fn: func() { a.show(pageParents) }},
+		{label: "Systems", keys: "Ctrl+3", fn: func() { a.show(pageSystems) }},
 		{label: "-"},
 		{label: "List", keys: "Ctrl+L", fn: func() { a.show(pageGames); a.Grid(false) }},
 		{label: "Grid", keys: "Ctrl+G", fn: func() { a.show(pageGames); a.Grid(true) }},
@@ -155,6 +156,8 @@ func (a *app) drop(p string) {
 		}
 	case ext == ".dosz":
 		a.playFile(p)
+	case ext == ".dosp":
+		a.showDeps(p, strings.TrimSuffix(filepath.Base(p), ext))
 	case ext == ".cue" || ext == ".zip":
 		if a.add == nil {
 			a.openAddGame()
@@ -222,7 +225,7 @@ func (a *app) showShortcuts() {
 		{"Ctrl+N", "Import a disc", ""},
 		{"Ctrl+B", "Build a folder", ""},
 		{"Ctrl+,", "Settings", ""},
-		{"Ctrl+1, Ctrl+2", "Games, Systems", ""},
+		{"Ctrl+1 to Ctrl+3", "Games, Parents, Systems", ""},
 		{"Ctrl+L, Ctrl+G", "List, grid", ""},
 		{"F5", "Refresh", ""},
 		{"Ctrl+Q", "Quit", ""},

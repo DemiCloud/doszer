@@ -36,6 +36,7 @@ func TestScreenshot(t *testing.T) {
 		"search.png":   func(a *App) { a.Search("betrayal") },
 		"none.png":     func(a *App) { a.Search("zzzz") },
 		"systems.png":  func(a *App) { a.Show("systems") },
+		"parents.png":  func(a *App) { a.Show("parents") },
 		"settings.png": func(a *App) { a.Show("settings") },
 		"setup.png":    func(a *App) { a.OpenSetup() },
 		"menu.png":     func(a *App) { a.OpenGameMenu(0) },

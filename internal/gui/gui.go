@@ -61,6 +61,7 @@ type page int
 
 const (
 	pageGames page = iota
+	pageParents
 	pageSystems
 )
 
@@ -109,7 +110,9 @@ type app struct {
 	setupDone       bool   // Options.Setup ran
 	selectAfterScan string // an archive to select once the list is read again
 	mx, my          int32
-	scroll          [3]int32 // per page, pixels
+	scroll          [3]int32       // per page, pixels
+	parentList      []library.Game // the .dosp archives
+	parentSel       int
 
 	games
 	systems
@@ -465,6 +468,9 @@ func (a *app) key(sc int32, mod uint16) {
 		a.show(pageGames)
 		return
 	case ctrl && sc == sc2:
+		a.show(pageParents)
+		return
+	case ctrl && sc == sc3:
 		a.show(pageSystems)
 		return
 	case ctrl && sc == scComma:
@@ -489,6 +495,8 @@ func (a *app) key(sc int32, mod uint16) {
 		a.gamesKey(sc, ctrl)
 	case pageSystems:
 		a.systemsKey(sc)
+	case pageParents:
+		a.parentsKey(sc)
 	}
 }
 
@@ -506,6 +514,8 @@ func (a *app) contentH() int32 {
 	switch a.page {
 	case pageSystems:
 		return a.systemsH
+	case pageParents:
+		return a.parentsH()
 	}
 	return a.gamesH()
 }
@@ -538,6 +548,8 @@ func (a *app) render() {
 		a.drawGames()
 	case pageSystems:
 		a.drawSystems()
+	case pageParents:
+		a.drawParents()
 	}
 	a.popClip()
 	a.drawToolbar()
@@ -566,6 +578,7 @@ func (a *app) drawToolbar() {
 		x += a.button(label, x, y, style, func() { a.show(pg) }) + a.px(4)
 	}
 	tab("Games", pageGames)
+	tab("Parents", pageParents)
 	tab("Systems", pageSystems)
 	x += a.px(16)
 	a.fill(x-a.px(8), y+a.px(6), a.px(1), a.px(20), colLine)
@@ -574,6 +587,8 @@ func (a *app) drawToolbar() {
 		a.gamesToolbar(x, y)
 	case pageSystems:
 		a.systemsToolbar(x, y)
+	case pageParents:
+		a.parentsToolbar(x, y)
 	}
 }
 
@@ -592,6 +607,8 @@ func (a *app) drawStatus() {
 		left = a.gamesStatus()
 	case pageSystems:
 		left = a.systemsStatus()
+	case pageParents:
+		left = plural(len(a.parentList), "parent")
 	}
 	x := p + a.text(a.ellipsize(left, a.w/2, 12, false), p, ty, 12, false, colMuted)
 

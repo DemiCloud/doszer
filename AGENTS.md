@@ -184,6 +184,13 @@ README.md            doszer usage, configuration, install workflow
   struct tagged alike for json, yaml and toml. Help is hand-written,
   man-page brief, uppercase placeholders (`SOURCE`, `FILE`), shared option
   lines in `flag*` constants.
+- doszer is a packaging tool; its window's game list and player exist to
+  test archives. A window feature either shows what an archive holds
+  (manifest data, its icon, notes) or makes testing it easier (launching,
+  dependencies, verify, lint). Library features that need outside data
+  (genres, summaries, artwork from third-party sources) are out of
+  scope, unless they come into an archive through the packaging
+  pipeline.
 - Window text is terse, like help output: a title, a label or a short
   line, never a sentence explaining what the user can see for
   themselves ("Credits", not "doszer and the programs it embeds:").
@@ -299,6 +306,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `run` | Implemented; not yet played live |
 | `repack` | Implemented |
 | `manifest` | Implemented |
+| `convert` | Implemented; checked on the RetroDECK windows3x set (BOWEP.shell to .dosp, 13 legacy games re-pointed and given manifests) |
 | `set` | Implemented |
 | `verify` | Implemented |
 | `prepare` | Implemented. `shell`: a prepared real Win3.1 shell ran a program through RunExit and closed DOSBox Pure (headless probe). `os`: a prepared real Win98 image booted to Program Manager's generated Tools group (icons re-extracted) and ran a `WINDOWS.BAT` with PRESSKEY (headless probe); its shutdown didn't close the probe session, as with the hand-made reference image (Next steps) |

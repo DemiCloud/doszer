@@ -29,6 +29,7 @@ func (a *app) gameMenu(g *library.Game) {
 				a.runDoszer("Repack: "+name, []string{"repack", "--format", "plain", path, path}, rescan)
 			}, "Rebuilds the archive from its embedded manifest, in place.")
 		}},
+		{label: "Convert to parent…", fn: func() { a.convert(path, name, "dosp") }},
 		{label: "-"},
 		{label: "Advanced", sub: []menuItem{
 			{label: "Edit WINDOWS.BAT…", fn: func() { a.openEditorMode(g, editBat) }},
@@ -85,7 +86,7 @@ func (a *app) parentItems(g *library.Game) []menuItem {
 	for _, e := range entries {
 		n := e.Name()
 		ext := strings.ToLower(filepath.Ext(n))
-		if e.IsDir() || (ext != ".dosz" && ext != ".shell" && ext != ".zip") || n == filepath.Base(g.Path) {
+		if e.IsDir() || (ext != ".dosz" && ext != ".dosp" && ext != ".shell" && ext != ".zip") || n == filepath.Base(g.Path) {
 			continue
 		}
 		loops := false

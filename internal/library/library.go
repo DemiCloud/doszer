@@ -61,7 +61,13 @@ type Game struct {
 // which live in the system directory, aren't games; an archive that
 // can't be read is listed with Err set. A directory that can't be read
 // is an error; the others are still listed.
-func Scan(dirs []string, stats *Stats) ([]Game, error) {
+func Scan(dirs []string, stats *Stats) ([]Game, error) { return scan(dirs, stats, ".dosz") }
+
+// ScanParents lists the parent-only archives (.dosp, spec §5.3) under
+// each of dirs, as Scan lists games.
+func ScanParents(dirs []string) ([]Game, error) { return scan(dirs, nil, ".dosp") }
+
+func scan(dirs []string, stats *Stats, ext string) ([]Game, error) {
 	type found struct{ root, path string }
 	var paths []found
 	var errs []error
@@ -73,7 +79,7 @@ func Scan(dirs []string, stats *Stats) ([]Game, error) {
 				}
 				return nil // an unreadable subdirectory: skipped
 			}
-			if !d.IsDir() && strings.EqualFold(filepath.Ext(p), ".dosz") {
+			if !d.IsDir() && strings.EqualFold(filepath.Ext(p), ext) {
 				paths = append(paths, found{dir, p})
 			}
 			return nil

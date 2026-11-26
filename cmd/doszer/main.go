@@ -77,6 +77,7 @@ func init() {
 		{"run", "play an archive in DOSBox Pure", runRun},
 		{"repack", "rebuild an archive from its embedded manifest", runRepack},
 		{"manifest", "print an archive's embedded manifest", runManifest},
+		{"convert", "make an archive a parent (.dosp) or a game (.dosz)", runConvert},
 		{"set", "change archives' parent, OS image or shell in place", runSet},
 		{"prepare", "make a game-ready copy of a Windows shell or OS image", runPrepare},
 		{"info", "show what an archive or source directory holds", runInfo},
@@ -2332,5 +2333,39 @@ Options:
 		return fmt.Errorf("%s: %w", fs.Arg(0), err)
 	}
 	_, err = os.Stdout.Write(data)
+	return err
+}
+
+// runConvert implements `doszer convert`.
+func runConvert(args []string) error {
+	fs := newFlags("convert")
+	to := fs.String("to", "dosp", "")
+	dryRun := fs.BoolP("dry-run", "n", false, "")
+	const help = `doszer convert - make an archive a parent (.dosp) or a game (.dosz)
+
+Usage: doszer convert [options] FILE
+
+Options:
+      --to TYPE           dosp (a parent, files games share) or dosz (a game) (default: dosp)
+  -n, --dry-run           show the changes without making them
+` + flagFormatText + flagHelp
+	if ok, err := parse(fs, args, help, 1, 1); !ok {
+		return err
+	}
+	prov, err := provenance()
+	if err != nil {
+		return err
+	}
+	res, err := repack.Convert(fs.Arg(0), "."+strings.TrimPrefix(strings.ToLower(*to), "."), *dryRun, prov)
+	if res != nil {
+		verb := "Renamed"
+		if *dryRun {
+			verb = "Dry run: would rename"
+		}
+		fmt.Printf("%s %s to %s\n", verb, filepath.Base(res.From), filepath.Base(res.To))
+		for _, c := range res.Children {
+			fmt.Printf("  parent of %s\n", filepath.Base(c))
+		}
+	}
 	return err
 }

@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"github.com/DemiCloud/doszer/internal/repack"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,6 +41,7 @@ type addGame struct {
 	useFolder   bool
 	folder      field
 	hasManifest bool // it has a DOSZ.TOML: init isn't run
+	kind        int  // Build a folder: 0 a game (.dosz), 1 a parent (.dosp), files games share
 
 	// Once installed: choosing the program the game starts with.
 	plan       *addPlan
@@ -239,7 +241,7 @@ func (a *app) addGameRun() {
 		}
 		src = filepath.Join(dir, name)
 	}
-	out := filepath.Join(g.dests[g.dest], name+".dosz")
+	out := filepath.Join(g.dests[g.dest], name+g.ext())
 
 	var steps []step
 	switch {
@@ -341,7 +343,11 @@ func (a *app) added(p *addPlan) func(error) {
 				os.RemoveAll(p.src)
 			}
 		}
-		a.selectAfterScan = p.out
+		if strings.EqualFold(filepath.Ext(p.out), repack.ExtParent) {
+			a.show(pageParents)
+		} else {
+			a.selectAfterScan = p.out
+		}
 		a.rescan()
 		a.say("Built "+filepath.Base(p.out), false)
 	}
@@ -723,7 +729,13 @@ func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {
 	dests := make([]string, len(g.dests))
 	copy(dests, g.dests)
 	dropdown(dests, &g.dest)
-	out := filepath.Join(g.dests[g.dest], safeName(g.name.text)+".dosz")
+	if g.useFolder {
+		row("Type")
+		dropdown([]string{"Game (.dosz)", "Parent (.dosp)"}, &g.kind)
+		y += a.px(4)
+	}
+
+	out := filepath.Join(g.dests[g.dest], safeName(g.name.text)+g.ext())
 	if _, err := os.Stat(out); err == nil && safeName(g.name.text) != "" {
 		note("Replaces "+filepath.Base(out), colShell)
 	} else {
@@ -813,4 +825,12 @@ func hasInstalledPrograms(dir string) bool {
 		}
 	}
 	return false
+}
+
+// ext is the archive's extension: a parent's .dosp or a game's .dosz.
+func (g *addGame) ext() string {
+	if g.kind == 1 {
+		return repack.ExtParent
+	}
+	return repack.ExtGame
 }

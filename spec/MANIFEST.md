@@ -102,6 +102,12 @@ ignores it otherwise. `disc` MAY be used alone.
 `skip` depends on emulation timing. A manifest that sets `skip` SHOULD record
 the frontend options it was measured with in `notes`.
 
+An archive that only holds files other archives share (a shell, a common
+library), and is not meant to be played on its own, SHOULD be named with
+the extension `.dosp`, so that a frontend listing `.dosz` files does not
+offer it as a game. DOSBox Pure resolves a parent by its full file name,
+whatever the extension.
+
 ### 5.4 `[layout]`
 
 | Key | Type | Meaning |

@@ -34,8 +34,9 @@ func (s sortMode) String() string {
 }
 
 type scanResult struct {
-	list []library.Game
-	err  error
+	list    []library.Game
+	parents []library.Game // the .dosp archives
+	err     error
 }
 
 type runResult struct {
@@ -86,13 +87,13 @@ func (a *app) Grid(on bool) { a.grid = on; a.reveal() }
 // Filter shows only the games booting system label (Options.Setup).
 func (a *app) Filter(label string) { a.filter = label; a.refilter(a.keepPath()) }
 
-// Show switches to a page: "games", "systems" or "settings" (Options.Setup).
+// Show switches to a page: "games", "parents", "systems" or "settings" (Options.Setup).
 func (a *app) Show(name string) {
 	if name == "settings" {
 		a.openSettings()
 		return
 	}
-	a.show(map[string]page{"games": pageGames, "systems": pageSystems}[name])
+	a.show(map[string]page{"games": pageGames, "parents": pageParents, "systems": pageSystems}[name])
 }
 
 // rescan lists the ROM directory in the background.
@@ -108,7 +109,8 @@ func (a *app) rescan() {
 	dirs, stats := config.DirPaths(a.romDirs), a.stats
 	go func() {
 		list, err := library.Scan(dirs, stats)
-		a.scanCh <- scanResult{list, err}
+		parents, _ := library.ScanParents(dirs)
+		a.scanCh <- scanResult{list, parents, err}
 	}()
 }
 
@@ -123,6 +125,7 @@ func (a *app) scanned(r scanResult) {
 	}
 	a.icons = map[string]*texture{}
 	a.list = r.list
+	a.parentList = r.parents
 	if a.list == nil {
 		a.list = []library.Game{}
 	}

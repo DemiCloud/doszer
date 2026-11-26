@@ -156,7 +156,7 @@ func (c *Chain) Locate(systemDir string) {
 	}
 }
 
-// UsedBy returns the archives under dir (.dosz, .shell, .zip) whose
+// UsedBy returns the archives under dir (.dosz, .dosp, .shell, .zip) whose
 // chain includes archive as a parent, at any remove.
 func UsedBy(dir, archive string) []string {
 	abs, _ := filepath.Abs(archive)
@@ -166,7 +166,7 @@ func UsedBy(dir, archive string) []string {
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(p))
-		if ext != ".dosz" && ext != ".shell" && ext != ".zip" {
+		if ext != ".dosz" && ext != ".dosp" && ext != ".shell" && ext != ".zip" {
 			return nil
 		}
 		if pa, _ := filepath.Abs(p); strings.EqualFold(pa, abs) {

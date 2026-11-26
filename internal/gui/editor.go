@@ -106,7 +106,7 @@ func (a *app) openEditorMode(g *library.Game, mode int) {
 	for _, ent := range entries {
 		n := ent.Name()
 		ext := strings.ToLower(filepath.Ext(n))
-		if ent.IsDir() || (ext != ".dosz" && ext != ".shell" && ext != ".zip") || n == filepath.Base(g.Path) {
+		if ent.IsDir() || (ext != ".dosz" && ext != ".dosp" && ext != ".shell" && ext != ".zip") || n == filepath.Base(g.Path) {
 			continue
 		}
 		loops := false

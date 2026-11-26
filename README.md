@@ -53,6 +53,7 @@ doszer start   SOURCE [PROGRAM] [-f] [-n]
 doszer run     FILE.dosz [--option KEY=VALUE...] [--system-dir DIR] [--save-dir DIR]
 doszer FILE.dosz
 doszer manifest FILE.dosz
+doszer convert FILE [--to dosp|dosz] [-n]
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [--add PATH=FILE...] [-n] [--strict] [--ogg-quality N]
 doszer set     FILE.dosz... [--parent [OLD:]NEW | --no-parent] [--os [OLD:]NEW] [--shell [OLD:]NEW] [-n]
 doszer verify  FILE.dosz... | --all [DIR...]
@@ -813,6 +814,16 @@ with" still takes precedence. Explorer shows the one doszer icon for
 every archive: an archive's own `DOSZ.ICO` would need a shell extension
 DLL, which doszer doesn't ship.
 
+## Parents
+
+An archive that only holds files games share - a shell, a common
+library, like a Windows 3.x games pack the games sit on - is a parent
+(specification §5.3), named `.dosp` so frontends listing `.dosz` don't
+offer it as a game; doszer's window lists them on their own page.
+`doszer convert FILE` renames an archive to `.dosp` (`--to dosz` back)
+and re-points the archives beside it that use it, adding a minimal
+manifest to one built without doszer.
+
 ## Dependencies
 
 `doszer deps FILE...` shows what an archive needs to run, as DOSBox Pure
@@ -844,13 +855,13 @@ action:
 | Menu | |
 |---|---|
 | File | Open (an archive, to play), Quit |
-| View | Games, Systems; list or grid, sort, refresh |
+| View | Games, Parents, Systems; list or grid, sort, refresh |
 | Build | Import a disc, Build a folder, Repack an archive, Prepare a shell or OS image |
 | Tools | Settings, Verify (an archive, or all games), Environment |
 | Help | Keyboard shortcuts, Credits (doszer and what it embeds, linked), About (right-click the icon to save it) |
 
 A file dropped on the window plays (`.dosz`), starts an import (`.cue`,
-`.zip`) or a build (a folder). Below the menu bar, two pages:
+`.zip`) or a build (a folder). Below the menu bar, three pages:
 
 - **Games**: every `.dosz` under the ROM directory, at any depth, as a
   list or grid: each archive's icon (`DOSZ.ICO`, else its initial),
@@ -871,6 +882,11 @@ A file dropped on the window plays (`.dosz`), starts an import (`.cue`,
   (Esc clears); arrows, Page Up/Down, Home and End move; Enter or a
   double click plays the game with `doszer run` in its own process, one
   at a time.
+- **Parents**: every `.dosp` under the ROM directory: icon, name,
+  folder, what it boots and the games beside it that use it. Its menu
+  shows dependencies, verifies, or converts it back to a game (`doszer
+  convert --to dosz`); a game's Tools > Convert to parent does the
+  reverse.
 - **Systems**: the OS images and shells in the system directory, with
   their kind (fixed or dynamic VHD, raw image, shell), size, which is
   the default, and which games boot each; and the ones games boot that
@@ -886,7 +902,7 @@ Tools > Settings (Ctrl+,) is a dialog:
   defaults, shown greyed in them.
 
 A right click on a game opens its menu, submenus cascading: Play, Edit,
-Tools (Info, Dependencies, Verify, Repack, Advanced: edit WINDOWS.BAT or
+Tools (Info, Dependencies, Verify, Repack, Convert to parent, Advanced: edit WINDOWS.BAT or
 DOSZ.TOML as text), Change (Parent, OS image or Shell, each listing its
 choices), Show in folder.
 Every action is the doszer command that does it, run in its own process
@@ -944,7 +960,8 @@ Windows), from which it runs off its disc.
 Build > Build a folder (Ctrl+B) does the same for files already on disk
 (a game someone installed, a disc's files), built where they are: `doszer
 init` only if the folder has no `DOSZ.TOML`, an optional install, then
-`doszer build` into a ROM folder. Repack an archive and Prepare a shell
+`doszer build` into a ROM folder, as a game (`.dosz`) or a parent
+(`.dosp`). Repack an archive and Prepare a shell
 or OS image run `doszer repack` (in place) and `doszer prepare`.
 
 ### First run
