@@ -36,6 +36,16 @@ func TestScreenshot(t *testing.T) {
 		"settings.png": func(a *App) { a.Show("settings") },
 		"setup.png":    func(a *App) { a.OpenSetup() },
 		"menu.png":     func(a *App) { a.OpenGameMenu(0) },
+		"filter.png":   func(a *App) { a.Filter("Win31 (shell)") },
+		"prepare.png": func(a *App) {
+			a.Show("systems")
+			for _, f := range a.files {
+				if !f.missing && !f.Shell {
+					a.prepare(f)
+					return
+				}
+			}
+		},
 	}
 	exe := os.Getenv("DOSZER_GUI_EXE") // a doszer binary, for the shots that run a command
 	if exe != "" {

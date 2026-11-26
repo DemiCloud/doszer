@@ -16,7 +16,8 @@ type dialog struct {
 	lines   []string // the message, or the command line above the output
 	buttons []dialogButton
 	job     *job
-	scroll  int // output lines scrolled up from the end
+	scroll  int    // output lines scrolled up from the end
+	field   *field // an input below the lines (a file name), or nil
 }
 
 type dialogButton struct {
@@ -201,6 +202,9 @@ func (a *app) drawDialog() {
 	lh := a.lineHeight(13, false) + a.px(4)
 	mono := a.lineHeight(12, false) + a.px(3)
 	h := p*2 + a.lineHeight(17, true) + a.px(12) + int32(len(d.lines))*lh + a.px(48)
+	if d.field != nil {
+		h += a.px(44)
+	}
 	var out []string
 	if d.job != nil {
 		out = d.job.lines()
@@ -219,6 +223,10 @@ func (a *app) drawDialog() {
 		}
 		a.text(a.ellipsize(l, w-2*p, 13, false), x+p, ty, 13, false, c)
 		ty += lh
+	}
+
+	if d.field != nil {
+		a.drawField(d.field, x+p, ty+a.px(4), w-2*p)
 	}
 
 	if d.job != nil {

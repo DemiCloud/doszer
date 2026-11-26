@@ -51,6 +51,7 @@ type games struct {
 	scanCh   chan scanResult
 
 	search field
+	filter string // only games whose systemLabel is this, "" for all
 	sort   sortMode
 	grid   bool
 	view   []int // indices into list: filtered and sorted
@@ -78,6 +79,9 @@ func (a *app) Search(q string) { a.search.set(q); a.refilter(a.keepPath()) }
 
 // Grid switches to the grid view (Options.Setup).
 func (a *app) Grid(on bool) { a.grid = on; a.reveal() }
+
+// Filter shows only the games booting system label (Options.Setup).
+func (a *app) Filter(label string) { a.filter = label; a.refilter(a.keepPath()) }
 
 // Show switches to a page: "games", "systems" or "settings" (Options.Setup).
 func (a *app) Show(name string) {
@@ -125,6 +129,9 @@ func (a *app) refilter(keep string) {
 	q := strings.ToLower(strings.TrimSpace(a.search.text))
 	a.view = a.view[:0]
 	for i, g := range a.list {
+		if a.filter != "" && !a.matchesFilter(&g) {
+			continue
+		}
 		if q == "" || strings.Contains(strings.ToLower(g.Name), q) || strings.Contains(strings.ToLower(g.Rel), q) || strings.Contains(strings.ToLower(g.System), q) {
 			a.view = append(a.view, i)
 		}
@@ -298,7 +305,46 @@ func (a *app) gamesToolbar(x, y int32) {
 			a.refilter(a.keepPath())
 		})
 	}) + a.px(4)
-	a.button("Refresh", x, y, btnNormal, a.rescan)
+	fx := x
+	flabel := "System: All ▼"
+	if a.filter != "" {
+		flabel = "System: " + a.filter + " ▼"
+	}
+	x += a.button(flabel, x, y, btnNormal, func() {
+		items, cur := a.filters(), 0
+		for i, it := range items {
+			if it == a.filter {
+				cur = i
+			}
+		}
+		items[0] = "All"
+		a.openPopup(fx, y, a.buttonW(flabel), items, cur, func(i int) {
+			a.filter = ""
+			if i > 0 {
+				a.filter = items[i]
+			}
+			a.refilter(a.keepPath())
+		})
+	}) + a.px(4)
+	tx := x
+	a.button("Tools ▼", x, y, btnNormal, func() {
+		items := []string{"Refresh", "Verify all games"}
+		if canOpen() && a.romDir.Path != "" {
+			items = append(items, "Open the ROM folder")
+		}
+		a.openPopup(tx, y, a.buttonW("Tools ▼"), items, -1, func(i int) {
+			switch i {
+			case 0:
+				a.rescan()
+			case 1:
+				if a.romDir.Path != "" {
+					a.runDoszer("Verify all games", []string{"verify", "--format", "plain", "--all", a.romDir.Path}, nil)
+				}
+			case 2:
+				a.open(a.romDir.Path)
+			}
+		})
+	})
 
 	fw := min(a.px(320), a.w/4)
 	a.drawField(&a.search, a.w-a.pad()-fw, y, fw)
@@ -460,8 +506,13 @@ func (a *app) chip(g *library.Game, x, y int32) {
 		return
 	}
 	x += a.badge(label, c, x, y) + a.px(6)
-	if g.Boot != "" && a.files != nil && !a.hasSystem(g.Boot, g.Kind == library.KindShell) {
+	switch {
+	case g.Broken != "":
+		a.badge(a.ellipsize(g.Broken, a.px(360), 12, false), colError, x, y)
+	case g.Boot != "" && a.files != nil && !a.hasSystem(g.Boot, g.Kind == library.KindShell):
 		a.badge("not in the system folder", colError, x, y)
+	case len(g.Parents) > 0:
+		a.badge("over "+strings.Join(g.Parents, " > "), colMuted, x, y)
 	}
 }
 
@@ -611,4 +662,48 @@ func (t *tailBuffer) lastError() string {
 		}
 	}
 	return strings.TrimSpace(lines[len(lines)-1])
+}
+
+// Filters beside a system's label (systemLabel).
+const (
+	filterMissing = "Missing its system"
+	filterBroken  = "Broken parent chain"
+)
+
+// filters lists the System filter's choices: "" (all), every system the
+// games boot, and the problems.
+func (a *app) filters() []string {
+	seen := map[string]bool{}
+	var labels []string
+	missing, broken := false, false
+	for i := range a.list {
+		g := &a.list[i]
+		l, _ := kindLabel(g)
+		if !seen[l] {
+			seen[l] = true
+			labels = append(labels, l)
+		}
+		missing = missing || g.Boot != "" && a.files != nil && !a.hasSystem(g.Boot, g.Kind == library.KindShell)
+		broken = broken || g.Broken != ""
+	}
+	sort.Strings(labels)
+	out := append([]string{""}, labels...)
+	if missing {
+		out = append(out, filterMissing)
+	}
+	if broken {
+		out = append(out, filterBroken)
+	}
+	return out
+}
+
+func (a *app) matchesFilter(g *library.Game) bool {
+	switch a.filter {
+	case filterMissing:
+		return g.Boot != "" && a.files != nil && !a.hasSystem(g.Boot, g.Kind == library.KindShell)
+	case filterBroken:
+		return g.Broken != ""
+	}
+	l, _ := kindLabel(g)
+	return l == a.filter
 }

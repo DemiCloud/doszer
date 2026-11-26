@@ -807,14 +807,20 @@ desktop menu). It works the same on Windows and Linux. Three pages:
   list or grid: each archive's icon (`DOSZ.ICO`, else its initial),
   name, folder, how it boots (DOS, a Windows 3.x shell, an OS image,
   flagged when the system folder lacks it), when it was last played,
-  for how long, and its size. Typing filters by name, folder or system
+  for how long, and its size; a game over parent archives shows its
+  chain, and one whose chain is broken says why. The System menu shows
+  only the games booting one system (DOS, a shell, an OS image), missing
+  their system, or with a broken chain; Tools verifies every game
+  (`doszer verify --all`). Typing filters by name, folder or system
   (Esc clears); arrows, Page Up/Down, Home and End move; Enter or a
   double click plays the game with `doszer run` in its own process, one
   at a time. Ctrl+L and Ctrl+G switch between list and grid.
 - **Systems**: the OS images and shells in the system directory, with
   their kind (fixed or dynamic VHD, raw image, shell), size, which is
   the default, and which games boot each; and the ones games boot that
-  the folder hasn't. The selected one can be made the default.
+  the folder hasn't. The selected one can be made the default, or
+  prepared: `doszer prepare` makes a game-ready copy beside it, under a
+  name you choose, the original untouched.
 - **Settings**: the folders (typed, or picked with Browse: Windows'
   folder browser, zenity or kdialog on Linux), the default OS image and
   shell, Ogg quality and the Redump datfile. Save writes the changes to

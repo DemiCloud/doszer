@@ -333,7 +333,7 @@ func (a *app) event(e *sdl.Event) {
 			a.measure()
 		}
 	case sdl.EventTextInput:
-		if a.focus != nil && a.popup == nil {
+		if a.focus != nil && a.popup == nil && (a.dialog == nil || a.focus == a.dialog.field) {
 			a.focus.insert(e.Text())
 		}
 	case sdl.EventKeyDown:
@@ -369,6 +369,9 @@ func (a *app) key(sc int32, mod uint16) {
 		return
 	}
 	if a.dialog != nil {
+		if f := a.dialog.field; f != nil && a.focus == f && sc != scEscape && f.key(sc, ctrl) {
+			return
+		}
 		a.dialogKey(sc)
 		return
 	}

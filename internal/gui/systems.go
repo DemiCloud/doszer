@@ -265,6 +265,10 @@ func (a *app) drawSystemRow(f *systemFile, i int, x, y, w, h int32) {
 	if !sel || f.missing {
 		return
 	}
+	by := y + h - a.px(40)
+	ax := rx - a.buttonW("Prepare…")
+	sf := *f
+	a.button("Prepare…", ax, by, btnNormal, func() { a.prepare(sf) })
 	k, cur, label := "default_os", a.cfg.DefaultOS, "Set as default OS"
 	if f.Shell {
 		k, cur, label = "default_shell", a.cfg.DefaultShell, "Set as default shell"
@@ -272,11 +276,47 @@ func (a *app) drawSystemRow(f *systemFile, i int, x, y, w, h int32) {
 	if cur == f.Name {
 		return
 	}
-	bw := a.buttonW(label)
+	ax -= a.buttonW(label) + a.px(8)
 	name := f.Name
-	a.button(label, rx-bw, y+h-a.px(40), btnAccent, func() {
+	a.button(label, ax, by, btnAccent, func() {
 		a.whenSetUp(func() { a.saveKey(k, name) })
 	})
+}
+
+// prepare asks for an output name, then runs `doszer prepare` on a shell
+// or OS image: a game-ready copy beside it, the original untouched.
+func (a *app) prepare(f systemFile) {
+	in := filepath.Join(a.sysDir.Path, filepath.FromSlash(f.File))
+	ext := filepath.Ext(in)
+	out := &field{}
+	out.set(strings.TrimSuffix(filepath.Base(in), ext) + " (games)" + ext)
+	kind, what := "os", "OS image"
+	lines := []string{
+		"Makes a copy of " + filepath.Base(in) + " that runs a game's WINDOWS.BAT at",
+		"startup and shuts Windows down after it (specification §12). The original is",
+		"left as it is. The copy's name, in the same folder:",
+	}
+	if f.Shell {
+		kind, what = "shell", "shell"
+		lines = []string{
+			"Makes a copy of " + filepath.Base(in) + " that runs a game's program and closes",
+			"DOSBox Pure after it. The original is left as it is. The copy's name, in the same folder:",
+		}
+	}
+	d := &dialog{title: "Prepare a game-ready " + what, lines: lines, field: out}
+	run := func() {
+		name := strings.TrimSpace(out.text)
+		if name == "" || strings.ContainsAny(name, `/\`) {
+			a.say("Prepare: a file name, without folders", true)
+			return
+		}
+		a.runDoszer("Prepare: "+name, []string{"prepare", kind, "--format", "plain", in, filepath.Join(filepath.Dir(in), name)}, func(err error) {
+			a.rescanSystems()
+		})
+	}
+	out.onEnter = func() { a.dialog = nil; run() }
+	d.buttons = []dialogButton{{label: "Cancel"}, {label: "Prepare", style: btnAccent, fn: run}}
+	a.dialog, a.focus = d, out
 }
 
 // saveKey sets one setting in the user config file and reloads.
