@@ -195,14 +195,17 @@ func ROMDirsOf(cfg Config, flag string) []Dir {
 }
 
 // SourcesDirOf returns where the window keeps the sources it dumps:
-// paths.sources, else ./sources or sources/ beside the executable, else,
-// once set up, DataDir's sources folder. Until then none: the window
+// paths.sources, else ./sources or sources/ beside the executable (always,
+// when portable), else, once set up, DataDir's sources folder. Until then none: the window
 // dumps to a temporary folder, removed after the build ("" with From
 // FromTemp).
 func SourcesDirOf(cfg Config) Dir {
 	d := dirOf("", "", cfg.Paths.Sources, "paths.sources", func() Dir { return findDir("sources", "") })
 	if d.Path != "" {
 		return d
+	}
+	if Portable() { // everything beside doszer, made when first used
+		return Dir{Path: filepath.Join(ExeDir(), "sources"), From: FromExe}
 	}
 	if !Configured() {
 		return Dir{From: FromTemp}

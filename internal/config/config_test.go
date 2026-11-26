@@ -337,3 +337,24 @@ func TestSetupUser(t *testing.T) {
 		t.Errorf("path = %s, want %s", p, xdg)
 	}
 }
+
+func TestSourcesDirOf(t *testing.T) {
+	isolate(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	if d := SourcesDirOf(Default()); d.Path != "" || d.From != FromTemp {
+		t.Errorf("not set up: %+v, want a temporary folder", d)
+	}
+	exeDir := t.TempDir()
+	executable = func() (string, error) { return filepath.Join(exeDir, "doszer"), nil }
+	t.Cleanup(func() { executable = os.Executable })
+	writeFile(t, filepath.Join(exeDir, FileName), "")
+	if d := SourcesDirOf(Default()); d.Path != filepath.Join(exeDir, "sources") {
+		t.Errorf("portable, no sources folder yet: %+v, want beside doszer", d)
+	}
+	cfg := Default()
+	cfg.Paths.Sources = "/s"
+	if d := SourcesDirOf(cfg); d.Path != "/s" {
+		t.Errorf("set: %+v", d)
+	}
+}
