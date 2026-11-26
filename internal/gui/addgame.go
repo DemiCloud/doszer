@@ -474,7 +474,12 @@ func (a *app) addGameSource(g *addGame, x, y, w int32) int32 {
 		a.drawField(&g.folder, x, y, w-bw)
 		if bw > 0 {
 			a.button("Browse…", x+w-bw+a.px(8), y, btnNormal, func() {
-				if p, ok := pickFolder("game's", g.folder.text); ok {
+				// From the sources folder, where imported discs are.
+				start := strings.TrimSpace(g.folder.text)
+				if start == "" {
+					start = config.SourcesDirOf(a.cfg).Path
+				}
+				if p, ok := pickFolder("game's", start); ok {
 					g.folder.set(p)
 				}
 			})
