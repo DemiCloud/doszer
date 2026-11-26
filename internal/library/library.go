@@ -20,6 +20,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/chain"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/platform"
 )
 
 // Kind is how an archive boots, for showing.
@@ -34,18 +35,19 @@ const (
 
 // Game is one archive.
 type Game struct {
-	Path     string    // absolute
-	Rel      string    // relative to the ROM directory, slash-separated
-	Name     string    // the manifest's, else the file name without extension
-	Kind     Kind      //
-	System   string    // the shell or OS image it boots, without directories ("Windows 98"), or ""
-	Boot     string    // the same as boot.shell or boot.os has it ("dosbox_pure/Windows 98"), or ""
-	Size     int64     //
-	Modified time.Time //
-	Icon     []byte    // DOSZ.ICO, or nil
-	Err      string    // why the archive couldn't be read, if it couldn't
-	Parents  []string  // its parent chain, nearest first, by file name
-	Broken   string    // why the parent chain can't be followed, or ""
+	Path     string        // absolute
+	Rel      string        // relative to the ROM directory, slash-separated
+	Name     string        // the manifest's, else the file name without extension
+	Kind     Kind          //
+	System   string        // the shell or OS image it boots, without directories ("Windows 98"), or ""
+	Boot     string        // the same as boot.shell or boot.os has it ("dosbox_pure/Windows 98"), or ""
+	Size     int64         //
+	Modified time.Time     //
+	Icon     []byte        // DOSZ.ICO, or nil
+	Err      string        // why the archive couldn't be read, if it couldn't
+	Parents  []string      // its parent chain, nearest first, by file name
+	Broken   string        // why the parent chain can't be followed, or ""
+	Need     platform.Need // what its programs need (its own, else its parents')
 
 	LastPlayed time.Time
 	PlayTime   time.Duration
@@ -134,6 +136,18 @@ func read(dir, p string) Game {
 				g.Broken = l.Name + ": " + l.Err
 			}
 			break
+		}
+	}
+	g.Need = platform.Needs(programs(zr.File))
+	if g.Need.Game.Platform == platform.NotProgram {
+		for _, l := range c.Links[1:] {
+			if pz, err := zip.OpenReader(l.Path); err == nil {
+				g.Need = platform.Needs(programs(pz.File))
+				pz.Close()
+			}
+			if g.Need.Game.Platform != platform.NotProgram {
+				break
+			}
 		}
 	}
 	for _, f := range zr.File {
@@ -254,4 +268,23 @@ func (s *Stats) Add(archive string, start time.Time, d time.Duration) error {
 		return err
 	}
 	return os.Rename(tmp, s.path)
+}
+
+// programs classifies an archive's programs by their headers.
+func programs(files []*zip.File) []platform.Program {
+	var out []platform.Program
+	for _, f := range files {
+		if !platform.IsProgramName(f.Name) {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			continue
+		}
+		if t := platform.Classify(f.Name, rc); t.Platform != platform.NotProgram {
+			out = append(out, platform.Program{Path: f.Name, Target: t})
+		}
+		rc.Close()
+	}
+	return out
 }

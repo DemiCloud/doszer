@@ -10,12 +10,14 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/DemiCloud/doszer/internal/builtin"
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/libretro"
+	"github.com/DemiCloud/doszer/internal/platform"
 )
 
 // Env is where DOSBox Pure finds OS images and shells, and keeps saves.
@@ -209,4 +211,49 @@ func FindSystemFile(systemDir string, shell bool, names []string) string {
 		}
 	}
 	return ""
+}
+
+// osName reads the Windows version in a shell's or OS image's name.
+var osName = regexp.MustCompile(`(?i)(?:^|[^0-9])(3\.?11|3\.?1|3\.?0|95|98|me)(?:[^0-9]|$)`)
+
+// GuessOS reads what a shell or OS image is from its name, as init's name
+// lists do (ShellNames, Win95Names, Win98Names): "Windows 98 (games)" is
+// Windows 98, "WFW311" Windows 3.11. A shell is Windows 3.x unless its
+// name says otherwise. NotProgram when the name doesn't tell.
+func GuessOS(f SystemFile) platform.Target {
+	base := path.Base(f.Name)
+	m := osName.FindStringSubmatch(base)
+	switch {
+	case m == nil && f.Shell:
+		return platform.Target{Platform: platform.Win16, Major: 3, Minor: 10}
+	case m == nil:
+		return platform.Target{}
+	}
+	switch v := strings.ToLower(strings.ReplaceAll(m[1], ".", "")); v {
+	case "95":
+		return platform.Target{Platform: platform.Win32, Major: 4, Minor: 0}
+	case "98":
+		return platform.Target{Platform: platform.Win32, Major: 4, Minor: 10}
+	case "me":
+		return platform.Target{Platform: platform.Win32, Major: 4, Minor: 90}
+	case "30":
+		return platform.Target{Platform: platform.Win16, Major: 3, Minor: 0}
+	default: // 31, 311
+		return platform.Target{Platform: platform.Win16, Major: 3, Minor: 10}
+	}
+}
+
+// Satisfies reports whether a system that is have runs programs that need
+// need: Windows 9x runs Windows 3.x programs, a newer Windows an older
+// one's, and every Windows DOS programs.
+func Satisfies(have, need platform.Target) bool {
+	switch {
+	case need.Platform == platform.DOS || need.Platform == platform.NotProgram:
+		return true
+	case have.Platform == platform.Win32 && need.Platform == platform.Win16:
+		return true
+	case have.Platform != need.Platform:
+		return false
+	}
+	return !have.Less(need)
 }

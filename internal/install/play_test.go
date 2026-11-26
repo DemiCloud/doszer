@@ -239,3 +239,33 @@ func TestPlayKeepsNothingUnconfigured(t *testing.T) {
 		t.Errorf("save not kept: %v", err)
 	}
 }
+
+func TestGuessOS(t *testing.T) {
+	tests := []struct {
+		name  string
+		shell bool
+		want  string
+	}{
+		{"dosbox_pure/Windows 98 (games)", false, "Windows 98"},
+		{"Win98SE", false, "Windows 98"},
+		{"dosbox_pure/Win95", false, "Windows 95"},
+		{"Win2098", false, ""}, // digits running into digits aren't a version
+		{"Windows 95", false, "Windows 95"},
+		{"Windows ME", false, "Windows ME"},
+		{"dosbox_pure/Win31", true, "Windows 3.1"},
+		{"WFW311", true, "Windows 3.1"},
+		{"Windows 3.0", true, "Windows 3.0"},
+		{"My Shell", true, "Windows 3.1"},
+		{"Custom", false, ""},
+	}
+	for _, tt := range tests {
+		got := GuessOS(SystemFile{Name: tt.name, Shell: tt.shell})
+		s := ""
+		if got.Platform != 0 {
+			s = got.String()
+		}
+		if s != tt.want {
+			t.Errorf("GuessOS(%q) = %q, want %q", tt.name, s, tt.want)
+		}
+	}
+}

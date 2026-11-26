@@ -13,7 +13,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/DemiCloud/doszer/internal/icon"
+	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/library"
+	"github.com/DemiCloud/doszer/internal/platform"
 )
 
 type sortMode int
@@ -506,6 +508,13 @@ func (a *app) chip(g *library.Game, x, y int32) {
 		return
 	}
 	x += a.badge(label, c, x, y) + a.px(6)
+	if need, bad := a.needBadge(g); need != "" {
+		nc := colMuted
+		if bad {
+			nc = colError
+		}
+		x += a.badge(need, nc, x, y) + a.px(6)
+	}
 	switch {
 	case g.Broken != "":
 		a.badge(a.ellipsize(g.Broken, a.px(360), 12, false), colError, x, y)
@@ -664,7 +673,7 @@ func (t *tailBuffer) lastError() string {
 	return strings.TrimSpace(lines[len(lines)-1])
 }
 
-// Filters beside a system's label (systemLabel).
+// Filters beside a system's label (kindLabel) and a need (needLabel).
 const (
 	filterMissing = "Missing its system"
 	filterBroken  = "Broken parent chain"
@@ -682,6 +691,10 @@ func (a *app) filters() []string {
 		if !seen[l] {
 			seen[l] = true
 			labels = append(labels, l)
+		}
+		if n := needLabel(g); n != "" && !seen[n] {
+			seen[n] = true
+			labels = append(labels, n)
 		}
 		missing = missing || g.Boot != "" && a.files != nil && !a.hasSystem(g.Boot, g.Kind == library.KindShell)
 		broken = broken || g.Broken != ""
@@ -704,6 +717,52 @@ func (a *app) matchesFilter(g *library.Game) bool {
 	case filterBroken:
 		return g.Broken != ""
 	}
+	if strings.HasPrefix(a.filter, "Needs ") {
+		return needLabel(g) == a.filter
+	}
 	l, _ := kindLabel(g)
 	return l == a.filter
+}
+
+// needLabel is what a game's programs need at least, "" for DOS or none.
+func needLabel(g *library.Game) string {
+	switch g.Need.Game.Platform {
+	case platform.Win16, platform.Win32:
+		if g.Need.DOS {
+			return "Needs DOS or " + g.Need.Game.String()
+		}
+		return "Needs " + g.Need.Game.String()
+	}
+	return ""
+}
+
+// needBadge is a game's need, and whether it can't be met here: no shell
+// or image in the system directory new enough (judged by their names,
+// install.GuessOS; an image whose name doesn't tell may be one), or the
+// one it boots is too old.
+func (a *app) needBadge(g *library.Game) (string, bool) {
+	label := needLabel(g)
+	if label == "" || g.Need.DOS || a.files == nil {
+		return label, false
+	}
+	need := g.Need.Game
+	if g.Boot != "" {
+		for _, f := range a.files {
+			if !f.missing && f.Name == g.Boot && f.Shell == (g.Kind == library.KindShell) {
+				if have := install.GuessOS(f.SystemFile); have.Platform != platform.NotProgram && !install.Satisfies(have, need) {
+					return label + ", boots " + have.String(), true
+				}
+			}
+		}
+	}
+	for _, f := range a.files {
+		if f.missing {
+			continue
+		}
+		have := install.GuessOS(f.SystemFile)
+		if have.Platform == platform.NotProgram || install.Satisfies(have, need) {
+			return label, false
+		}
+	}
+	return label + ": none in the system folder", true
 }

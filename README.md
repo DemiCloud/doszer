@@ -807,10 +807,15 @@ desktop menu). It works the same on Windows and Linux. Three pages:
   list or grid: each archive's icon (`DOSZ.ICO`, else its initial),
   name, folder, how it boots (DOS, a Windows 3.x shell, an OS image,
   flagged when the system folder lacks it), when it was last played,
-  for how long, and its size; a game over parent archives shows its
+  for how long, and its size; the oldest Windows its programs need
+  ("Needs Windows 95", from their headers, as `init` and `info` read
+  them; a parent's when the game has none of its own), in red when no
+  shell or image in the system folder is new enough or the one it boots
+  is too old (judged by their names, e.g. "Windows 98 (games)"); a game
+  over parent archives shows its
   chain, and one whose chain is broken says why. The System menu shows
-  only the games booting one system (DOS, a shell, an OS image), missing
-  their system, or with a broken chain; Tools verifies every game
+  only the games booting one system (DOS, a shell, an OS image), needing
+  one, missing their system, or with a broken chain; Tools verifies every game
   (`doszer verify --all`). Typing filters by name, folder or system
   (Esc clears); arrows, Page Up/Down, Home and End move; Enter or a
   double click plays the game with `doszer run` in its own process, one
