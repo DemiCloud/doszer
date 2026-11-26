@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -505,10 +506,11 @@ func (a *app) addGameSource(g *addGame, x, y, w int32) int32 {
 		}
 		a.drawField(f, x, y, w-bw)
 		if bw > 0 {
-			ff := f
+			idx := i
 			a.button("Browse…", x+w-bw+a.px(8), y, btnNormal, func() {
-				if p, ok := pickFile("Choose disc "+itoa(i+1), fileDisc); ok {
-					ff.set(p)
+				// One or several: a multi-disc game's discs at once.
+				if paths := pickFiles("Choose the discs", fileDisc); len(paths) > 0 {
+					g.setFiles(idx, paths)
 				}
 			})
 		}
@@ -519,6 +521,90 @@ func (a *app) addGameSource(g *addGame, x, y, w int32) int32 {
 		a.focus = g.files[len(g.files)-1]
 	})
 	return y + a.px(40)
+}
+
+// setFiles puts paths in the disc list: the first in field i, the rest
+// added, then the list sorted by name (Disc 1, Disc 2, ... Disc 10).
+func (g *addGame) setFiles(i int, paths []string) {
+	g.files[i].set(paths[0])
+	for _, p := range paths[1:] {
+		f := &field{}
+		f.set(p)
+		g.files = append(g.files, f)
+	}
+	g.sortFiles()
+}
+
+// addFile adds a disc (a drop), into an empty field if there is one.
+func (g *addGame) addFile(p string) {
+	for _, f := range g.files {
+		if strings.TrimSpace(f.text) == "" {
+			f.set(p)
+			g.sortFiles()
+			return
+		}
+	}
+	f := &field{}
+	f.set(p)
+	g.files = append(g.files, f)
+	g.sortFiles()
+}
+
+// sortFiles orders the discs by file name, numbers by value, empty
+// fields last, dropping duplicates.
+func (g *addGame) sortFiles() {
+	seen := map[string]bool{}
+	var full, empty []*field
+	for _, f := range g.files {
+		t := strings.TrimSpace(f.text)
+		switch {
+		case t == "":
+			empty = append(empty, f)
+		case !seen[strings.ToLower(t)]:
+			seen[strings.ToLower(t)] = true
+			full = append(full, f)
+		}
+	}
+	sort.SliceStable(full, func(i, j int) bool {
+		return naturalLess(filepath.Base(full[i].text), filepath.Base(full[j].text))
+	})
+	if len(full) > 0 && len(empty) > 0 {
+		empty = empty[:0]
+	}
+	g.files = append(full, empty...)
+}
+
+// naturalLess compares names with digit runs by value: "Disc 2" before
+// "Disc 10".
+func naturalLess(a, b string) bool {
+	a, b = strings.ToLower(a), strings.ToLower(b)
+	for a != "" && b != "" {
+		da, db := digits(a), digits(b)
+		if da != "" && db != "" {
+			na, nb := strings.TrimLeft(da, "0"), strings.TrimLeft(db, "0")
+			if len(na) != len(nb) {
+				return len(na) < len(nb)
+			}
+			if na != nb {
+				return na < nb
+			}
+			a, b = a[len(da):], b[len(db):]
+			continue
+		}
+		if a[0] != b[0] {
+			return a[0] < b[0]
+		}
+		a, b = a[1:], b[1:]
+	}
+	return len(a) < len(b)
+}
+
+func digits(s string) string {
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	return s[:i]
 }
 
 func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {

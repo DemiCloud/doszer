@@ -894,7 +894,9 @@ folder, by the commands one would type:
 
 1. **Where is it?** A CD drive (listed with its disc's label on Windows;
    the number of discs, asked for in turn), or disc image files: a CUE
-   sheet with its BIN files, or a zip of one, per disc.
+   sheet with its BIN files, or a zip of one, per disc - several chosen
+   at once, or dropped on the window, are one game's discs, in name
+   order (Disc 1, Disc 2, ... Disc 10), built into a single archive.
 2. **How should it be built?** Its name, how it boots (automatic, from
    its programs and the system folder, or DOS, a Windows 3.x shell, a
    Windows 9x OS image), CD audio as Ogg Vorbis or WAV, which ROM folder

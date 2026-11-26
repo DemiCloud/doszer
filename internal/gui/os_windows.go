@@ -2,6 +2,7 @@ package gui
 
 import (
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -126,26 +127,45 @@ func opticalDrives() []drive {
 
 // pickSave asks where to save a PNG, with Windows' save dialog.
 func pickSave(title, name string) (string, bool) {
-	return fileDialog(getSaveFileName, title, utf16z("PNG images (*.png)\x00*.png\x00"), name,
+	paths := fileDialog(getSaveFileName, title, utf16z("PNG images (*.png)\x00*.png\x00"), name, "png",
 		0x2|0x800|0x8|0x80000) // OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER
+	if len(paths) == 0 {
+		return "", false
+	}
+	return paths[0], true
 }
 
 // pickFile asks for a file of a kind (fileDisc, fileArchive) with
 // Windows' open dialog.
 func pickFile(title string, kind int) (string, bool) {
+	paths := pickFilesFlags(title, kind, 0)
+	if len(paths) == 0 {
+		return "", false
+	}
+	return paths[0], true
+}
+
+// pickFiles is pickFile choosing one or more files.
+func pickFiles(title string, kind int) []string {
+	return pickFilesFlags(title, kind, 0x200) // OFN_ALLOWMULTISELECT
+}
+
+func pickFilesFlags(title string, kind int, flags uint32) []string {
 	filter := utf16z("Disc images (*.cue, *.zip)\x00*.cue;*.zip\x00All files\x00*.*\x00")
 	if kind == fileArchive {
 		filter = utf16z("DOSBox Pure archives (*.dosz)\x00*.dosz\x00All files\x00*.*\x00")
 	}
-	return fileDialog(getOpenFileName, title, filter, "", 0x1000|0x800|0x8|0x80000) // OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER
+	return fileDialog(getOpenFileName, title, filter, "", "", flags|0x1000|0x800|0x8|0x80000) // OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER
 }
 
-// fileDialog runs GetOpenFileName or GetSaveFileName.
-func fileDialog(proc *syscall.LazyProc, title string, filter []uint16, name string, flags uint32) (string, bool) {
-	var file [1024]uint16
+// fileDialog runs GetOpenFileName or GetSaveFileName and returns the
+// files chosen: with OFN_ALLOWMULTISELECT, several come back as the
+// folder, then each name, NUL-separated.
+func fileDialog(proc *syscall.LazyProc, title string, filter []uint16, name, defExt string, flags uint32) []string {
+	file := make([]uint16, 1<<16)
 	copy(file[:len(file)-1], utf16z(name))
 	t, _ := syscall.UTF16PtrFromString(title)
-	ext := utf16z("png")
+	ext := utf16z(defExt)
 	ofn := struct {
 		size                 uint32
 		owner, instance      uintptr
@@ -163,16 +183,36 @@ func fileDialog(proc *syscall.LazyProc, title string, filter []uint16, name stri
 		template             *uint16
 		reserved             uintptr
 		reserved2, flagsEx   uint32
-	}{filter: &filter[0], index: 1, file: &file[0], maxFile: uint32(len(file)), title: t, flags: flags, defExt: &ext[0]}
+	}{filter: &filter[0], index: 1, file: &file[0], maxFile: uint32(len(file)), title: t, flags: flags}
+	if defExt != "" {
+		ofn.defExt = &ext[0]
+	}
 	ofn.size = uint32(unsafe.Sizeof(ofn))
 	r, _, _ := proc.Call(uintptr(unsafe.Pointer(&ofn)))
 	runtime.KeepAlive(filter)
 	runtime.KeepAlive(t)
 	runtime.KeepAlive(ext)
 	if r == 0 {
-		return "", false
+		return nil
 	}
-	return syscall.UTF16ToString(file[:]), true
+	var parts []string
+	for start, i := 0, 0; i < len(file); i++ {
+		if file[i] == 0 {
+			if i == start {
+				break // the double NUL ending the list
+			}
+			parts = append(parts, string(utf16.Decode(file[start:i])))
+			start = i + 1
+		}
+	}
+	if len(parts) <= 1 {
+		return parts
+	}
+	out := make([]string, 0, len(parts)-1)
+	for _, n := range parts[1:] {
+		out = append(out, filepath.Join(parts[0], n))
+	}
+	return out
 }
 
 func utf16z(s string) []uint16 {

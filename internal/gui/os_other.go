@@ -81,6 +81,17 @@ func opticalDrives() []drive {
 // pickFile asks for a file of a kind (fileDisc, fileArchive) with zenity
 // or kdialog.
 func pickFile(title string, kind int) (string, bool) {
+	paths := pickFilesMulti(title, kind, false)
+	if len(paths) == 0 {
+		return "", false
+	}
+	return paths[0], true
+}
+
+// pickFiles is pickFile choosing one or more files.
+func pickFiles(title string, kind int) []string { return pickFilesMulti(title, kind, true) }
+
+func pickFilesMulti(title string, kind int, multi bool) []string {
 	pat, name := "*.cue *.CUE *.zip *.ZIP", "Disc images"
 	if kind == fileArchive {
 		pat, name = "*.dosz *.DOSZ", "DOSBox Pure archives"
@@ -88,18 +99,31 @@ func pickFile(title string, kind int) (string, bool) {
 	var cmd *exec.Cmd
 	switch picker() {
 	case "zenity":
-		cmd = exec.Command("zenity", "--file-selection", "--title="+title, "--file-filter="+name+" | "+pat, "--file-filter=All files | *")
+		args := []string{"--file-selection", "--title=" + title, "--file-filter=" + name + " | " + pat, "--file-filter=All files | *"}
+		if multi {
+			args = append(args, "--multiple", "--separator=\n")
+		}
+		cmd = exec.Command("zenity", args...)
 	case "kdialog":
-		cmd = exec.Command("kdialog", "--getopenfilename", ".", pat+"|"+name, "--title", title)
+		args := []string{"--getopenfilename", ".", pat + "|" + name, "--title", title}
+		if multi {
+			args = append(args, "--multiple", "--separate-output")
+		}
+		cmd = exec.Command("kdialog", args...)
 	default:
-		return "", false
+		return nil
 	}
 	out, err := cmd.Output()
 	if err != nil {
-		return "", false
+		return nil
 	}
-	p := strings.TrimSpace(string(out))
-	return p, p != ""
+	var paths []string
+	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			paths = append(paths, l)
+		}
+	}
+	return paths
 }
 
 // pickSave asks where to save a file named name, with zenity or kdialog;

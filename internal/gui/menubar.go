@@ -161,10 +161,7 @@ func (a *app) drop(p string) {
 		}
 		if a.add != nil && a.add.page == 0 && !a.add.useFolder {
 			a.add.useFiles = true
-			if f := a.add.files[len(a.add.files)-1]; f.text != "" {
-				a.add.files = append(a.add.files, &field{})
-			}
-			a.add.files[len(a.add.files)-1].set(p)
+			a.add.addFile(p)
 		}
 	default:
 		a.say(filepath.Base(p)+": drop an archive (.dosz), a disc image (.cue, .zip) or a game's folder", true)

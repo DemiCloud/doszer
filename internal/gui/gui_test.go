@@ -3,6 +3,7 @@ package gui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -121,5 +122,22 @@ func TestSetupChoices(t *testing.T) {
 	}
 	if len(a.romDirs) != 1 || a.romDirs[0].Path != filepath.Join(home, "data", "doszer", "roms") {
 		t.Errorf("ROM dirs %+v", a.romDirs)
+	}
+}
+
+func TestSortFiles(t *testing.T) {
+	g := &addGame{files: []*field{{}}}
+	g.setFiles(0, []string{"/d/Game (USA) (Disc 10).zip", "/d/Game (USA) (Disc 2).zip", "/d/Game (USA) (Disc 1).zip"})
+	g.addFile("/d/Game (USA) (Disc 2).zip") // dropped again: once
+	var got []string
+	for _, f := range g.files {
+		got = append(got, filepath.Base(f.text))
+	}
+	want := []string{"Game (USA) (Disc 1).zip", "Game (USA) (Disc 2).zip", "Game (USA) (Disc 10).zip"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("discs = %v, want %v", got, want)
+	}
+	if n := suggestName(g.files[0].text); n != "Game" {
+		t.Errorf("name = %q", n)
 	}
 }
