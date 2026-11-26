@@ -363,6 +363,8 @@ func (a *app) event(e *sdl.Event) {
 	case sdl.EventMouseWheel:
 		if a.dialog != nil {
 			a.dialog.scroll = max(0, a.dialog.scroll+int(e.Wheel())*3)
+		} else if a.add != nil && a.add.page == 2 {
+			a.add.scroll = max(0, a.add.scroll+int(e.Wheel())*3)
 		} else if a.settingsOpen && a.popup == nil {
 			a.settingsScroll = max(0, a.settingsScroll-e.Wheel()*a.px(72))
 		} else if a.popup == nil && a.setup == nil && a.add == nil {

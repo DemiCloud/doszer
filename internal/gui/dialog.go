@@ -18,6 +18,7 @@ type dialog struct {
 	buttons []dialogButton
 	job     *job
 	scroll  int    // output lines scrolled up from the end
+	seen    int    // output lines last drawn: a scrolled-up view holds still as more come
 	field   *field // an input below the lines (a file name), or nil
 	rows    []dialogRow
 	image   *texture // shown above the lines, centred (About)
@@ -396,9 +397,14 @@ func (a *app) drawDialog() {
 		}
 		out = wrapped
 		rows := max(1, int((bh-a.px(12))/mono))
+		if d.scroll > 0 && len(out) > d.seen && d.seen > 0 {
+			d.scroll += len(out) - d.seen
+		}
+		d.seen = len(out)
 		d.scroll = min(d.scroll, max(0, len(out)-rows))
 		end := len(out) - d.scroll
 		start := max(0, end-rows)
+		a.scrollbar(bx+bw-a.px(8), by+a.px(4), bh-a.px(8), start, rows, len(out))
 		a.pushClip(bx, by, bw, bh)
 		ly := by + a.px(6)
 		a.selRegion("output", out)

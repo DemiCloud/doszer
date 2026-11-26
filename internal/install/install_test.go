@@ -344,6 +344,18 @@ func fakeDOSBoxPure(t *testing.T) (systemDir, saveDir string) {
 		if err != nil {
 			return err
 		}
+		if os.Getenv("FAKE_EMPTY_D") != "" {
+			// A D: save with no sectors in it: Windows touched D:,
+			// nothing changed.
+			base, zr, err := vdisk.Open(s.Content, vdisk.DefaultFreeSpaceMB)
+			if err != nil {
+				return err
+			}
+			defer zr.Close()
+			if err := os.WriteFile(s.SaveFiles(e.SaveDir, base).DDrive, []byte("FFDD\x01"), 0o644); err != nil {
+				return err
+			}
+		}
 		return os.WriteFile(filepath.Join(e.SaveDir, s.Name+os.Getenv("FAKE_SUFFIX")), data, 0o644)
 	}
 	return systemDir, saveDir
@@ -511,9 +523,15 @@ func TestRunOSSessionDriveC(t *testing.T) {
 	if rep, err = Run(opts); err != nil || rep.Drive != "C:" || !rep.Detected {
 		t.Fatalf("detected: report %+v, err %v", rep, err)
 	}
+	// Nor when Windows left an empty D: save behind (seen live).
+	t.Setenv("FAKE_EMPTY_D", "1")
+	if rep, err = Run(opts); err != nil || rep.Drive != "C:" || !rep.Detected {
+		t.Fatalf("detected over an empty D: save: report %+v, err %v", rep, err)
+	}
+	// --drive d insists on D:, whose save holds nothing.
 	opts.Drive = "d"
-	if _, err := Run(opts); err == nil {
-		t.Fatal("--drive d read C:")
+	if rep, err = Run(opts); err != nil || rep.Drive != "D:" || rep.Detected || len(rep.Changes) != 0 {
+		t.Fatalf("--drive d: report %+v, err %v", rep, err)
 	}
 	plain := writeSource(t, "format = 1\nname = \"Example Game\"\n", map[string]string{"SETUP.EXE": "MZ"})
 	if _, err := Run(Options{Source: plain, SystemDir: systemDir, SaveDir: saveDir, Drive: "c"}); err == nil {

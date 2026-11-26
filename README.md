@@ -691,9 +691,10 @@ is unaffected. To convert one:
 An OS image session boots `--os`, else the image `install.os` maps
 `boot.os` to, else `boot.os` itself: an archive's own image may start the
 game through a custom shell, while installing wants a plain Windows
-desktop. A session that left D: unchanged but changed C: is read from C:
-(an installer that only works in its default folder on C:, common under
-Windows 9x), and says so; `--drive c` or `--drive d` insists on one; the folder is `--dir`, or the one
+desktop. A session that changed no file on D: (Windows may still leave
+an empty D: save) but added a folder outside `WINDOWS` on C: is read from
+C: (an installer that only works in its default folder there, common
+under Windows 9x), and says so; `--drive c` or `--drive d` insists on one; the folder is `--dir`, or the one
 top-level folder outside `WINDOWS` every change is under. The game's paths
 then name C:, which the manifest's `[[layout.rewrite]]` rules can fix
 (`build --dry-run` suggests rules for paths that move).

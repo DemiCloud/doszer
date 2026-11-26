@@ -12,6 +12,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/platform"
 	"github.com/DemiCloud/doszer/internal/start"
 )
 
@@ -44,6 +45,7 @@ type addGame struct {
 	plan       *addPlan
 	candidates []start.Candidate
 	choice     int
+	scroll     int // the report's lines scrolled up from its end
 }
 
 // addPlan is where a game being added goes.
@@ -52,6 +54,7 @@ type addPlan struct {
 	temp, keep     bool
 	install        []step   // the install step, to run again
 	report         []string // install's output
+	folder         bool     // Build a folder, not Import a disc
 }
 
 var bootChoices = []struct{ label, flag string }{
@@ -171,6 +174,8 @@ func (a *app) addGameNext() {
 		if !g.named {
 			g.name.set(name)
 		}
+		// A folder of only discs needs installing; an installed game not.
+		g.install = !hasInstalledPrograms(dir)
 		g.named, g.page = false, 1
 		a.focus = &g.name
 		return
@@ -264,7 +269,7 @@ func (a *app) addGameRun() {
 	if !g.hasManifest {
 		steps = append(steps, step{args: append(initArgs, src)})
 	}
-	plan := &addPlan{name: g.name.text, src: src, out: out, temp: temp, keep: (g.keep || g.useFolder) && !temp}
+	plan := &addPlan{name: g.name.text, src: src, out: out, temp: temp, keep: (g.keep || g.useFolder) && !temp, folder: g.useFolder}
 	if !g.install {
 		a.add = nil
 		a.runSteps("Build "+plan.name, append(steps, buildStep(plan)), a.added(plan))
@@ -333,7 +338,7 @@ func (a *app) chooseStart(p *addPlan) {
 		a.alert("Can't read the installed game", err.Error())
 		return
 	}
-	g := &addGame{page: 2, plan: p, candidates: cs, dests: []string{filepath.Dir(p.out)}}
+	g := &addGame{page: 2, plan: p, candidates: cs, dests: []string{filepath.Dir(p.out)}, useFolder: p.folder}
 	for i, c := range cs {
 		if c.Current {
 			g.choice = i
@@ -737,11 +742,14 @@ func (a *app) addGameStart(g *addGame, x, y, w, bottom int32) int32 {
 		bh := bottom - y
 		a.round(x, y, w, bh, a.px(6), colBackground)
 		rows := max(1, int((bh-a.px(12))/lh))
-		start := max(0, len(report)-rows)
+		g.scroll = max(0, min(g.scroll, len(report)-rows))
+		end := len(report) - g.scroll
+		start := max(0, end-rows)
 		ly := y + a.px(6)
 		a.pushClip(x, y, w, bh)
 		a.selRegion("report", report)
-		for i, l := range report[start:] {
+		a.scrollbar(x+w-a.px(8), y+a.px(4), bh-a.px(8), start, rows, len(report))
+		for i, l := range report[start:end] {
 			a.selLine("report", start+i, x+a.px(4), ly, w-a.px(8), lh)
 			a.monoText(l, x+a.px(10), ly, colText)
 			ly += lh
@@ -774,4 +782,16 @@ func (a *app) addGameStart(g *addGame, x, y, w, bottom int32) int32 {
 func haveFFmpeg() bool {
 	_, err := exec.LookPath("ffmpeg")
 	return err == nil
+}
+
+// hasInstalledPrograms reports whether dir holds programs outside its
+// disc images: a game installed already.
+func hasInstalledPrograms(dir string) bool {
+	progs, _ := platform.Scan(dir)
+	for _, p := range progs {
+		if !strings.Contains(p.Path, ":") {
+			return true
+		}
+	}
+	return false
 }

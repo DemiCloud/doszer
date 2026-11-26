@@ -347,3 +347,16 @@ func (a *app) wrapAny(s string, width int32, size float64) []string {
 	}
 	return out
 }
+
+// scrollbar draws a thin bar for lines first..first+visible of total at
+// x, y, h tall, when they don't all fit.
+func (a *app) scrollbar(x, y, h int32, first, visible, total int) {
+	if total <= visible || total == 0 {
+		return
+	}
+	w := a.px(4)
+	a.round(x, y, w, h, w/2, rgba{255, 255, 255, 18})
+	th := max(a.px(24), h*int32(visible)/int32(total))
+	ty := y + (h-th)*int32(first)/int32(max(1, total-visible))
+	a.round(x, ty, w, th, w/2, rgba{255, 255, 255, 90})
+}

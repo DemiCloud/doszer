@@ -249,9 +249,11 @@ func collectOS(rep *Report, s *Session, env Env, opts Options) ([]string, error)
 			return saves, err
 		}
 		// A setup that only installs to C: (common under Windows 9x)
-		// leaves D: unchanged: then C: is where the game is.
+		// leaves D: unchanged - Windows may still write a D: save with
+		// nothing in it - and adds a folder to C:: then C: is where the
+		// game is.
 		_, dErr := os.Stat(sf.DDrive)
-		if opts.Drive == "" && dErr != nil {
+		if opts.Drive == "" && !dChanged(s, sf, opts) && cInstalled(img, sf.CDrive) {
 			rep.Detected = true
 			opts.Drive = "C"
 		}
@@ -284,6 +286,43 @@ func collectOS(rep *Report, s *Session, env Env, opts Options) ([]string, error)
 		return saves, errors.New("the session left no C: changes")
 	}
 	return saves, extractD(rep, s, sf, &saves, opts)
+}
+
+// dChanged reports whether an OS image session changed D:: a D: save
+// with any file change in it (a dry run of extractD).
+func dChanged(s *Session, sf SaveFiles, opts Options) bool {
+	if _, err := os.Stat(sf.DDrive); err != nil {
+		return false
+	}
+	var r Report
+	opts.DryRun = true
+	var saves []string
+	if err := extractD(&r, s, sf, &saves, opts); err != nil {
+		return true // can't tell: D: it is, and its error shows
+	}
+	return len(r.Changes) > 0
+}
+
+// cInstalled reports whether a session's C: changes include a folder
+// outside WINDOWS: what an installer adds (C:\SIERRA\ANTARA), not
+// Windows' own bookkeeping.
+func cInstalled(img, cdrive string) bool {
+	before, after, closeC, err := openOverlay(img, cdrive)
+	if err != nil {
+		return false
+	}
+	defer closeC()
+	changes, err := Diff(before, after)
+	if err != nil {
+		return false
+	}
+	for _, c := range changes {
+		top, _, nested := strings.Cut(c.Path, "/")
+		if nested && !strings.EqualFold(top, "WINDOWS") {
+			return true
+		}
+	}
+	return false
 }
 
 // extractD extracts an OS image session's D: changes.
