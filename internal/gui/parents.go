@@ -97,6 +97,7 @@ func (a *app) parentMenu(g *library.Game) {
 		{label: "Verify", fn: func() { a.runDoszer("Verify: "+name, []string{"verify", "--format", "plain", path}, nil) }},
 		{label: "Lint", fn: func() { a.lint(path, name) }},
 		{label: "-"},
+		{label: "Create child…", fn: func() { a.openChild(path, name) }},
 		{label: "Convert to game…", fn: func() { a.convert(path, name, "dosz") }},
 	}
 	if canOpen() {

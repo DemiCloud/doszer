@@ -77,6 +77,12 @@ func TestScreenshot(t *testing.T) {
 		},
 		"folder.png": func(a *App) { a.openBuildFolder() },
 		"export.png": func(a *App) { a.openExport("Export all games", nil) },
+		"child.png": func(a *App) {
+			if len(a.parentList) > 0 {
+				a.show(pageParents)
+				a.openChild(a.parentList[0].Path, a.parentList[0].Name)
+			}
+		},
 		"edgemenu.png": func(a *App) { // a game menu at the right edge: Tools opens left
 			a.OpenGameMenu(0)
 			p := a.popup

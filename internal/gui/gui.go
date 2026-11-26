@@ -114,6 +114,7 @@ type app struct {
 	setupDone       bool   // Options.Setup ran
 	exportDir       string // the folder Export last used (window.json)
 	exp             *exportDialog
+	child           *childDialog
 	selectAfterScan string // an archive to select once the list is read again
 	mx, my          int32
 	scroll          [4]int32       // per page, pixels
@@ -457,6 +458,12 @@ func (a *app) key(sc int32, mod uint16) {
 		a.editKey(sc, ctrl)
 		return
 	}
+	if a.child != nil && a.dialog == nil {
+		if a.popup == nil {
+			a.childKey(sc, ctrl)
+		}
+		return
+	}
 	if a.exp != nil && a.dialog == nil {
 		if a.popup == nil {
 			a.exportKey(sc, ctrl)
@@ -590,6 +597,7 @@ func (a *app) render() {
 	a.drawSettingsDialog()
 	a.drawEditor()
 	a.drawExport()
+	a.drawChild()
 	a.drawSetup()
 	a.drawAddGame()
 	a.drawDialog()

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/pflag"
 
 	"github.com/DemiCloud/doszer/internal/build"
@@ -80,6 +81,7 @@ func init() {
 		{"repack", "rebuild an archive from its embedded manifest", runRepack},
 		{"manifest", "print an archive's embedded manifest", runManifest},
 		{"convert", "make an archive a parent (.dosp) or a game (.dosz)", runConvert},
+		{"child", "list a parent's programs, or make a game over it starting one", runChild},
 		{"set", "change archives' parent, OS image or shell in place", runSet},
 		{"prepare", "make a game-ready copy of a Windows shell or OS image", runPrepare},
 		{"info", "show what an archive or source directory holds", runInfo},
@@ -218,7 +220,7 @@ func newFlags(name string) *pflag.FlagSet {
 }
 
 // dataCommands are the commands with a result --format can encode.
-var dataCommands = map[string]bool{"start": true, "deps": true, "lint": true, "export": true, "info": true, "verify": true, "set": true, "version": true, "env": true, "config": true}
+var dataCommands = map[string]bool{"start": true, "child": true, "deps": true, "lint": true, "export": true, "info": true, "verify": true, "set": true, "version": true, "env": true, "config": true}
 
 // format is the resolved --format of the command running.
 var format = output.Plain
@@ -2584,5 +2586,80 @@ Options:
 	if counts[export.Missing] > 0 {
 		return fmt.Errorf("%s not found here", plural(counts[export.Missing], "file"))
 	}
+	return nil
+}
+
+// runChild implements `doszer child PARENT [PROGRAM]`.
+func runChild(args []string) error {
+	fs := newFlags("child")
+	name := fs.String("name", "", "")
+	force := fs.BoolP("force", "f", false, "")
+	dryRun := fs.BoolP("dry-run", "n", false, "")
+	const help = `doszer child - list a parent's programs, or make a game over it starting one
+
+Usage: doszer child [options] PARENT [PROGRAM [OUTPUT.dosz]]
+
+Options:
+      --name NAME         the game's name (default: the program's file name)
+  -n, --dry-run           show the manifest without building
+  -f, --force             replace an existing OUTPUT
+` + flagFormatData + flagHelp
+	if ok, err := parse(fs, args, help, 1, 3); !ok {
+		return err
+	}
+	parent := fs.Arg(0)
+	if fs.NArg() == 1 {
+		cs, err := start.ParentCandidates(parent)
+		if err != nil {
+			return err
+		}
+		switch format {
+		case output.Fancy, output.Plain:
+			if len(cs) == 0 {
+				fmt.Printf("No programs in %s\n", parent)
+				return nil
+			}
+			width := 0
+			for _, c := range cs {
+				width = max(width, len(c.Path))
+			}
+			for _, c := range cs {
+				fmt.Printf("  %-*s  %s\n", width, c.Path, c.Target)
+			}
+			return nil
+		case output.CSV:
+			var rows [][]string
+			for _, c := range cs {
+				rows = append(rows, []string{c.Path, c.Target})
+			}
+			return output.EncodeCSV(os.Stdout, []string{"path", "target"}, rows)
+		}
+		return output.Encode(os.Stdout, format, struct {
+			Candidates []start.Candidate `json:"candidates" yaml:"candidates" toml:"candidates"`
+		}{cs})
+	}
+	prov, err := provenance()
+	if err != nil {
+		return err
+	}
+	res, err := start.Child(parent, fs.Arg(1), start.ChildOptions{Name: *name, Output: fs.Arg(2), Force: *force, DryRun: *dryRun, Provenance: prov})
+	if err != nil {
+		return err
+	}
+	if format.Structured() {
+		return output.Encode(os.Stdout, format, struct {
+			Output   string             `json:"output" yaml:"output" toml:"output"`
+			Manifest *manifest.Manifest `json:"manifest" yaml:"manifest" toml:"manifest"`
+		}{res.Output, res.Manifest})
+	}
+	if *dryRun {
+		data, err := toml.Marshal(res.Manifest)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Dry run: would build %s from:\n\n%s", res.Output, data)
+		return nil
+	}
+	fmt.Printf("Built %s\n", res.Output)
 	return nil
 }

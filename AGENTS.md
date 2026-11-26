@@ -309,6 +309,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `run` | Implemented; not yet played live |
 | `repack` | Implemented |
 | `manifest` | Implemented |
+| `child` | Implemented; a child of the windows3x set's BOWEP built and verified, not yet played |
 | `convert` | Implemented; checked on the RetroDECK windows3x set (BOWEP.shell to .dosp, 13 legacy games re-pointed and given manifests) |
 | `set` | Implemented |
 | `verify` | Implemented |

@@ -54,6 +54,7 @@ doszer run     FILE.dosz [--option KEY=VALUE...] [--system-dir DIR] [--save-dir 
 doszer FILE.dosz
 doszer manifest FILE.dosz
 doszer convert FILE [--to dosp|dosz] [-n]
+doszer child   PARENT [PROGRAM [OUTPUT.dosz]] [--name NAME] [-n] [-f]
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [--add PATH=FILE...] [--flatten] [-n] [--strict] [--ogg-quality N]
 doszer set     FILE.dosz... [--parent [OLD:]NEW | --no-parent] [--os [OLD:]NEW] [--shell [OLD:]NEW] [-n]
 doszer verify  FILE.dosz... | --all [DIR...]
@@ -325,6 +326,10 @@ itself is left alone. From there on, `init`, `install` and `build` can't
 tell an imported disc from a dumped one: two exact copies of a disc,
 however each was made, build byte-identical archives (§8.2 dates a disc
 image's files by the disc's own volume creation date, not the dump's).
+
+A floppy image (`.img`, `.ima`, `.vfd`; a FAT disk of a size DOSBox Pure
+mounts) is copied into the source as it is: DOSBox Pure mounts the first
+floppy image in the content as A:, so an installer runs from there.
 
 Rippers other than redumper (ImgBurn, for one) don't correct the drive's
 read offset, so every audio sample sits that many samples off and audio
@@ -846,7 +851,21 @@ library, like a Windows 3.x games pack the games sit on - is a parent
 offer it as a game; doszer's window lists them on their own page.
 `doszer convert FILE` renames an archive to `.dosp` (`--to dosz` back)
 and re-points the archives beside it that use it, adding a minimal
-manifest to one built without doszer.
+manifest to one built without doszer. Converting to `.dosp` removes
+`WINDOWS.BAT`, which would start its program in every child without one
+of its own.
+
+`doszer child PARENT` lists the programs in a parent; `doszer child
+PARENT PROGRAM` builds a game over it, beside it, that starts PROGRAM:
+its manifest names the parent and boots what the parent boots, with a
+`WINDOWS.BAT` starting the program under a shell or OS image (as
+`start` writes it) or `boot.exec` under DOS, and the program's icon.
+`--name` names it (default: the program's file name). The window's
+Parents page offers it as Create child.
+
+A games pack on a floppy, for example: Build > Import a disc with the
+floppy image (Windows 3.x, Install first: its setup runs from A:), then
+Convert to parent, then Create child for each game.
 
 ## Dependencies
 
@@ -917,7 +936,7 @@ shown last coming back next time:
   at a time.
 - **Parents**: every `.dosp` under the ROM directory: icon, name,
   folder, what it boots and the games beside it that use it. Its menu
-  shows dependencies, verifies, lints, or converts it back to a game (`doszer
+  shows dependencies, verifies, lints, creates a child (`doszer child`), or converts it back to a game (`doszer
   convert --to dosz`); a game's Tools > Convert to parent does the
   reverse.
 - **Systems**: the OS images and shells in the system directory, with
