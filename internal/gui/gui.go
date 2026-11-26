@@ -153,7 +153,9 @@ func Run(o Options) error {
 		a.openSetup()
 	}
 	a.draw()
-	sdl.ShowWindow(win)
+	if o.Screenshot == "" {
+		sdl.ShowWindow(win) // a screenshot is drawn in the hidden window
+	}
 	sdl.StartTextInput()
 
 	for !a.quit {

@@ -55,6 +55,7 @@ doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg
 doszer set     FILE.dosz... [--parent [OLD:]NEW | --no-parent] [--os [OLD:]NEW] [--shell [OLD:]NEW] [-n]
 doszer verify  FILE.dosz... | --all [DIR...]
 doszer info    FILE.dosz|SOURCE...
+doszer deps    FILE... [--used-by] [--system-dir DIR]
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
 doszer env     [--system-dir DIR] [--save-dir DIR] [--rom-dir DIR]
@@ -774,6 +775,27 @@ the program that opens `.dosz` files, with doszer's icon
 with" still takes precedence. Explorer shows the one doszer icon for
 every archive: an archive's own `DOSZ.ICO` would need a shell extension
 DLL, which doszer doesn't ship.
+
+## Dependencies
+
+`doszer deps FILE...` shows what an archive needs to run, as DOSBox Pure
+resolves it: its parent markers, archive by archive (each looked up
+beside the one naming it), and the shell or OS image the `AUTOBOOT.DBP`
+in effect boots - the nearest archive's, since the chain is merged into
+one C: with a child's files winning - found in the system directory or
+not:
+
+```
+SkiFree.dosz
+└─ BOWEP.shell (parent; AUTOBOOT.DBP S*dosbox_pure/Win31, in effect)
+   └─ dosbox_pure/Win31 (shell: /path/to/system/dosbox_pure/Win31.dosz)
+```
+
+A missing parent, a loop, two parent markers or a missing shell or image
+is reported, and the command exits 1. `--used-by` also lists the
+archives beside FILE that have it as a parent, at any remove: what a
+shared shell archive is holding up. The Games page shows the same, from
+a game's right-click menu.
 
 ## Window
 

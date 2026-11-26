@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/DemiCloud/doszer/internal/build"
+	"github.com/DemiCloud/doszer/internal/chain"
 	"github.com/DemiCloud/doszer/internal/manifest"
 )
 
@@ -43,6 +44,8 @@ type Game struct {
 	Modified time.Time //
 	Icon     []byte    // DOSZ.ICO, or nil
 	Err      string    // why the archive couldn't be read, if it couldn't
+	Parents  []string  // its parent chain, nearest first, by file name
+	Broken   string    // why the parent chain can't be followed, or ""
 
 	LastPlayed time.Time
 	PlayTime   time.Duration
@@ -109,16 +112,32 @@ func read(dir, p string) Game {
 		return g
 	}
 	defer zr.Close()
+	// How it boots comes from its chain: the nearest AUTOBOOT.DBP, which
+	// may be a parent's (chain.Resolve).
+	c := chain.Resolve(p)
+	switch c.Kind {
+	case chain.KindShell:
+		g.Kind, g.Boot = KindShell, c.Boot
+	case chain.KindOS:
+		g.Kind, g.Boot = KindOS, c.Boot
+	}
+	if g.Boot != "" {
+		g.System = path.Base(g.Boot)
+	}
+	for _, l := range c.Links[1:] {
+		g.Parents = append(g.Parents, l.Name)
+	}
+	for _, l := range c.Links {
+		if l.Err != "" || !l.Found {
+			g.Broken = l.Name + " not found"
+			if l.Err != "" {
+				g.Broken = l.Name + ": " + l.Err
+			}
+			break
+		}
+	}
 	for _, f := range zr.File {
 		switch {
-		case strings.EqualFold(f.Name, "AUTOBOOT.DBP"):
-			if data, err := small(f, 4<<10); err == nil {
-				line, _, _ := strings.Cut(string(data), "\n")
-				g.Kind, g.Boot = kind(strings.TrimRight(line, "\r"))
-				if g.Boot != "" {
-					g.System = path.Base(g.Boot)
-				}
-			}
 		case f.Name == manifest.FileName:
 			if data, err := small(f, 1<<20); err == nil {
 				if m, err := manifest.Parse(data, stem); err == nil && m.Name != "" {
@@ -132,18 +151,6 @@ func read(dir, p string) Game {
 		}
 	}
 	return g
-}
-
-// kind reads AUTOBOOT.DBP's first line (spec §6.8.1): the boot model and
-// the shell or OS image path.
-func kind(line string) (Kind, string) {
-	switch {
-	case strings.HasPrefix(line, "S*"):
-		return KindShell, line[2:]
-	case strings.HasPrefix(line, "O*"):
-		return KindOS, line[2:]
-	}
-	return KindDOS, ""
 }
 
 // small reads an archive entry of at most limit bytes.

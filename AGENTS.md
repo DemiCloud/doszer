@@ -46,6 +46,7 @@ internal/w9xreg/     Windows 9x registry (SYSTEM.DAT/USER.DAT) reader, diff, REG
 internal/fat/        FAT12/16/32 reader with long names, as an io/fs.FS, for install; Tree/Write rebuild a volume in its own geometry, for prepare os
 internal/vdisk/      DOSBox Pure's synthesized D: disk + .sav diffs (D: and -CDRIVE), for install
 internal/install/    doszer install and run: session content, launching the built-in DOSBox Pure, directory discovery, diffing, extraction
+internal/chain/      an archive's dependencies as DOSBox Pure resolves them: parent markers, the AUTOBOOT.DBP in effect (the nearest), the shell/OS image in the system directory; reverse (UsedBy); for deps, library, the window
 internal/library/    the window's game list: .dosz archives under the ROM directory (name, boot, DOSZ.ICO), play time (playtime.json)
 internal/gui/        doszer gui: the SDL-drawn window: Games (list/grid, search, sort; games run as `doszer run` child processes), Systems, Settings, the first-run dialog; widgets.go (fields, buttons, dropdowns, layers); os_*.go (Explorer/xdg-open, folder picker); TestScreenshot renders every page to PNGs (also as the Windows test binary through WSL interop)
 internal/libretro/   built-in frontend: hosts a libretro core in-process (environment, directory-only VFS, SDL window/input/audio)
@@ -291,6 +292,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `verify` | Implemented |
 | `prepare` | Implemented. `shell`: a prepared real Win3.1 shell ran a program through RunExit and closed DOSBox Pure (headless probe). `os`: a prepared real Win98 image booted to Program Manager's generated Tools group (icons re-extracted) and ran a `WINDOWS.BAT` with PRESSKEY (headless probe); its shutdown didn't close the probe session, as with the hand-made reference image (Next steps) |
 | `info` | Implemented |
+| `deps` | Implemented; checked on a real parent chain (RetroDECK windows3x: games over BOWEP.shell over the Win31 shell) |
 | `env` | Implemented |
 | `config` | Implemented |
 | `gui` | Implemented: Games, Systems, Settings, first-run dialog; every page rendered on Linux (WSLg) and Windows (TestScreenshot), setup choices tested; launching a game, Browse and saving settings not yet tried live |

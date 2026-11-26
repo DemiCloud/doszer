@@ -20,6 +20,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/build"
 	"github.com/DemiCloud/doszer/internal/builtin"
+	"github.com/DemiCloud/doszer/internal/chain"
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/dump"
 	"github.com/DemiCloud/doszer/internal/env"
@@ -76,6 +77,7 @@ func init() {
 		{"set", "change archives' parent, OS image or shell in place", runSet},
 		{"prepare", "make a game-ready copy of a Windows shell or OS image", runPrepare},
 		{"info", "show what an archive or source directory holds", runInfo},
+		{"deps", "show what archives need: parents, shell or OS image", runDeps},
 		{"verify", "check archives against their manifests and the specification", runVerify},
 		{"env", "show the directories, images and tools doszer finds here", runEnv},
 		{"config", "show, change or write doszer's configuration", runConfig},
@@ -207,7 +209,7 @@ func newFlags(name string) *pflag.FlagSet {
 }
 
 // dataCommands are the commands with a result --format can encode.
-var dataCommands = map[string]bool{"info": true, "verify": true, "set": true, "version": true, "env": true, "config": true}
+var dataCommands = map[string]bool{"deps": true, "info": true, "verify": true, "set": true, "version": true, "env": true, "config": true}
 
 // format is the resolved --format of the command running.
 var format = output.Plain
@@ -2063,4 +2065,148 @@ Options:
 		fmt.Printf("Associated .dosz with %s\n", exe)
 	}
 	return nil
+}
+
+// runDeps implements `doszer deps`.
+func runDeps(args []string) error {
+	fs := newFlags("deps")
+	systemDir := fs.String("system-dir", "", "")
+	usedBy := fs.Bool("used-by", false, "")
+	const help = `doszer deps - show what archives need: parents, shell or OS image
+
+Usage: doszer deps [options] FILE...
+
+Options:
+      --used-by           also list the archives beside FILE that have it as a parent
+` + flagSystemDir + flagFormatData + flagHelp
+	if ok, err := parse(fs, args, help, 1, 1<<20); !ok {
+		return err
+	}
+	cfg, err := config.Load("")
+	if err != nil {
+		return err
+	}
+	sys := config.SystemDirOf(cfg, *systemDir).Path
+	type result struct {
+		File   string       `json:"file" yaml:"file" toml:"file"`
+		Chain  *chain.Chain `json:"chain" yaml:"chain" toml:"chain"`
+		Broken string       `json:"broken,omitempty" yaml:"broken,omitempty" toml:"broken,omitempty"`
+		UsedBy []string     `json:"used_by,omitempty" yaml:"used_by,omitempty" toml:"used_by,omitempty"`
+	}
+	var results []result
+	broken := false
+	for _, f := range fs.Args() {
+		if _, err := os.Stat(f); err != nil {
+			return err
+		}
+		c := chain.Resolve(f)
+		c.Locate(sys)
+		r := result{File: f, Chain: c, Broken: c.Broken()}
+		if *usedBy {
+			r.UsedBy = chain.UsedBy(filepath.Dir(f), f)
+		}
+		broken = broken || r.Broken != ""
+		results = append(results, r)
+	}
+	switch format {
+	case output.CSV:
+		var rows [][]string
+		for _, r := range results {
+			var names []string
+			for _, l := range r.Chain.Links[1:] {
+				names = append(names, l.Name)
+			}
+			rows = append(rows, []string{r.File, strings.Join(names, " > "), r.Chain.Kind, r.Chain.Boot, r.Chain.System, r.Broken})
+		}
+		if err := output.EncodeCSV(os.Stdout, []string{"file", "parents", "kind", "boot", "system_file", "broken"}, rows); err != nil {
+			return err
+		}
+	case output.Fancy, output.Plain:
+		for i, r := range results {
+			if i > 0 {
+				fmt.Println()
+			}
+			printChain(r.Chain, sys)
+			if r.Broken != "" {
+				fmt.Printf("Broken:  %s\n", r.Broken)
+			}
+			if *usedBy {
+				if len(r.UsedBy) == 0 {
+					fmt.Println("Used by: no archive beside it")
+				}
+				for j, u := range r.UsedBy {
+					k := "Used by:"
+					if j > 0 {
+						k = ""
+					}
+					fmt.Printf("%-8s %s\n", k, filepath.Base(u))
+				}
+			}
+		}
+	default:
+		if err := output.Encode(os.Stdout, format, struct {
+			Archives []result `json:"archives" yaml:"archives" toml:"archives"`
+		}{results}); err != nil {
+			return err
+		}
+	}
+	if broken {
+		return errQuiet
+	}
+	return nil
+}
+
+// printChain draws a chain as a tree, down to its shell or OS image.
+func printChain(c *chain.Chain, systemDir string) {
+	for i, l := range c.Links {
+		indent := strings.Repeat("   ", max(0, i-1))
+		prefix := ""
+		if i > 0 {
+			prefix = indent + "└─ "
+		}
+		var notes []string
+		switch {
+		case l.Err != "":
+			notes = append(notes, l.Err)
+		case !l.Found:
+			notes = append(notes, "not found")
+		case i > 0:
+			notes = append(notes, "parent")
+		}
+		if l.Has {
+			ab := "AUTOBOOT.DBP " + l.Autoboot
+			if i == c.BootFrom {
+				ab += ", in effect"
+			} else {
+				ab += ", overridden"
+			}
+			notes = append(notes, ab)
+		}
+		line := prefix + l.Name
+		if len(notes) > 0 {
+			line += " (" + strings.Join(notes, "; ") + ")"
+		}
+		fmt.Println(line)
+	}
+	if c.Kind != chain.KindShell && c.Kind != chain.KindOS {
+		if c.Boot != "" {
+			fmt.Printf("Boots:   %s, on DOSBox Pure's DOS\n", c.Boot)
+		} else {
+			fmt.Println("Boots:   DOSBox Pure's start menu (no AUTOBOOT.DBP)")
+		}
+		return
+	}
+	what := "shell"
+	if c.Kind == chain.KindOS {
+		what = "OS image"
+	}
+	indent := strings.Repeat("   ", max(0, len(c.Links)-1))
+	state := c.System
+	switch {
+	case systemDir == "":
+		state = "no system directory to look in"
+	case c.System == "":
+		state = "not in " + systemDir
+	}
+	fmt.Printf("%s└─ %s (%s: %s)\n", indent, c.Boot, what, state)
 }
