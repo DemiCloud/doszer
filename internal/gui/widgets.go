@@ -33,7 +33,7 @@ func (a *app) top() int {
 	switch {
 	case a.popup != nil:
 		return layerPopup
-	case a.setup != nil || a.dialog != nil || a.add != nil:
+	case a.setup != nil || a.dialog != nil || a.add != nil || a.settingsOpen:
 		return layerModal
 	}
 	return layerPage
@@ -405,6 +405,8 @@ const (
 	scG         = 10
 	scN         = 17
 	scQ         = 20
+	scO         = 18
+	scB         = 5
 	scL         = 15
 	scR         = 21
 	scV         = 25

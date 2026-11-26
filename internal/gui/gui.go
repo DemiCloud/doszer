@@ -62,7 +62,6 @@ type page int
 const (
 	pageGames page = iota
 	pageSystems
-	pageSettings
 )
 
 type app struct {
@@ -338,6 +337,8 @@ func (a *app) event(e *sdl.Event) {
 		if e.WindowEvent() == sdl.WindowEventSizeChanged {
 			a.measure()
 		}
+	case sdl.EventDropFile:
+		a.drop(e.DropFile())
 	case sdl.EventTextInput:
 		if a.focus != nil && a.popup == nil && (a.dialog == nil || a.focus == a.dialog.field) {
 			a.focus.insert(e.Text())
@@ -351,6 +352,8 @@ func (a *app) event(e *sdl.Event) {
 	case sdl.EventMouseWheel:
 		if a.dialog != nil {
 			a.dialog.scroll = max(0, a.dialog.scroll+int(e.Wheel())*3)
+		} else if a.settingsOpen && a.popup == nil {
+			a.settingsScroll = max(0, a.settingsScroll-e.Wheel()*a.px(72))
 		} else if a.popup == nil && a.setup == nil && a.add == nil {
 			a.scrollBy(-e.Wheel()*a.px(72), a.contentH())
 		}
@@ -385,6 +388,19 @@ func (a *app) key(sc int32, mod uint16) {
 		a.setupKey(sc)
 		return
 	}
+	if a.settingsOpen {
+		if a.focus != nil && sc != scEscape && a.focus.key(sc, ctrl) {
+			return
+		}
+		if sc == scEscape {
+			if a.focus != nil {
+				a.focus = nil
+			} else {
+				a.closeSettings()
+			}
+		}
+		return
+	}
 	if a.add != nil {
 		if a.focus != nil && sc != scEscape && a.focus.key(sc, ctrl) {
 			return
@@ -405,8 +421,14 @@ func (a *app) key(sc int32, mod uint16) {
 	case ctrl && sc == sc2:
 		a.show(pageSystems)
 		return
-	case ctrl && (sc == sc3 || sc == scComma):
-		a.show(pageSettings)
+	case ctrl && sc == scComma:
+		a.openSettings()
+		return
+	case ctrl && sc == scO:
+		a.openFile()
+		return
+	case ctrl && sc == scB:
+		a.openBuildFolder()
 		return
 	case sc == scF5 || ctrl && sc == scR:
 		a.rescan()
@@ -421,10 +443,6 @@ func (a *app) key(sc int32, mod uint16) {
 		a.gamesKey(sc, ctrl)
 	case pageSystems:
 		a.systemsKey(sc)
-	case pageSettings:
-		if sc == scEscape {
-			a.focus = nil
-		}
 	}
 }
 
@@ -442,8 +460,6 @@ func (a *app) contentH() int32 {
 	switch a.page {
 	case pageSystems:
 		return a.systemsH
-	case pageSettings:
-		return a.settingsH
 	}
 	return a.gamesH()
 }
@@ -473,12 +489,11 @@ func (a *app) render() {
 		a.drawGames()
 	case pageSystems:
 		a.drawSystems()
-	case pageSettings:
-		a.drawSettings()
 	}
 	a.popClip()
 	a.drawToolbar()
 	a.drawStatus()
+	a.drawSettingsDialog()
 	a.drawSetup()
 	a.drawAddGame()
 	a.drawDialog()
@@ -502,7 +517,6 @@ func (a *app) drawToolbar() {
 	}
 	tab("Games", pageGames)
 	tab("Systems", pageSystems)
-	tab("Settings", pageSettings)
 	x += a.px(16)
 	a.fill(x-a.px(8), y+a.px(6), a.px(1), a.px(20), colLine)
 	switch a.page {
@@ -510,8 +524,6 @@ func (a *app) drawToolbar() {
 		a.gamesToolbar(x, y)
 	case pageSystems:
 		a.systemsToolbar(x, y)
-	case pageSettings:
-		a.settingsToolbar(x, y)
 	}
 }
 
@@ -530,8 +542,6 @@ func (a *app) drawStatus() {
 		left = a.gamesStatus()
 	case pageSystems:
 		left = a.systemsStatus()
-	case pageSettings:
-		left = a.settingsStatus()
 	}
 	x := p + a.text(a.ellipsize(left, a.w/2, 12, false), p, ty, 12, false, colMuted)
 

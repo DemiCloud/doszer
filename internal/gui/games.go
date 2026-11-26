@@ -88,7 +88,11 @@ func (a *app) Filter(label string) { a.filter = label; a.refilter(a.keepPath()) 
 
 // Show switches to a page: "games", "systems" or "settings" (Options.Setup).
 func (a *app) Show(name string) {
-	a.show(map[string]page{"games": pageGames, "systems": pageSystems, "settings": pageSettings}[name])
+	if name == "settings" {
+		a.openSettings()
+		return
+	}
+	a.show(map[string]page{"games": pageGames, "systems": pageSystems}[name])
 }
 
 // rescan lists the ROM directory in the background.
@@ -299,8 +303,6 @@ func (a *app) gamesKey(sc int32, ctrl bool) {
 }
 
 func (a *app) gamesToolbar(x, y int32) {
-	x += a.button("List", x, y, map[bool]int{true: btnOn, false: btnNormal}[!a.grid], func() { a.Grid(false) }) + a.px(4)
-	x += a.button("Grid", x, y, map[bool]int{true: btnOn, false: btnNormal}[a.grid], func() { a.Grid(true) }) + a.px(12)
 	sx := x
 	label := "Sort: " + a.sort.String() + " ▼"
 	x += a.button(label, x, y, btnNormal, func() {
@@ -334,7 +336,6 @@ func (a *app) gamesToolbar(x, y int32) {
 			a.refilter(a.keepPath())
 		})
 	}) + a.px(4)
-	a.button("Add a game…", x, y, btnAccent, a.openAddGame)
 
 	fw := min(a.px(320), a.w/4)
 	a.drawField(&a.search, a.w-a.pad()-fw, y, fw)
@@ -367,7 +368,7 @@ func (a *app) drawGames() {
 	switch {
 	case len(a.romDirs) == 0:
 		a.emptyMessage("No ROM folder", "Choose one in Settings, or create a roms folder beside doszer.")
-		a.centerButton("Open Settings", func() { a.show(pageSettings) })
+		a.centerButton("Open Settings", a.openSettings)
 		return
 	case a.scanErr != nil:
 		a.emptyMessage("Can't read the ROM folder", a.scanErr.Error())
@@ -564,11 +565,21 @@ func (a *app) initialTile(name string, c rgba, x, y, s int32) {
 // play runs the selected game with `doszer run`, one at a time.
 func (a *app) play() {
 	g := a.selected()
-	if g == nil || a.running != "" {
+	if g == nil {
 		return
 	}
 	if g.Err != "" {
 		a.say(g.Name+": "+g.Err, true)
+		return
+	}
+	a.playFile(g.Path)
+}
+
+// playFile runs an archive with `doszer run`, one at a time: from the
+// list, File > Open or a drop.
+func (a *app) playFile(path string) {
+	if a.running != "" {
+		a.say("A game is already running", true)
 		return
 	}
 	exe, err := a.exe()
@@ -583,7 +594,7 @@ func (a *app) play() {
 	if a.o.SaveDir != "" {
 		args = append(args, "--save-dir", a.o.SaveDir)
 	}
-	args = append(args, "--", g.Path)
+	args = append(args, "--", path)
 	cmd := exec.Command(exe, args...)
 	hideConsole(cmd)
 	tail := &tailBuffer{}
@@ -593,9 +604,8 @@ func (a *app) play() {
 		a.say(err.Error(), true)
 		return
 	}
-	a.running = g.Path
+	a.running = path
 	a.message, a.msgErr = "", false
-	path := g.Path
 	go func() {
 		err := cmd.Wait()
 		if err != nil {

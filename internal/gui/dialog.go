@@ -19,7 +19,12 @@ type dialog struct {
 	job     *job
 	scroll  int    // output lines scrolled up from the end
 	field   *field // an input below the lines (a file name), or nil
+	rows    []dialogRow
 }
+
+// dialogRow is a row of a dialog's table: a name, a value, and a link
+// opened with the system's handler when clicked.
+type dialogRow struct{ name, value, link string }
 
 type dialogButton struct {
 	label string
@@ -253,8 +258,10 @@ func (a *app) drawDialog() {
 
 	p := a.px(22)
 	w := min(a.w-a.px(40), a.px(820))
-	if d.job == nil {
+	if d.job == nil && len(d.rows) == 0 {
 		w = min(w, a.px(560))
+	} else if d.job == nil {
+		w = min(w, a.px(720))
 	}
 	lh := a.lineHeight(13, false) + a.px(4)
 	mono := a.lineHeight(12, false) + a.px(3)
@@ -269,6 +276,11 @@ func (a *app) drawDialog() {
 	h := p*2 + a.lineHeight(17, true) + a.px(12) + int32(len(lines))*lh + a.px(48)
 	if d.field != nil {
 		h += a.px(44)
+	}
+	rowH := a.lineHeight(13, false) + a.px(10)
+	h += int32(len(d.rows)) * rowH
+	if len(d.rows) > 0 {
+		h += a.px(8)
 	}
 	var out []string
 	if d.job != nil {
@@ -295,6 +307,34 @@ func (a *app) drawDialog() {
 
 	if d.field != nil {
 		a.drawField(d.field, x+p, ty+a.px(4), w-2*p)
+	}
+	if len(d.rows) > 0 {
+		c1, c2 := int32(0), int32(0)
+		for _, r := range d.rows {
+			c1 = max(c1, a.textWidth(r.name, 13, true))
+			c2 = max(c2, a.textWidth(r.value, 13, false))
+		}
+		ty += a.px(4)
+		for _, r := range d.rows {
+			a.text(r.name, x+p, ty, 13, true, colText)
+			a.text(r.value, x+p+c1+a.px(20), ty, 13, false, colMuted)
+			if r.link != "" {
+				lx := x + p + c1 + c2 + a.px(40)
+				link := a.ellipsize(r.link, x+w-p-lx, 13, false)
+				lw := a.textWidth(link, 13, false)
+				lc := colAccent
+				if canOpen() && a.hovered(lx, ty, lw, rowH) {
+					lc = colText
+				}
+				a.text(link, lx, ty, 13, false, lc)
+				a.fill(lx, ty+a.lineHeight(13, false)-a.px(1), lw, a.px(1), lc)
+				if canOpen() {
+					url := r.link
+					a.onClick(lx, ty, lw, rowH, func(bool) { a.open(url) })
+				}
+			}
+			ty += rowH
+		}
 	}
 
 	if d.job != nil {
@@ -349,3 +389,9 @@ type drive struct {
 	label string // the disc's label (Windows) or the drive's model (Linux)
 	disc  bool   // a disc is in (Windows; Linux can't tell)
 }
+
+// File kinds pickFile asks for.
+const (
+	fileDisc    = iota // a CUE sheet or a zip of one
+	fileArchive        // a .dosz
+)

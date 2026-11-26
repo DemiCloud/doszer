@@ -778,7 +778,7 @@ in the source):
   with `REGEDIT /S`.
 
 An existing `WINDOWS.BAT` is replaced only with `-f`; `-n` shows the
-change. The window's Add a game runs it after `install`.
+change. The window's Build > Import a disc runs it after `install`.
 
 ## Run
 
@@ -832,8 +832,19 @@ a game's right-click menu.
 
 `doszer gui` opens doszer's window; `doszer` with no arguments opens it
 too when started without a terminal (from Explorer, a shortcut or a
-desktop menu). It works the same on Windows and Linux. A menu bar (File, View, Tools,
-Help) holds every action; below it, three pages:
+desktop menu). It works the same on Windows and Linux. The menu bar holds every
+action:
+
+| Menu | |
+|---|---|
+| File | Open (an archive, to play), Quit |
+| View | Games, Systems; list or grid, sort, refresh |
+| Build | Import a disc, Build a folder, Repack an archive, Prepare a shell or OS image |
+| Tools | Settings, Verify (an archive, or all games), Environment |
+| Help | Keyboard shortcuts, Credits (doszer and what it embeds, linked), GitHub |
+
+A file dropped on the window plays (`.dosz`), starts an import (`.cue`,
+`.zip`) or a build (a folder). Below the menu bar, two pages:
 
 - **Games**: every `.dosz` under the ROM directory, at any depth, as a
   list or grid: each archive's icon (`DOSZ.ICO`, else its initial),
@@ -851,16 +862,18 @@ Help) holds every action; below it, three pages:
   (`doszer verify --all`). Typing filters by name, folder or system
   (Esc clears); arrows, Page Up/Down, Home and End move; Enter or a
   double click plays the game with `doszer run` in its own process, one
-  at a time. Ctrl+L and Ctrl+G switch between list and grid.
+  at a time.
 - **Systems**: the OS images and shells in the system directory, with
   their kind (fixed or dynamic VHD, raw image, shell), size, which is
   the default, and which games boot each; and the ones games boot that
   the folder hasn't. The selected one can be made the default, or
   prepared: `doszer prepare` makes a game-ready copy beside it, under a
   name you choose, the original untouched.
-- **Settings**: the folders (typed, or picked with Browse: Windows'
+Tools > Settings (Ctrl+,) is a dialog:
+
+- the folders (typed, or picked with Browse: Windows'
   folder browser, zenity or kdialog on Linux), the default OS image and
-  shell, Ogg quality and the Redump datfile. Save writes the changes to
+  shell, Ogg quality and the Redump datfile; Save writes the changes to
   the config file, keeping its comments; empty fields fall back to the
   defaults, shown greyed in them.
 
@@ -871,12 +884,12 @@ and shown in a dialog with its command line and live output - the
 command line can do anything the window does. Repack and the changes ask
 first.
 
-Ctrl+1, Ctrl+2 and Ctrl+3 switch pages, F5 or Ctrl+R rescans.
+Help > Keyboard shortcuts lists the keys.
 
-### Adding a game
+### Building games
 
-File > Add a game (Ctrl+N, or the Games page's button) makes an archive
-from a disc, into a ROM folder, by the commands one would type:
+Build > Import a disc (Ctrl+N) makes an archive from a disc, into a ROM
+folder, by the commands one would type:
 
 1. **Where is it?** A CD drive (listed with its disc's label on Windows;
    the number of discs, asked for in turn), or disc image files: a CUE
@@ -902,6 +915,12 @@ from a disc, into a ROM folder, by the commands one would type:
 
 A game built without installing boots DOSBox Pure's start menu (or
 Windows), from which it runs off its disc.
+
+Build > Build a folder (Ctrl+B) does the same for files already on disk
+(a game someone installed, a disc's files), built where they are: `doszer
+init` only if the folder has no `DOSZ.TOML`, an optional install, then
+`doszer build` into a ROM folder. Repack an archive and Prepare a shell
+or OS image run `doszer repack` (in place) and `doszer prepare`.
 
 ### First run
 

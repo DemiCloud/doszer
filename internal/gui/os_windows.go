@@ -120,9 +120,13 @@ func opticalDrives() []drive {
 	return out
 }
 
-// pickFile asks for a disc image with Windows' open dialog.
-func pickFile(title string) (string, bool) {
+// pickFile asks for a file of a kind (fileDisc, fileArchive) with
+// Windows' open dialog.
+func pickFile(title string, kind int) (string, bool) {
 	filter := utf16z("Disc images (*.cue, *.zip)\x00*.cue;*.zip\x00All files\x00*.*\x00")
+	if kind == fileArchive {
+		filter = utf16z("DOSBox Pure archives (*.dosz)\x00*.dosz\x00All files\x00*.*\x00")
+	}
 	var file [1024]uint16
 	t, _ := syscall.UTF16PtrFromString(title)
 	ofn := struct {

@@ -165,7 +165,7 @@ func (a *app) systemsKey(sc int32) {
 func (a *app) drawSystems() {
 	if a.sysDir.Path == "" {
 		a.emptyMessage("No system folder", "DOSBox Pure finds OS images (.img, .vhd) and shells (.dosz) there.", "Choose one in Settings, or create a system folder beside doszer.")
-		a.centerButton("Open Settings", func() { a.show(pageSettings) })
+		a.centerButton("Open Settings", a.openSettings)
 		a.systemsH = 0
 		return
 	}

@@ -15,16 +15,19 @@ import (
 type settings struct {
 	fROMs             []*field // paths.roms: one field per folder
 	fSys, fSave, fDat field
+	fSources          field
 	defOS, defShell   string
 	ogg               int
 	saved             map[string]string // the file's values when loaded; paths.roms joined by NUL
 	effective         map[string]config.Setting
 	cfgPath           string
 	settingsH         int32
+	settingsOpen      bool
+	settingsScroll    int32
 }
 
 func (a *app) initSettings() {
-	for _, f := range []*field{&a.fSys, &a.fSave, &a.fDat} {
+	for _, f := range []*field{&a.fSys, &a.fSave, &a.fDat, &a.fSources} {
 		f.onEnter = a.saveSettings
 	}
 }
@@ -60,6 +63,7 @@ func (a *app) loadSettings() {
 		"paths.roms":        strings.Join(roms, "\x00"),
 		"paths.system":      str("paths.system", file.Paths.System),
 		"paths.saves":       str("paths.saves", file.Paths.Saves),
+		"paths.sources":     str("paths.sources", file.Paths.Sources),
 		"build.redump_dat":  str("build.redump_dat", file.Build.RedumpDAT),
 		"defaults.os":       str("defaults.os", file.Defaults.OS),
 		"defaults.shell":    str("defaults.shell", file.Defaults.Shell),
@@ -74,6 +78,7 @@ func (a *app) loadSettings() {
 	}
 	a.fSys.set(a.saved["paths.system"])
 	a.fSave.set(a.saved["paths.saves"])
+	a.fSources.set(a.saved["paths.sources"])
 	a.fDat.set(a.saved["build.redump_dat"])
 	a.defOS, a.defShell = a.saved["defaults.os"], a.saved["defaults.shell"]
 	a.ogg = file.Build.OggQuality
@@ -89,6 +94,7 @@ func (a *app) loadSettings() {
 	a.fROMs[0].placeholder = a.defaultHint("paths.roms")
 	a.fSys.placeholder = a.defaultHint("paths.system")
 	a.fSave.placeholder = a.defaultHint("paths.saves")
+	a.fSources.placeholder = a.defaultHint("paths.sources")
 	a.fDat.placeholder = "Redump's own, embedded and updated weekly"
 }
 
@@ -104,6 +110,7 @@ func (a *app) form() map[string]string {
 		"paths.roms":        strings.Join(roms, "\x00"),
 		"paths.system":      a.fSys.text,
 		"paths.saves":       a.fSave.text,
+		"paths.sources":     a.fSources.text,
 		"build.redump_dat":  a.fDat.text,
 		"defaults.os":       a.defOS,
 		"defaults.shell":    a.defShell,
@@ -124,6 +131,13 @@ func (a *app) settingsChanged() bool {
 func (a *app) defaultHint(k string) string {
 	if k == "paths.saves" && !config.Configured() {
 		return "None: a temporary folder, deleted after each game"
+	}
+	if k == "paths.sources" {
+		d := config.SourcesDirOf(config.Default())
+		if d.Path == "" {
+			return "None: a temporary folder, deleted after each build"
+		}
+		return d.Path + "  (" + d.From + ")"
 	}
 	var d config.Dir
 	switch k {
@@ -172,20 +186,66 @@ func (a *app) saveSettings() {
 				return
 			}
 		}
-		a.focus = nil
+		a.focus, a.settingsOpen = nil, false
 		a.say("Saved to "+p, false)
 		a.reload()
 	})
 }
 
-func (a *app) settingsToolbar(x, y int32) {
-	changed := a.settingsChanged()
-	var save, revert func()
-	if changed {
-		save, revert = a.saveSettings, a.loadSettings
+// openSettings opens the Settings dialog on the configuration's values.
+func (a *app) openSettings() {
+	a.loadSettings()
+	a.settingsOpen, a.settingsScroll, a.popup, a.focus = true, 0, nil, nil
+}
+
+// closeSettings closes the dialog, asking first if there are unsaved
+// changes.
+func (a *app) closeSettings() {
+	if a.settingsChanged() {
+		a.confirm("Discard your changes?", "Discard", func() {
+			a.settingsOpen, a.focus = false, nil
+			a.loadSettings()
+		}, "The settings you changed aren't saved.")
+		return
 	}
-	x += a.button("Save", x, y, btnAccent, save) + a.px(4)
-	a.button("Revert", x, y, btnNormal, revert)
+	a.settingsOpen, a.focus = false, nil
+}
+
+// drawSettingsDialog draws Settings as a modal dialog: the form scrolls,
+// Save and Close stay below it.
+func (a *app) drawSettingsDialog() {
+	if !a.settingsOpen {
+		return
+	}
+	a.layer = layerModal
+	defer func() { a.layer = layerPage }()
+	a.fill(0, 0, a.w, a.h, rgba{0, 0, 0, 170})
+	a.onClick(0, 0, a.w, a.h, func(bool) {})
+	w := min(a.w-a.px(40), a.px(900))
+	h := min(a.h-a.px(40), a.px(680))
+	x, y := (a.w-w)/2, (a.h-h)/2
+	a.round(x-a.px(1), y-a.px(1), w+a.px(2), h+a.px(2), a.px(14), colLine)
+	a.round(x, y, w, h, a.px(14), colPopup)
+	p := a.px(24)
+	a.text("Settings", x+p, y+p, 19, true, colText)
+	a.text(a.ellipsize(a.settingsStatus(), w/2, 12, false), x+w-p-min(a.textWidth(a.settingsStatus(), 12, false), w/2), y+p+a.px(6), 12, false, colFaint)
+	top := y + p + a.lineHeight(19, true) + a.px(10)
+	bottom := y + h - p - a.px(44)
+	a.fill(x, top-a.px(1), w, a.px(1), colLine)
+	a.fill(x, bottom+a.px(4), w, a.px(1), colLine)
+	a.pushClip(x, top, w, bottom-top)
+	a.drawSettings(x, top, w, bottom-top)
+	a.popClip()
+	by := y + h - p - a.px(32)
+	bx := x + w - p
+	var save func()
+	if a.settingsChanged() {
+		save = func() { a.saveSettings() }
+	}
+	bx -= a.buttonW("Save")
+	a.button("Save", bx, by, btnAccent, save)
+	bx -= a.buttonW("Close") + a.px(8)
+	a.button("Close", bx, by, btnNormal, a.closeSettings)
 }
 
 func (a *app) settingsStatus() string {
@@ -198,12 +258,12 @@ func (a *app) settingsStatus() string {
 	return "Not set up: nothing is saved"
 }
 
-func (a *app) drawSettings() {
-	ax, ay, aw, _ := a.area()
+// drawSettings draws the form in the rectangle, scrolled.
+func (a *app) drawSettings(ax, ay, aw, ah int32) {
 	p := a.pad()
 	x := ax + p*2
-	w := min(aw-4*p, a.px(820))
-	y := ay + p*2 - a.scroll[pageSettings]
+	w := aw - 4*p
+	y := ay + p - a.settingsScroll
 	labelW := a.px(170)
 	fx := x + labelW
 	fw := w - labelW
@@ -324,6 +384,8 @@ func (a *app) drawSettings() {
 	note("OS images and Windows 3.x shells, as DOSBox Pure's system directory.", colFaint)
 	folder("Saves", "paths.saves", &a.fSave)
 	note("DOSBox Pure's save files, named after each archive.", colFaint)
+	folder("Sources", "paths.sources", &a.fSources)
+	note("Where Build > Import a disc keeps each disc's dump and DOSZ.TOML.", colFaint)
 
 	// Systems.
 	y += a.px(10)
@@ -381,5 +443,6 @@ func (a *app) drawSettings() {
 	y += a.px(38)
 	note("A datfile dump and verify check discs against instead of Redump's own.", colFaint)
 
-	a.settingsH = y + a.scroll[pageSettings] - ay + p
+	a.settingsH = y + a.settingsScroll - ay + p
+	a.settingsScroll = max(0, min(a.settingsScroll, a.settingsH-ah))
 }

@@ -49,6 +49,7 @@ const (
 	EventKeyDown         = 0x300
 	EventKeyUp           = 0x301
 	EventTextInput       = 0x303
+	EventDropFile        = 0x1000
 	EventMouseMotion     = 0x400
 	EventMouseButtonDown = 0x401
 	EventMouseButtonUp   = 0x402
@@ -105,6 +106,25 @@ func (e *Event) MouseXY() (x, y int32) { return e.i32(20), e.i32(24) }
 
 // Clicks is a mouse button event's click count: 2 for a double click.
 func (e *Event) Clicks() uint8 { return e[18] }
+
+// DropFile is a drop event's file path (SDL_DropEvent.file, at 8), which
+// it frees as SDL requires.
+func (e *Event) DropFile() string {
+	p := *(**byte)(unsafe.Pointer(&e[8]))
+	if p == nil {
+		return ""
+	}
+	defer Free(unsafe.Pointer(p))
+	var b []byte
+	for i := 0; i < 1<<16; i++ {
+		c := *(*byte)(unsafe.Add(unsafe.Pointer(p), i))
+		if c == 0 {
+			break
+		}
+		b = append(b, c)
+	}
+	return string(b)
+}
 
 // Text is a text input event's UTF-8 text (SDL_TextInputEvent).
 func (e *Event) Text() string {

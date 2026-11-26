@@ -78,14 +78,19 @@ func opticalDrives() []drive {
 	return out
 }
 
-// pickFile asks for a disc image with zenity or kdialog.
-func pickFile(title string) (string, bool) {
+// pickFile asks for a file of a kind (fileDisc, fileArchive) with zenity
+// or kdialog.
+func pickFile(title string, kind int) (string, bool) {
+	pat, name := "*.cue *.CUE *.zip *.ZIP", "Disc images"
+	if kind == fileArchive {
+		pat, name = "*.dosz *.DOSZ", "DOSBox Pure archives"
+	}
 	var cmd *exec.Cmd
 	switch picker() {
 	case "zenity":
-		cmd = exec.Command("zenity", "--file-selection", "--title="+title, "--file-filter=Disc images | *.cue *.CUE *.zip *.ZIP", "--file-filter=All files | *")
+		cmd = exec.Command("zenity", "--file-selection", "--title="+title, "--file-filter="+name+" | "+pat, "--file-filter=All files | *")
 	case "kdialog":
-		cmd = exec.Command("kdialog", "--getopenfilename", ".", "*.cue *.CUE *.zip *.ZIP|Disc images", "--title", title)
+		cmd = exec.Command("kdialog", "--getopenfilename", ".", pat+"|"+name, "--title", title)
 	default:
 		return "", false
 	}

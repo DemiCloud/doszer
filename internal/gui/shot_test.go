@@ -14,7 +14,7 @@ import (
 // (where the PNGs go), DOSZER_GUI_SYSTEM (a system directory, optional),
 // DOSZER_GUI_STATS (a play time file, optional, only read),
 // DOSZER_GUI_EXE (a doszer binary, optional: shots running a command),
-// DOSZER_GUI_CUE (a disc image, optional: Add a game; with DOSZER_GUI_BUILD
+// DOSZER_GUI_CUE (a disc image, optional: Import a disc; with DOSZER_GUI_BUILD
 // set, built into the ROM folder). It
 // needs a display. The configuration is the real one (read, never written).
 func TestScreenshot(t *testing.T) {
@@ -31,28 +31,25 @@ func TestScreenshot(t *testing.T) {
 		stats = filepath.Join(t.TempDir(), "playtime.json")
 	}
 	shots := map[string]func(a *App){
-		"list.png":     func(a *App) { a.Select(1) },
-		"grid.png":     func(a *App) { a.Grid(true); a.Select(2) },
-		"search.png":   func(a *App) { a.Search("betrayal") },
-		"none.png":     func(a *App) { a.Search("zzzz") },
-		"systems.png":  func(a *App) { a.Show("systems") },
-		"settings.png": func(a *App) { a.Show("settings") },
-		"setup.png":    func(a *App) { a.OpenSetup() },
-		"menu.png":     func(a *App) { a.OpenGameMenu(0) },
-		"filter.png":   func(a *App) { a.Filter("Win31 (shell)") },
-		"filemenu.png": func(a *App) {
-			m := a.menus()[0]
-			var labels []string
-			for _, it := range m.items {
-				l := it.label
-				if it.keys != "" {
-					l += "\t" + it.keys
-				}
-				labels = append(labels, l)
-			}
-			a.openMenu(a.px(8), a.menuH(), labels, func(int) {})
+		"list.png":      func(a *App) { a.Select(1) },
+		"grid.png":      func(a *App) { a.Grid(true); a.Select(2) },
+		"search.png":    func(a *App) { a.Search("betrayal") },
+		"none.png":      func(a *App) { a.Search("zzzz") },
+		"systems.png":   func(a *App) { a.Show("systems") },
+		"settings.png":  func(a *App) { a.Show("settings") },
+		"setup.png":     func(a *App) { a.OpenSetup() },
+		"menu.png":      func(a *App) { a.OpenGameMenu(0) },
+		"filter.png":    func(a *App) { a.Filter("Win31 (shell)") },
+		"filemenu.png":  func(a *App) { a.openMenuItems(a.px(8), a.menuH(), a.menus()[0].items) },
+		"add.png":       func(a *App) { a.openAddGame() },
+		"buildmenu.png": func(a *App) { a.openMenuItems(a.px(120), a.menuH(), a.menus()[2].items) },
+		"toolsmenu.png": func(a *App) {
+			m := a.menus()[3].items
+			a.openMenuItems(a.px(180), a.menuH(), m)
 		},
-		"add.png": func(a *App) { a.openAddGame() },
+		"shortcuts.png": func(a *App) { a.showShortcuts() },
+		"credits.png":   func(a *App) { a.showCredits() },
+		"folder.png":    func(a *App) { a.openBuildFolder() },
 		"folders.png": func(a *App) {
 			if items := a.filters(); len(items) > 0 {
 				a.openPopup(a.px(480), a.px(12), a.px(200), items, 0, func(int) {})
@@ -73,7 +70,7 @@ func TestScreenshot(t *testing.T) {
 		shots["deps.png"] = func(a *App) { a.RunDeps(0) }
 	}
 	if cue := os.Getenv("DOSZER_GUI_CUE"); cue != "" && exe != "" && os.Getenv("DOSZER_GUI_BUILD") != "" {
-		// Add a game through to the archive, in the ROM folder: the shot
+		// Import a disc through to the archive, in the ROM folder: the shot
 		// shows the finished dialog.
 		shots["addbuild.png"] = func(a *App) {
 			a.openAddGame()
@@ -86,7 +83,7 @@ func TestScreenshot(t *testing.T) {
 			}
 		}
 	}
-	if cue := os.Getenv("DOSZER_GUI_CUE"); cue != "" { // a disc image, for Add a game's options
+	if cue := os.Getenv("DOSZER_GUI_CUE"); cue != "" { // a disc image, for Import a disc's options
 		shots["addoptions.png"] = func(a *App) {
 			a.openAddGame()
 			if a.add != nil {

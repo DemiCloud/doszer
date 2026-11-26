@@ -1,91 +1,79 @@
 package gui
 
 import (
-	"runtime"
+	"os"
+	"path/filepath"
+	"strings"
 
+	"github.com/DemiCloud/doszer/internal/builtin"
 	"github.com/DemiCloud/doszer/internal/config"
 )
 
 // homepage is doszer's, for Help.
 const homepage = "https://github.com/demicloud/doszer"
 
-// menuItem is one entry of a menu bar menu: "-" is a separator, keys the
-// shortcut shown beside it.
+// menuItem is one entry of a menu: "-" is a separator, keys the shortcut
+// shown beside it, sub a submenu it opens.
 type menuItem struct {
 	label, keys string
 	fn          func()
+	sub         []menuItem
 }
 
-// menus are the menu bar's menus, as they are now.
-func (a *app) menus() []struct {
+type menu struct {
 	title string
 	items []menuItem
-} {
-	open := []menuItem{}
-	if canOpen() {
-		for _, d := range a.romDirs {
-			d := d
-			open = append(open, menuItem{label: "Open " + d.Path, fn: func() { a.open(d.Path) }})
-		}
-		if a.sysDir.Path != "" {
-			open = append(open, menuItem{label: "Open " + a.sysDir.Path, fn: func() { a.open(a.sysDir.Path) }})
-		}
-	}
-	file := []menuItem{{"Add a game…", "Ctrl+N", a.openAddGame}}
-	if len(open) > 0 {
-		file = append(file, menuItem{label: "-"})
-		file = append(file, open...)
-	}
-	file = append(file, menuItem{label: "-"}, menuItem{"Quit", "Ctrl+Q", func() { a.quit = true }})
+}
 
+// menus are the menu bar's menus, as they are now. Every action is the
+// doszer command that does it (runDoszer), or a dialog leading to one.
+func (a *app) menus() []menu {
+	file := []menuItem{
+		{label: "Open…", keys: "Ctrl+O", fn: a.openFile},
+		{label: "-"},
+		{label: "Quit", keys: "Ctrl+Q", fn: func() { a.quit = true }},
+	}
+	sorts := make([]menuItem, 0, sortModes)
+	for m := sortName; m < sortModes; m++ {
+		m := m
+		sorts = append(sorts, menuItem{label: m.String(), fn: func() { a.show(pageGames); a.sort = m; a.refilter(a.keepPath()) }})
+	}
 	view := []menuItem{
-		{"Games", "Ctrl+1", func() { a.show(pageGames) }},
-		{"Systems", "Ctrl+2", func() { a.show(pageSystems) }},
-		{"Settings", "Ctrl+3", func() { a.show(pageSettings) }},
+		{label: "Games", keys: "Ctrl+1", fn: func() { a.show(pageGames) }},
+		{label: "Systems", keys: "Ctrl+2", fn: func() { a.show(pageSystems) }},
 		{label: "-"},
-		{"List", "Ctrl+L", func() { a.show(pageGames); a.Grid(false) }},
-		{"Grid", "Ctrl+G", func() { a.show(pageGames); a.Grid(true) }},
+		{label: "List", keys: "Ctrl+L", fn: func() { a.show(pageGames); a.Grid(false) }},
+		{label: "Grid", keys: "Ctrl+G", fn: func() { a.show(pageGames); a.Grid(true) }},
+		{label: "Sort by", sub: sorts},
 		{label: "-"},
-		{"Refresh", "F5", func() { a.rescan(); a.rescanSystems() }},
+		{label: "Refresh", keys: "F5", fn: func() { a.rescan(); a.rescanSystems() }},
 	}
-
+	build := []menuItem{
+		{label: "Import a disc…", keys: "Ctrl+N", fn: a.openAddGame},
+		{label: "Build a folder…", keys: "Ctrl+B", fn: a.openBuildFolder},
+		{label: "-"},
+		{label: "Repack an archive…", fn: a.repackFile},
+		{label: "Prepare a shell or OS image…", fn: a.preparePicker},
+	}
 	tools := []menuItem{
-		{"Verify all games", "", func() {
-			if len(a.romDirs) > 0 {
-				a.runDoszer("Verify all games", append([]string{"verify", "--format", "plain", "--all"}, config.DirPaths(a.romDirs)...), nil)
-			}
+		{label: "Settings…", keys: "Ctrl+,", fn: a.openSettings},
+		{label: "Verify", sub: []menuItem{
+			{label: "An archive…", fn: a.verifyFile},
+			{label: "All games", fn: a.verifyAll},
 		}},
-		{"Show doszer's environment", "", func() { a.runDoszer("Environment", []string{"env", "--format", "plain"}, nil) }},
+		{label: "Environment", fn: func() { a.runDoszer("Environment", []string{"env", "--format", "plain"}, nil) }},
 	}
 	if !config.Configured() {
-		tools = append(tools, menuItem{"Set up doszer…", "", a.openSetup})
+		tools = append(tools, menuItem{label: "-"}, menuItem{label: "Set up doszer…", fn: a.openSetup})
 	}
-	if runtime.GOOS == "windows" {
-		tools = append(tools, menuItem{label: "-"}, menuItem{"Open .dosz files with doszer", "", func() {
-			a.confirm("Open .dosz files with doszer?", "Associate", func() {
-				a.runDoszer("Associate .dosz files", []string{"associate", "--format", "plain"}, nil)
-			}, "Registers this doszer for your user as the program that opens", ".dosz files in Explorer, with its icon.")
-		}})
-	}
-
 	help := []menuItem{
-		{"Keyboard shortcuts", "", func() {
-			a.alert("Keyboard shortcuts",
-				"Ctrl+N  add a game          Ctrl+Q  quit",
-				"Ctrl+1/2/3  Games, Systems, Settings",
-				"Ctrl+L / Ctrl+G  list or grid   F5  rescan",
-				"Type to search, Esc to clear; arrows, Page Up/Down, Home, End move",
-				"Enter or a double click plays; a right click opens a game's menu")
-		}},
-		{"doszer's versions", "", func() { a.runDoszer("Versions", []string{"version", "--format", "plain"}, nil) }},
+		{label: "Keyboard shortcuts", fn: a.showShortcuts},
+		{label: "Credits", fn: a.showCredits},
 	}
 	if canOpen() {
-		help = append(help, menuItem{"doszer on the web", "", func() { a.open(homepage) }})
+		help = append(help, menuItem{label: "GitHub", fn: func() { a.open(homepage) }})
 	}
-	return []struct {
-		title string
-		items []menuItem
-	}{{"File", file}, {"View", view}, {"Tools", tools}, {"Help", help}}
+	return []menu{{"File", file}, {"View", view}, {"Build", build}, {"Tools", tools}, {"Help", help}}
 }
 
 func (a *app) drawMenuBar() {
@@ -99,22 +87,155 @@ func (a *app) drawMenuBar() {
 			a.round(x, a.px(3), w, mh-a.px(6), a.px(5), colCardHover)
 		}
 		a.text(m.title, x+a.px(10), (mh-lh)/2, 13, false, colText)
-		items := m.items
-		mx := x
-		a.onClick(x, 0, w, mh, func(bool) {
-			labels := make([]string, len(items))
-			for i, it := range items {
-				labels[i] = it.label
-				if it.keys != "" {
-					labels[i] += "\t" + it.keys
-				}
-			}
-			a.openMenu(mx, mh, labels, func(i int) {
-				if items[i].fn != nil {
-					items[i].fn()
-				}
-			})
-		})
+		items, mx := m.items, x
+		a.onClick(x, 0, w, mh, func(bool) { a.openMenuItems(mx, mh, items) })
 		x += w
 	}
+}
+
+// openMenuItems opens a menu's items at x, y; a submenu opens beside its
+// item when chosen.
+func (a *app) openMenuItems(x, y int32, items []menuItem) {
+	labels := make([]string, len(items))
+	for i, it := range items {
+		labels[i] = it.label
+		switch {
+		case it.sub != nil:
+			labels[i] += "\t►"
+		case it.keys != "":
+			labels[i] += "\t" + it.keys
+		}
+	}
+	a.openMenu(x, y, labels, func(i int) {
+		it := items[i]
+		if it.sub != nil {
+			a.openMenuItems(x+a.px(190), y+a.px(30)*int32(i), it.sub)
+			return
+		}
+		if it.fn != nil {
+			it.fn()
+		}
+	})
+}
+
+// openFile asks for an archive and plays it (File > Open).
+func (a *app) openFile() {
+	if p, ok := pickFile("Open an archive", fileArchive); ok {
+		a.playFile(p)
+	}
+}
+
+// drop handles a file dropped on the window: an archive plays, a disc
+// image or a folder starts an import or a build.
+func (a *app) drop(p string) {
+	if a.setup != nil || a.dialog != nil || a.settingsOpen {
+		return
+	}
+	fi, err := os.Stat(p)
+	if err != nil {
+		a.say(err.Error(), true)
+		return
+	}
+	switch ext := strings.ToLower(filepath.Ext(p)); {
+	case fi.IsDir():
+		a.openBuildFolder()
+		if a.add != nil {
+			a.add.folder.set(p)
+		}
+	case ext == ".dosz":
+		a.playFile(p)
+	case ext == ".cue" || ext == ".zip":
+		if a.add == nil {
+			a.openAddGame()
+		}
+		if a.add != nil && a.add.page == 0 && !a.add.useFolder {
+			a.add.useFiles = true
+			if f := a.add.files[len(a.add.files)-1]; f.text != "" {
+				a.add.files = append(a.add.files, &field{})
+			}
+			a.add.files[len(a.add.files)-1].set(p)
+		}
+	default:
+		a.say(filepath.Base(p)+": drop an archive (.dosz), a disc image (.cue, .zip) or a game's folder", true)
+	}
+}
+
+// repackFile asks for an archive and repacks it in place.
+func (a *app) repackFile() {
+	p, ok := pickFile("Repack an archive", fileArchive)
+	if !ok {
+		return
+	}
+	name := filepath.Base(p)
+	a.confirm("Repack "+name+"?", "Repack", func() {
+		a.runDoszer("Repack: "+name, []string{"repack", "--format", "plain", p, p}, func(err error) {
+			if err == nil {
+				a.rescan()
+			}
+		})
+	}, "Rebuilds the archive from its embedded manifest, in place.")
+}
+
+// preparePicker offers the system folder's shells and images to prepare.
+func (a *app) preparePicker() {
+	var files []systemFile
+	var items []string
+	for _, f := range a.files {
+		if !f.missing {
+			files = append(files, f)
+			items = append(items, f.Name)
+		}
+	}
+	if len(files) == 0 {
+		a.alert("Nothing to prepare", "The system folder has no shells or OS images: "+a.sysDir.Path)
+		return
+	}
+	a.openMenu(a.px(120), a.menuH(), items, func(i int) { a.prepare(files[i]) })
+}
+
+func (a *app) verifyFile() {
+	if p, ok := pickFile("Verify an archive", fileArchive); ok {
+		a.runDoszer("Verify: "+filepath.Base(p), []string{"verify", "--format", "plain", p}, nil)
+	}
+}
+
+func (a *app) verifyAll() {
+	if len(a.romDirs) == 0 {
+		a.alert("No ROM folder", "Choose where games go first: Tools, Settings.")
+		return
+	}
+	a.runDoszer("Verify all games", append([]string{"verify", "--format", "plain", "--all"}, config.DirPaths(a.romDirs)...), nil)
+}
+
+// showShortcuts lists the keyboard shortcuts as a table.
+func (a *app) showShortcuts() {
+	a.dialog = &dialog{title: "Keyboard shortcuts", rows: []dialogRow{
+		{"Ctrl+O", "Open an archive and play it", ""},
+		{"Ctrl+N", "Import a disc", ""},
+		{"Ctrl+B", "Build a folder", ""},
+		{"Ctrl+,", "Settings", ""},
+		{"Ctrl+1, Ctrl+2", "Games, Systems", ""},
+		{"Ctrl+L, Ctrl+G", "List, grid", ""},
+		{"F5", "Refresh", ""},
+		{"Ctrl+Q", "Quit", ""},
+		{"Typing, Esc", "Search the games, clear the search", ""},
+		{"Arrows, Page Up/Down", "Move through the games", ""},
+		{"Enter, double click", "Play the selected game", ""},
+		{"Right click", "A game's menu", ""},
+	}, buttons: []dialogButton{{label: "Close", style: btnAccent}}}
+}
+
+// showCredits lists doszer and the programs it embeds, linked.
+func (a *app) showCredits() {
+	rows := []dialogRow{{"doszer", a.o.Version, homepage}}
+	for _, p := range builtin.Programs() {
+		v := p.Version
+		if !p.Embedded {
+			v += " (not in this build)"
+		}
+		rows = append(rows, dialogRow{p.Name, v, p.URL})
+	}
+	rows = append(rows, dialogRow{"Go fonts", "", "https://go.dev/blog/go-fonts"})
+	a.dialog = &dialog{title: "Credits", lines: []string{"doszer and the programs it embeds:"}, rows: rows,
+		buttons: []dialogButton{{label: "Close", style: btnAccent}}}
 }

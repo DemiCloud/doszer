@@ -9,10 +9,11 @@ import (
 	"strings"
 
 	"github.com/DemiCloud/doszer/internal/config"
+	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/start"
 )
 
-// addGame is the Add a game flow: a disc in a CD drive, or disc image
+// addGame is Build > Import a disc and Build a folder: a disc in a CD drive, disc image
 // files, made into an archive in a ROM folder by the commands a person
 // would type - doszer dump (or dump --from), init and build - run one
 // after the other in a dialog.
@@ -31,7 +32,12 @@ type addGame struct {
 	keep     bool
 	named    bool // the name was typed, not suggested
 	install  bool // run its setup in DOSBox Pure, then choose the program it starts
-	driveC   bool // install --drive c: the setup only installs to C:
+
+	// Build a folder: game files already on disk, built where they are.
+	useFolder   bool
+	folder      field
+	hasManifest bool // it has a DOSZ.TOML: init isn't run
+	driveC      bool // install --drive c: the setup only installs to C:
 
 	// Once installed: choosing the program the game starts with.
 	plan       *addPlan
@@ -59,7 +65,7 @@ var romSubfolders = map[string]bool{"dos": true, "pc": true, "windows": true, "w
 // openAddGame starts the flow.
 func (a *app) openAddGame() {
 	if len(a.romDirs) == 0 {
-		a.alert("No ROM folder", "Choose where games go first: Settings, Games (ROMs).")
+		a.alert("No ROM folder", "Choose where games go first: Tools, Settings, Games (ROMs).")
 		return
 	}
 	g := &addGame{drives: opticalDrives(), discs: 1, keep: true, install: true}
@@ -90,6 +96,17 @@ func (a *app) openAddGame() {
 	}
 	a.add, a.popup = g, nil
 	a.focus = nil
+}
+
+// openBuildFolder starts the flow on a folder of the game's files.
+func (a *app) openBuildFolder() {
+	a.openAddGame()
+	if g := a.add; g != nil {
+		g.useFolder, g.useFiles = true, false
+		g.folder.placeholder = "The folder with the game's files (and its discs)"
+		g.install = false
+		a.focus = &g.folder
+	}
 }
 
 func holdsArchives(dir string) bool {
@@ -134,6 +151,24 @@ func (a *app) addGameKey(sc int32) {
 // addGameNext moves from the source page to the options.
 func (a *app) addGameNext() {
 	g := a.add
+	if g.useFolder {
+		dir := strings.TrimSpace(g.folder.text)
+		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+			a.say("Choose the game's folder first", true)
+			return
+		}
+		g.hasManifest = false
+		name := filepath.Base(dir)
+		if m, err := manifest.Load(dir); err == nil {
+			g.hasManifest, name = true, m.Name
+		}
+		if !g.named {
+			g.name.set(name)
+		}
+		g.named, g.page = false, 1
+		a.focus = &g.name
+		return
+	}
 	if g.useFiles {
 		var files []*field
 		for _, f := range g.files {
@@ -178,8 +213,11 @@ func (a *app) addGameRun() {
 		return
 	}
 	srcs := config.SourcesDirOf(a.cfg)
-	temp := srcs.Path == ""
+	temp := srcs.Path == "" && !g.useFolder
 	src := filepath.Join(srcs.Path, name)
+	if g.useFolder {
+		src = strings.TrimSpace(g.folder.text)
+	}
 	if temp {
 		dir, err := os.MkdirTemp("", "doszer-source-")
 		if err != nil {
@@ -191,11 +229,14 @@ func (a *app) addGameRun() {
 	out := filepath.Join(g.dests[g.dest], name+".dosz")
 
 	var steps []step
-	if g.useFiles {
+	switch {
+	case g.useFolder:
+		// Built where it is: nothing to dump.
+	case g.useFiles:
 		for _, f := range g.files {
 			steps = append(steps, step{args: []string{"dump", "--format", "plain", "--from", strings.TrimSpace(f.text), src}})
 		}
-	} else {
+	default:
 		d := g.drives[g.drive].path
 		for i := 1; i <= g.discs; i++ {
 			if i > 1 {
@@ -214,11 +255,13 @@ func (a *app) addGameRun() {
 	if a.o.SystemDir != "" {
 		initArgs = append(initArgs, "--system-dir", a.o.SystemDir)
 	}
-	steps = append(steps, step{args: append(initArgs, src)})
-	plan := &addPlan{name: g.name.text, src: src, out: out, temp: temp, keep: g.keep && !temp}
+	if !g.hasManifest {
+		steps = append(steps, step{args: append(initArgs, src)})
+	}
+	plan := &addPlan{name: g.name.text, src: src, out: out, temp: temp, keep: (g.keep || g.useFolder) && !temp}
 	if !g.install {
 		a.add = nil
-		a.runSteps("Add "+plan.name, append(steps, buildStep(plan)), a.added(plan))
+		a.runSteps("Build "+plan.name, append(steps, buildStep(plan)), a.added(plan))
 		return
 	}
 	installArgs := []string{"install", "--format", "plain"}
@@ -233,7 +276,7 @@ func (a *app) addGameRun() {
 		step{args: append(installArgs, src)},
 	)
 	a.add = nil
-	a.runSteps("Add "+plan.name, steps, func(err error) {
+	a.runSteps("Build "+plan.name, steps, func(err error) {
 		if err != nil {
 			a.say("The game's files are kept in "+plan.src+" to try again", true)
 			return
@@ -263,7 +306,7 @@ func (a *app) added(p *addPlan) func(error) {
 		}
 		a.selectAfterScan = p.out
 		a.rescan()
-		a.say("Added "+filepath.Base(p.out), false)
+		a.say("Built "+filepath.Base(p.out), false)
 	}
 }
 
@@ -298,7 +341,7 @@ func (a *app) addGameFinish(set bool) {
 	}
 	steps = append(steps, buildStep(p))
 	a.add = nil
-	a.runSteps("Add "+p.name, steps, a.added(p))
+	a.runSteps("Build "+p.name, steps, a.added(p))
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
@@ -320,12 +363,16 @@ func (a *app) drawAddGame() {
 	a.round(x, y, w, h, a.px(14), colPopup)
 	p := a.px(24)
 	ty := y + p
-	title := "Add a game: where is it?"
+	what := "Import a disc"
+	if g.useFolder {
+		what = "Build a folder"
+	}
+	title := what + ": where is it?"
 	switch g.page {
 	case 1:
-		title = "Add a game: how should it be built?"
+		title = what + ": how should it be built?"
 	case 2:
-		title = "Add a game: which program starts it?"
+		title = what + ": which program starts it?"
 	}
 	a.text(title, x+p, ty, 19, true, colText)
 	ty += a.lineHeight(19, true) + a.px(16)
@@ -398,6 +445,27 @@ func (a *app) option(x, y, w int32, on bool, title, detail string, fn func()) in
 }
 
 func (a *app) addGameSource(g *addGame, x, y, w int32) int32 {
+	if g.useFolder {
+		y = a.heading("The game's folder", x, y)
+		bw := int32(0)
+		if canPick() {
+			bw = a.buttonW("Browse…") + a.px(8)
+		}
+		a.drawField(&g.folder, x, y, w-bw)
+		if bw > 0 {
+			a.button("Browse…", x+w-bw+a.px(8), y, btnNormal, func() {
+				if p, ok := pickFolder("game's", g.folder.text); ok {
+					g.folder.set(p)
+				}
+			})
+		}
+		y += a.px(40)
+		for _, l := range a.wrap("Files already on disk: a game someone installed, or a disc's files. It's built where it is, with its DOSZ.TOML if it has one (doszer init writes one if not). You can also drop the folder on the window.", w, 12) {
+			a.text(l, x, y, 12, false, colFaint)
+			y += a.lineHeight(12, false) + a.px(4)
+		}
+		return y
+	}
 	y = a.heading("From a CD drive", x, y)
 	if len(g.drives) == 0 {
 		a.text("No CD drive found.", x, y, 13, false, colMuted)
@@ -443,7 +511,7 @@ func (a *app) addGameSource(g *addGame, x, y, w int32) int32 {
 		if bw > 0 {
 			ff := f
 			a.button("Browse…", x+w-bw+a.px(8), y, btnNormal, func() {
-				if p, ok := pickFile("Choose disc " + itoa(i+1)); ok {
+				if p, ok := pickFile("Choose disc "+itoa(i+1), fileDisc); ok {
 					ff.set(p)
 				}
 			})
@@ -481,17 +549,24 @@ func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {
 	y += a.px(38)
 	note("The archive's name, and its file name.", colFaint)
 
-	row("Boots")
-	var boots []string
-	for _, b := range bootChoices {
-		boots = append(boots, b.label)
-	}
-	dropdown(boots, &g.boot)
-	note("init picks from the programs it finds, and the shells and images in the system folder.", colFaint)
+	if g.hasManifest {
+		row("Settings")
+		a.text("From its DOSZ.TOML", fx, y+a.px(7), 13, false, colText)
+		y += a.px(32)
+		note("Its manifest says how it boots and is packed; doszer init isn't run.", colFaint)
+	} else {
+		row("Boots")
+		var boots []string
+		for _, b := range bootChoices {
+			boots = append(boots, b.label)
+		}
+		dropdown(boots, &g.boot)
+		note("init picks from the programs it finds, and the shells and images in the system folder.", colFaint)
 
-	row("CD audio")
-	dropdown([]string{"Ogg Vorbis (smaller)", "WAV (lossless, every track verifiable)"}, &g.audio)
-	y += a.px(4)
+		row("CD audio")
+		dropdown([]string{"Ogg Vorbis (smaller)", "WAV (lossless, every track verifiable)"}, &g.audio)
+		y += a.px(4)
+	}
 
 	row("Put it in")
 	dests := make([]string, len(g.dests))
@@ -522,6 +597,9 @@ func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {
 	}
 
 	srcs := config.SourcesDirOf(a.cfg)
+	if g.useFolder {
+		return y
+	}
 	row("The dump")
 	if srcs.Path == "" {
 		a.text("Not kept: doszer isn't set up, so it goes in a temporary folder.", fx, y+a.px(7), 13, false, colMuted)
