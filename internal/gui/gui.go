@@ -92,13 +92,15 @@ type app struct {
 	focus  *field
 	popup  *popup
 	setup  *setupDialog
+	add    *addGame
 	dialog *dialog
 	jobs   []*dialog // dialogs whose command is still running
 	menuAt func()    // the right-click menu of what was clicked last
 
-	setupDone bool // Options.Setup ran
-	mx, my    int32
-	scroll    [3]int32 // per page, pixels
+	setupDone       bool   // Options.Setup ran
+	selectAfterScan string // an archive to select once the list is read again
+	mx, my          int32
+	scroll          [3]int32 // per page, pixels
 
 	games
 	systems
@@ -312,9 +314,12 @@ func (a *app) toolbarH() int32 { return a.px(56) }
 func (a *app) statusH() int32  { return a.px(30) }
 func (a *app) pad() int32      { return a.px(14) }
 
+func (a *app) menuH() int32 { return a.px(30) }
+
 // area is the page's scrolled rectangle.
 func (a *app) area() (x, y, w, h int32) {
-	return 0, a.toolbarH(), a.w, a.h - a.toolbarH() - a.statusH()
+	top := a.menuH() + a.toolbarH()
+	return 0, top, a.w, a.h - top - a.statusH()
 }
 
 // scrollBy scrolls the page, within contentH.
@@ -346,7 +351,7 @@ func (a *app) event(e *sdl.Event) {
 	case sdl.EventMouseWheel:
 		if a.dialog != nil {
 			a.dialog.scroll = max(0, a.dialog.scroll+int(e.Wheel())*3)
-		} else if a.popup == nil && a.setup == nil {
+		} else if a.popup == nil && a.setup == nil && a.add == nil {
 			a.scrollBy(-e.Wheel()*a.px(72), a.contentH())
 		}
 	case sdl.EventMouseButtonDown:
@@ -380,7 +385,20 @@ func (a *app) key(sc int32, mod uint16) {
 		a.setupKey(sc)
 		return
 	}
+	if a.add != nil {
+		if a.focus != nil && sc != scEscape && a.focus.key(sc, ctrl) {
+			return
+		}
+		a.addGameKey(sc)
+		return
+	}
 	switch {
+	case ctrl && sc == scN:
+		a.openAddGame()
+		return
+	case ctrl && sc == scQ:
+		a.quit = true
+		return
 	case ctrl && sc == sc1:
 		a.show(pageGames)
 		return
@@ -462,16 +480,18 @@ func (a *app) render() {
 	a.drawToolbar()
 	a.drawStatus()
 	a.drawSetup()
+	a.drawAddGame()
 	a.drawDialog()
 	a.drawPopup()
 }
 
 func (a *app) drawToolbar() {
-	th := a.toolbarH()
-	a.fill(0, 0, a.w, th, colToolbar)
-	a.fill(0, th-a.px(1), a.w, a.px(1), colLine)
+	a.drawMenuBar()
+	mh, th := a.menuH(), a.toolbarH()
+	a.fill(0, mh, a.w, th, colToolbar)
+	a.fill(0, mh+th-a.px(1), a.w, a.px(1), colLine)
 	p := a.pad()
-	y := (th - a.px(32)) / 2
+	y := mh + (th-a.px(32))/2
 	x := p
 	tab := func(label string, pg page) {
 		style := btnNormal

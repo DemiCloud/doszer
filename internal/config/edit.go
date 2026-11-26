@@ -15,7 +15,7 @@ import (
 
 // Keys are the settings, in display order. The tables take a name:
 // install.os.<name>, install.templates.<name>.
-var Keys = []string{"paths.roms", "paths.system", "paths.saves", "defaults.os", "defaults.shell", "build.ogg_quality", "build.redump_dat"}
+var Keys = []string{"paths.roms", "paths.system", "paths.saves", "paths.sources", "defaults.os", "defaults.shell", "build.ogg_quality", "build.redump_dat"}
 
 // Setting is one setting's effective value and where it came from: a
 // file's path, or "default" (with the default's own source, if it was
@@ -59,6 +59,9 @@ func Settings(sourceDir string) ([]Setting, error) {
 			out = append(out, Setting{Key: k, Value: d.Path, From: from(k, d)})
 		case "paths.saves":
 			d := SaveDirOf(cfg, "")
+			out = append(out, Setting{Key: k, Value: d.Path, From: from(k, d)})
+		case "paths.sources":
+			d := SourcesDirOf(cfg)
 			out = append(out, Setting{Key: k, Value: d.Path, From: from(k, d)})
 		case "build.ogg_quality":
 			s := Setting{Key: k, Value: strconv.Itoa(cfg.Build.OggQuality), From: origins[k]}

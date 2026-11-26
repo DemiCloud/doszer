@@ -36,9 +36,10 @@ type Config struct {
 
 // Paths are the folders doszer uses.
 type Paths struct {
-	ROMs   List   `toml:"roms"`   // archives the window lists: one folder or several
-	System string `toml:"system"` // DOSBox Pure's system directory: OS images and shells
-	Saves  string `toml:"saves"`  // DOSBox Pure's save directory
+	ROMs    List   `toml:"roms"`    // archives the window lists: one folder or several
+	System  string `toml:"system"`  // DOSBox Pure's system directory: OS images and shells
+	Saves   string `toml:"saves"`   // DOSBox Pure's save directory
+	Sources string `toml:"sources"` // where the window keeps the games it dumps, before building them
 }
 
 // Defaults are init's shell and OS image for a game whose programs need
@@ -74,7 +75,7 @@ func (l *List) UnmarshalText(b []byte) error {
 
 // pathKeys are the settings holding host paths: a relative one is
 // relative to the directory of the file that sets it.
-var pathKeys = []string{"paths.roms", "paths.system", "paths.saves", "build.redump_dat"}
+var pathKeys = []string{"paths.roms", "paths.system", "paths.saves", "paths.sources", "build.redump_dat"}
 
 // tables are the settings that map names to values: install.os.NAME.
 var tables = []string{"install.os", "install.templates"}
@@ -291,6 +292,8 @@ func field(cfg *Config, k string) *string {
 		return &cfg.Paths.System
 	case "paths.saves":
 		return &cfg.Paths.Saves
+	case "paths.sources":
+		return &cfg.Paths.Sources
 	case "build.redump_dat":
 		return &cfg.Build.RedumpDAT
 	case "defaults.os":

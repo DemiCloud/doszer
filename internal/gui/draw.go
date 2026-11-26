@@ -23,6 +23,7 @@ type rgba struct{ r, g, b, a uint8 }
 var (
 	colBackground = rgba{30, 30, 32, 255}
 	colToolbar    = rgba{22, 22, 24, 255}
+	colMenuBar    = rgba{17, 17, 19, 255}
 	colCard       = rgba{44, 44, 47, 255}
 	colCardHover  = rgba{52, 52, 56, 255}
 	colCardSel    = rgba{58, 60, 66, 255}

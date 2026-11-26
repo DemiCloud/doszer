@@ -13,7 +13,9 @@ import (
 // configuration's), DOSZER_GUI_OUT
 // (where the PNGs go), DOSZER_GUI_SYSTEM (a system directory, optional),
 // DOSZER_GUI_STATS (a play time file, optional, only read),
-// DOSZER_GUI_EXE (a doszer binary, optional: shots running a command). It
+// DOSZER_GUI_EXE (a doszer binary, optional: shots running a command),
+// DOSZER_GUI_CUE (a disc image, optional: Add a game; with DOSZER_GUI_BUILD
+// set, built into the ROM folder). It
 // needs a display. The configuration is the real one (read, never written).
 func TestScreenshot(t *testing.T) {
 	roms, out := os.Getenv("DOSZER_GUI_ROMS"), os.Getenv("DOSZER_GUI_OUT")
@@ -38,6 +40,19 @@ func TestScreenshot(t *testing.T) {
 		"setup.png":    func(a *App) { a.OpenSetup() },
 		"menu.png":     func(a *App) { a.OpenGameMenu(0) },
 		"filter.png":   func(a *App) { a.Filter("Win31 (shell)") },
+		"filemenu.png": func(a *App) {
+			m := a.menus()[0]
+			var labels []string
+			for _, it := range m.items {
+				l := it.label
+				if it.keys != "" {
+					l += "\t" + it.keys
+				}
+				labels = append(labels, l)
+			}
+			a.openMenu(a.px(8), a.menuH(), labels, func(int) {})
+		},
+		"add.png": func(a *App) { a.openAddGame() },
 		"folders.png": func(a *App) {
 			if items := a.filters(); len(items) > 0 {
 				a.openPopup(a.px(480), a.px(12), a.px(200), items, 0, func(int) {})
@@ -56,6 +71,30 @@ func TestScreenshot(t *testing.T) {
 	exe := os.Getenv("DOSZER_GUI_EXE") // a doszer binary, for the shots that run a command
 	if exe != "" {
 		shots["deps.png"] = func(a *App) { a.RunDeps(0) }
+	}
+	if cue := os.Getenv("DOSZER_GUI_CUE"); cue != "" && exe != "" && os.Getenv("DOSZER_GUI_BUILD") != "" {
+		// Add a game through to the archive, in the ROM folder: the shot
+		// shows the finished dialog.
+		shots["addbuild.png"] = func(a *App) {
+			a.openAddGame()
+			if a.add != nil {
+				a.add.useFiles = true
+				a.add.files[0].set(cue)
+				a.addGameNext()
+				a.add.name.set("Test Game")
+				a.addGameRun()
+			}
+		}
+	}
+	if cue := os.Getenv("DOSZER_GUI_CUE"); cue != "" { // a disc image, for Add a game's options
+		shots["addoptions.png"] = func(a *App) {
+			a.openAddGame()
+			if a.add != nil {
+				a.add.useFiles = true
+				a.add.files[0].set(cue)
+				a.addGameNext()
+			}
+		}
 	}
 	for name, setup := range shots {
 		romFlag := roms

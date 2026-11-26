@@ -2,6 +2,7 @@ package gui
 
 import (
 	"errors"
+	"fmt"
 	"os/exec"
 	"strings"
 	"sync"
@@ -26,16 +27,27 @@ type dialogButton struct {
 	fn    func() // nil: closes the dialog
 }
 
-// job is a running doszer command.
+// job runs steps one after the other: doszer commands, each its own
+// process, or pauses for the user (insert the next disc).
 type job struct {
+	steps   []step
+	cur     int // the step running
 	cmd     *exec.Cmd
 	mu      sync.Mutex
 	out     []byte
 	done    bool
+	waiting bool // at a pause step, for Continue
 	err     error
 	after   func(err error) // on the window's thread, once done
-	notify  chan struct{}
+	notify  chan error
 	stopped bool
+}
+
+// step is a doszer command (args), or, with prompt set, a pause asking
+// the user to do something first.
+type step struct {
+	args   []string
+	prompt string
 }
 
 func (j *job) Write(p []byte) (int, error) {
@@ -80,46 +92,88 @@ func (a *app) confirm(title, action string, fn func(), lines ...string) {
 // runDoszer runs `doszer args...` and shows its output; after, if set,
 // runs once it ends (rescan, ...).
 func (a *app) runDoszer(title string, args []string, after func(err error)) {
-	exe, err := a.exe()
-	if err != nil {
-		a.say(err.Error(), true)
-		return
-	}
-	cmd := exec.Command(exe, append([]string{}, args...)...)
-	hideConsole(cmd)
-	j := &job{cmd: cmd, after: after, notify: make(chan struct{}, 1)}
-	cmd.Stdout, cmd.Stderr = j, j
-	d := &dialog{title: title, lines: []string{commandLine(args)}, job: j}
-	d.buttons = []dialogButton{{label: "Stop", fn: func() {
-		if !j.done && cmd.Process != nil {
-			j.stopped = true
-			cmd.Process.Kill()
-		}
-	}}}
+	a.runSteps(title, []step{{args: args}}, after)
+}
+
+// runSteps runs steps in one dialog, stopping at the first that fails.
+func (a *app) runSteps(title string, steps []step, after func(err error)) {
+	j := &job{steps: steps, after: after, notify: make(chan error, 1)}
+	d := &dialog{title: title, job: j}
 	a.dialog = d
-	if err := cmd.Start(); err != nil {
-		j.done, j.err = true, err
-		j.Write([]byte(err.Error() + "\n"))
+	a.jobs = append(a.jobs, d)
+	a.startStep(d)
+}
+
+// startStep starts d's current step, or ends the job past the last.
+func (a *app) startStep(d *dialog) {
+	j := d.job
+	if j.cur >= len(j.steps) {
 		a.jobDone(d)
 		return
 	}
-	go func() {
-		err := cmd.Wait()
-		j.mu.Lock()
-		j.err = err
-		j.mu.Unlock()
-		j.notify <- struct{}{}
-	}()
-	a.jobs = append(a.jobs, d)
+	st := j.steps[j.cur]
+	stop := dialogButton{label: "Stop", fn: func() {
+		if j.done {
+			return
+		}
+		j.stopped = true
+		if j.cmd != nil && j.cmd.Process != nil {
+			j.cmd.Process.Kill()
+		} else {
+			j.notify <- errors.New("stopped")
+		}
+	}}
+	if st.prompt != "" {
+		j.waiting = true
+		d.lines = []string{st.prompt}
+		j.Write([]byte("\n" + st.prompt + "\n"))
+		d.buttons = []dialogButton{stop, {label: "Continue", style: btnAccent, fn: func() {
+			j.waiting = false
+			j.notify <- nil
+		}}}
+		return
+	}
+	d.buttons = []dialogButton{stop}
+	exe, err := a.exe()
+	if err != nil {
+		j.notify <- err
+		return
+	}
+	line := commandLine(st.args)
+	d.lines = []string{line}
+	if len(j.steps) > 1 {
+		j.Write([]byte("\n$ " + line + "\n"))
+	}
+	cmd := exec.Command(exe, st.args...)
+	hideConsole(cmd)
+	cmd.Stdout, cmd.Stderr = j, j
+	j.cmd = cmd
+	if err := cmd.Start(); err != nil {
+		j.Write([]byte(err.Error() + "\n"))
+		j.notify <- err
+		return
+	}
+	go func() { j.notify <- cmd.Wait() }()
 }
 
-// pollJobs finishes the jobs that ended.
+// pollJobs moves the jobs on whose step ended.
 func (a *app) pollJobs() {
 	keep := a.jobs[:0]
 	for _, d := range a.jobs {
+		j := d.job
 		select {
-		case <-d.job.notify:
-			a.jobDone(d)
+		case err := <-j.notify:
+			j.cmd = nil
+			if err != nil || j.stopped {
+				j.err = err
+				a.jobDone(d)
+				continue
+			}
+			j.cur++
+			a.startStep(d)
+			if !j.done {
+				keep = append(keep, d)
+			}
 		default:
 			keep = append(keep, d)
 		}
@@ -129,7 +183,10 @@ func (a *app) pollJobs() {
 
 func (a *app) jobDone(d *dialog) {
 	j := d.job
-	j.done = true
+	if j.done {
+		return
+	}
+	j.done, j.waiting = true, false
 	if j.stopped {
 		j.err = errors.New("stopped")
 	}
@@ -250,6 +307,12 @@ func (a *app) drawDialog() {
 		}
 		a.popClip()
 		status, sc := "Running"+spinner(a.frame), colAccent
+		if n := len(d.job.steps); n > 1 && !d.job.done {
+			status = fmt.Sprintf("Step %d of %d: %s", min(d.job.cur+1, n), n, status)
+		}
+		if d.job.waiting {
+			status, sc = "Waiting for you", colShell
+		}
 		if d.job.done {
 			status, sc = "Done", colDOS
 			if d.job.err != nil {
@@ -267,4 +330,11 @@ func (a *app) drawDialog() {
 		a.button(b.label, bx, y+h-p-a.px(32), b.style, func() { a.press(b) })
 		bx -= a.px(8)
 	}
+}
+
+// drive is an optical drive.
+type drive struct {
+	path  string // E: or /dev/sg1, as dump --drive takes it
+	label string // the disc's label (Windows) or the drive's model (Linux)
+	disc  bool   // a disc is in (Windows; Linux can't tell)
 }

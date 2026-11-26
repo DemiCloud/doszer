@@ -3,6 +3,7 @@
 package gui
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -45,6 +46,46 @@ func pickFolder(title, start string) (string, bool) {
 		cmd = exec.Command("zenity", "--file-selection", "--directory", "--title=Choose the "+title+" folder", "--filename="+strings.TrimSuffix(start, "/")+"/")
 	case "kdialog":
 		cmd = exec.Command("kdialog", "--getexistingdirectory", start, "--title", "Choose the "+title+" folder")
+	default:
+		return "", false
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return "", false
+	}
+	p := strings.TrimSpace(string(out))
+	return p, p != ""
+}
+
+// opticalDrives lists the CD drives: the SCSI generic devices of type 5
+// (CD-ROM), as redumper takes them (/dev/sgN), each named by its model.
+// Whether a disc is in isn't known without opening the drive.
+func opticalDrives() []drive {
+	var out []drive
+	matches, _ := filepath.Glob("/sys/class/scsi_generic/sg*/device/type")
+	for _, m := range matches {
+		t, err := os.ReadFile(m)
+		if err != nil || strings.TrimSpace(string(t)) != "5" {
+			continue
+		}
+		dev := filepath.Base(filepath.Dir(filepath.Dir(m)))
+		d := drive{path: "/dev/" + dev, disc: true}
+		vendor, _ := os.ReadFile(filepath.Join(filepath.Dir(m), "vendor"))
+		model, _ := os.ReadFile(filepath.Join(filepath.Dir(m), "model"))
+		d.label = strings.TrimSpace(strings.TrimSpace(string(vendor)) + " " + strings.TrimSpace(string(model)))
+		out = append(out, d)
+	}
+	return out
+}
+
+// pickFile asks for a disc image with zenity or kdialog.
+func pickFile(title string) (string, bool) {
+	var cmd *exec.Cmd
+	switch picker() {
+	case "zenity":
+		cmd = exec.Command("zenity", "--file-selection", "--title="+title, "--file-filter=Disc images | *.cue *.CUE *.zip *.ZIP", "--file-filter=All files | *")
+	case "kdialog":
+		cmd = exec.Command("kdialog", "--getopenfilename", ".", "*.cue *.CUE *.zip *.ZIP|Disc images", "--title", title)
 	default:
 		return "", false
 	}

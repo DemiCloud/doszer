@@ -591,6 +591,7 @@ roms   = "/path/to/roms"           # archives the window lists; or a list:
                                    # roms = ["/path/to/roms", "/other/roms"]
 system = "/path/to/system"         # DOSBox Pure's system directory (OS images, shells)
 saves  = "/path/to/saves"          # DOSBox Pure's save directory
+sources = "/path/to/sources"       # where the window keeps the discs it dumps
 
 [defaults]
 os    = "dosbox_pure/Windows 98 (games)" # init's OS image for Windows 9x games
@@ -621,6 +622,7 @@ Unset directories have defaults, the first that exists:
 |---|---|
 | `paths.roms` | `./roms`, `roms/` beside doszer, RetroDECK's `roms_path` (whose `dos/`, `windows3x/`, `windows9x/` are found within: every folder is searched at any depth) |
 | `paths.system` | `./system`, `system/` beside doszer, RetroDECK's `bios_path` |
+| `paths.sources` | `./sources`, `sources/` beside doszer, once set up the data folder's `sources` (`~/.local/share/doszer/sources`, `%USERPROFILE%\doszer\sources`); until then, a temporary folder |
 | `paths.saves` | `./saves`, `saves/` beside doszer, for `run` RetroDECK's `saves_path/<folder>` for an archive under its `roms_path`, doszer's cache - once set up (a config file exists); until then, a temporary folder per game, deleted after it |
 
 `doszer env` and `doszer config` show which applies, and where it came
@@ -807,7 +809,8 @@ a game's right-click menu.
 
 `doszer gui` opens doszer's window; `doszer` with no arguments opens it
 too when started without a terminal (from Explorer, a shortcut or a
-desktop menu). It works the same on Windows and Linux. Three pages:
+desktop menu). It works the same on Windows and Linux. A menu bar (File, View, Tools,
+Help) holds every action; below it, three pages:
 
 - **Games**: every `.dosz` under the ROM directory, at any depth, as a
   list or grid: each archive's icon (`DOSZ.ICO`, else its initial),
@@ -846,6 +849,29 @@ command line can do anything the window does. Repack and the changes ask
 first.
 
 Ctrl+1, Ctrl+2 and Ctrl+3 switch pages, F5 or Ctrl+R rescans.
+
+### Adding a game
+
+File > Add a game (Ctrl+N, or the Games page's button) makes an archive
+from a disc, into a ROM folder, by the commands one would type:
+
+1. **Where is it?** A CD drive (listed with its disc's label on Windows;
+   the number of discs, asked for in turn), or disc image files: a CUE
+   sheet with its BIN files, or a zip of one, per disc.
+2. **How should it be built?** Its name, how it boots (automatic, from
+   its programs and the system folder, or DOS, a Windows 3.x shell, a
+   Windows 9x OS image), CD audio as Ogg Vorbis or WAV, which ROM folder
+   (or system subfolder, e.g. RetroDECK's `windows9x`) it goes in, and
+   whether to keep the dump.
+3. **Build**: `doszer dump` (or `dump --from FILE`, once per disc) into
+   `paths.sources/<name>`, `doszer init`, `doszer build`, one after the
+   other in a dialog with their output; the new archive is selected in
+   the list. The dump (BIN/CUE and DOSZ.TOML) stays in `paths.sources`
+   to rebuild or change later, unless not kept. Until doszer is set up
+   it goes to a temporary folder instead, removed afterwards.
+
+A game that is only its disc (not installed) boots DOSBox Pure's start
+menu; `doszer install` installs it from there.
 
 ### First run
 

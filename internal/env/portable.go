@@ -47,7 +47,7 @@ func Portable(o PortableOptions) ([]PortableAction, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, d := range []string{dir, filepath.Join(dir, "system"), filepath.Join(dir, "saves"), filepath.Join(dir, "roms")} {
+	for _, d := range []string{dir, filepath.Join(dir, "system"), filepath.Join(dir, "saves"), filepath.Join(dir, "roms"), filepath.Join(dir, "sources")} {
 		if isDir(d) {
 			continue
 		}

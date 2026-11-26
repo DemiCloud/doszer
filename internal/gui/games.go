@@ -122,6 +122,11 @@ func (a *app) scanned(r scanResult) {
 	if a.list == nil {
 		a.list = []library.Game{}
 	}
+	if a.selectAfterScan != "" {
+		keep, a.selectAfterScan = a.selectAfterScan, ""
+		a.search.set("")
+		a.filter = ""
+	}
 	a.refilter(keep)
 	a.rescanSystems() // which games use which system
 }
@@ -329,27 +334,7 @@ func (a *app) gamesToolbar(x, y int32) {
 			a.refilter(a.keepPath())
 		})
 	}) + a.px(4)
-	tx := x
-	a.button("Tools ▼", x, y, btnNormal, func() {
-		items := []string{"Refresh", "Verify all games"}
-		if canOpen() {
-			for _, d := range a.romDirs {
-				items = append(items, "Open "+d.Path)
-			}
-		}
-		a.openPopup(tx, y, a.buttonW("Tools ▼"), items, -1, func(i int) {
-			switch i {
-			case 0:
-				a.rescan()
-			case 1:
-				if len(a.romDirs) > 0 {
-					a.runDoszer("Verify all games", append([]string{"verify", "--format", "plain", "--all"}, config.DirPaths(a.romDirs)...), nil)
-				}
-			default:
-				a.open(a.romDirs[i-2].Path)
-			}
-		})
-	})
+	a.button("Add a game…", x, y, btnAccent, a.openAddGame)
 
 	fw := min(a.px(320), a.w/4)
 	a.drawField(&a.search, a.w-a.pad()-fw, y, fw)

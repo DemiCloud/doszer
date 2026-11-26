@@ -48,7 +48,7 @@ internal/vdisk/      DOSBox Pure's synthesized D: disk + .sav diffs (D: and -CDR
 internal/install/    doszer install and run: session content, launching the built-in DOSBox Pure, directory discovery, diffing, extraction
 internal/chain/      an archive's dependencies as DOSBox Pure resolves them: parent markers, the AUTOBOOT.DBP in effect (the nearest), the shell/OS image in the system directory; reverse (UsedBy); for deps, library, the window
 internal/library/    the window's game list: .dosz archives under the ROM directory (name, boot, DOSZ.ICO), play time (playtime.json)
-internal/gui/        doszer gui: the SDL-drawn window: Games (list/grid, search, sort; games run as `doszer run` child processes), Systems, Settings, the first-run dialog; widgets.go (fields, buttons, dropdowns, layers); os_*.go (Explorer/xdg-open, folder picker); TestScreenshot renders every page to PNGs (also as the Windows test binary through WSL interop)
+internal/gui/        doszer gui: the SDL-drawn window: Games (list/grid, search, sort; games run as `doszer run` child processes), Systems, Settings, the first-run dialog, the menu bar (menubar.go), Add a game (addgame.go: dump/dump --from, init, build as one step run); widgets.go (fields, buttons, dropdowns, layers); os_*.go (Explorer/xdg-open, folder picker); TestScreenshot renders every page to PNGs (also as the Windows test binary through WSL interop)
 internal/libretro/   built-in frontend: hosts a libretro core in-process (environment, directory-only VFS, SDL window/input/audio)
 internal/sdl/        the few SDL2 functions internal/libretro uses, loaded at run time through purego
 internal/dl/         dlopen/LoadLibrary without cgo

@@ -54,7 +54,7 @@ const (
 	FromExe       = "beside doszer"  // <executable's directory>/<name>
 	FromRetroDECK = "RetroDECK"      // retrodeck.json's paths
 	FromCache     = "doszer's cache" // <user cache>/doszer/saves
-	FromTemp      = "not set up: a temporary folder per game, deleted after it"
+	FromTemp      = "not set up: a temporary folder, deleted after use"
 )
 
 // FindSystemDir returns the system directory used when none is set: the
@@ -194,6 +194,26 @@ func ROMDirsOf(cfg Config, flag string) []Dir {
 	return nil
 }
 
+// SourcesDirOf returns where the window keeps the sources it dumps:
+// paths.sources, else ./sources or sources/ beside the executable, else,
+// once set up, DataDir's sources folder. Until then none: the window
+// dumps to a temporary folder, removed after the build ("" with From
+// FromTemp).
+func SourcesDirOf(cfg Config) Dir {
+	d := dirOf("", "", cfg.Paths.Sources, "paths.sources", func() Dir { return findDir("sources", "") })
+	if d.Path != "" {
+		return d
+	}
+	if !Configured() {
+		return Dir{From: FromTemp}
+	}
+	data, err := DataDir()
+	if err != nil {
+		return Dir{}
+	}
+	return Dir{Path: filepath.Join(data, "sources"), From: "the data folder"}
+}
+
 // DirPaths returns the paths of dirs.
 func DirPaths(dirs []Dir) []string {
 	out := make([]string, len(dirs))
@@ -285,13 +305,13 @@ func SetupUser() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		cfg.Paths = Paths{ROMs: List{filepath.Join(data, "roms")}, System: filepath.Join(data, "system"), Saves: filepath.Join(data, "saves")}
-		for _, p := range []string{cfg.Paths.ROMs[0], cfg.Paths.System, cfg.Paths.Saves} {
+		cfg.Paths = Paths{ROMs: List{filepath.Join(data, "roms")}, System: filepath.Join(data, "system"), Saves: filepath.Join(data, "saves"), Sources: filepath.Join(data, "sources")}
+		for _, p := range []string{cfg.Paths.ROMs[0], cfg.Paths.System, cfg.Paths.Saves, cfg.Paths.Sources} {
 			if err := os.MkdirAll(p, 0o755); err != nil {
 				return "", err
 			}
 		}
-		keys = map[string]bool{"paths.roms": true, "paths.system": true, "paths.saves": true}
+		keys = map[string]bool{"paths.roms": true, "paths.system": true, "paths.saves": true, "paths.sources": true}
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err

@@ -12,6 +12,7 @@ var docs = map[string]string{
 	"paths.roms":        "Archives the window lists, at any depth: one folder, or a list of them.\nDefault: ./roms, roms/ beside doszer, RetroDECK's ROM folder.",
 	"paths.system":      "DOSBox Pure's system directory: OS images and shells.\nDefault: ./system, system/ beside doszer, RetroDECK's BIOS folder.",
 	"paths.saves":       "DOSBox Pure's save directory.\nDefault: ./saves, saves/ beside doszer, RetroDECK's (run), doszer's cache.",
+	"paths.sources":     "Where the window keeps games it dumps from a disc, before building them.\nDefault: ./sources, sources/ beside doszer, the data folder's.",
 	"defaults.os":       "init's OS image for Windows 9x games, in the system directory, without extension.",
 	"defaults.shell":    "init's shell for Windows 3.x games, in the system directory, without extension.",
 	"build.ogg_quality": "Ogg Vorbis quality for CD audio, -1 to 10.",

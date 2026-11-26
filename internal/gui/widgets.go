@@ -33,7 +33,7 @@ func (a *app) top() int {
 	switch {
 	case a.popup != nil:
 		return layerPopup
-	case a.setup != nil || a.dialog != nil:
+	case a.setup != nil || a.dialog != nil || a.add != nil:
 		return layerModal
 	}
 	return layerPage
@@ -360,7 +360,8 @@ func (a *app) drawPopup() {
 	ih := a.px(30)
 	w := p.w
 	for _, it := range p.items {
-		w = max(w, a.textWidth(it, 13, false)+a.px(40))
+		label, keys, _ := strings.Cut(it, "\t")
+		w = max(w, a.textWidth(label, 13, false)+a.textWidth(keys, 12, false)+a.px(72))
 	}
 	h := ih*int32(len(p.items)-sep) + int32(sep)*a.px(9) + a.px(8)
 	x, y := min(p.x, a.w-w-a.px(8)), p.y
@@ -384,7 +385,11 @@ func (a *app) drawPopup() {
 		if i == p.current {
 			a.text("•", x+a.px(10), iy+(ih-lh)/2, 13, false, colAccent)
 		}
-		a.text(it, x+a.px(28), iy+(ih-lh)/2, 13, false, c)
+		label, keys, _ := strings.Cut(it, "\t")
+		a.text(label, x+a.px(28), iy+(ih-lh)/2, 13, false, c)
+		if keys != "" {
+			a.textRight(keys, x+w-a.px(14), iy+(ih-lh)/2, 12, false, colFaint)
+		}
 		a.onClick(x, iy, w, ih, func(bool) {
 			a.popup = nil
 			p.pick(i)
@@ -398,6 +403,8 @@ func (a *app) drawPopup() {
 const (
 	scA         = 4
 	scG         = 10
+	scN         = 17
+	scQ         = 20
 	scL         = 15
 	scR         = 21
 	scV         = 25

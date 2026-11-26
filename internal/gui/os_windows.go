@@ -3,6 +3,7 @@ package gui
 import (
 	"os/exec"
 	"runtime"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -81,4 +82,82 @@ func pickFolder(title, start string) (string, bool) {
 		return "", false
 	}
 	return syscall.UTF16ToString(path[:]), true
+}
+
+var (
+	kernel32              = syscall.NewLazyDLL("kernel32.dll")
+	getLogicalDriveString = kernel32.NewProc("GetLogicalDriveStringsW")
+	getDriveType          = kernel32.NewProc("GetDriveTypeW")
+	getVolumeInformation  = kernel32.NewProc("GetVolumeInformationW")
+	setErrorMode          = kernel32.NewProc("SetErrorMode")
+	getOpenFileName       = syscall.NewLazyDLL("comdlg32.dll").NewProc("GetOpenFileNameW")
+)
+
+// opticalDrives lists the CD drives (GetDriveType's DRIVE_CDROM), each
+// with its disc's label, or no disc.
+func opticalDrives() []drive {
+	var buf [512]uint16
+	n, _, _ := getLogicalDriveString.Call(uintptr(len(buf)), uintptr(unsafe.Pointer(&buf[0])))
+	// No "insert a disk" box for an empty drive.
+	old, _, _ := setErrorMode.Call(0x0001) // SEM_FAILCRITICALERRORS
+	defer setErrorMode.Call(old)
+	var out []drive
+	for _, root := range strings.Split(syscall.UTF16ToString(buf[:n]), "\x00") {
+		if root == "" {
+			continue
+		}
+		p, _ := syscall.UTF16PtrFromString(root)
+		if t, _, _ := getDriveType.Call(uintptr(unsafe.Pointer(p))); t != 5 { // DRIVE_CDROM
+			continue
+		}
+		var label [261]uint16
+		d := drive{path: strings.TrimSuffix(root, `\`)}
+		if r, _, _ := getVolumeInformation.Call(uintptr(unsafe.Pointer(p)), uintptr(unsafe.Pointer(&label[0])), uintptr(len(label)), 0, 0, 0, 0, 0); r != 0 {
+			d.disc, d.label = true, syscall.UTF16ToString(label[:])
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+// pickFile asks for a disc image with Windows' open dialog.
+func pickFile(title string) (string, bool) {
+	filter := utf16z("Disc images (*.cue, *.zip)\x00*.cue;*.zip\x00All files\x00*.*\x00")
+	var file [1024]uint16
+	t, _ := syscall.UTF16PtrFromString(title)
+	ofn := struct {
+		size                 uint32
+		owner, instance      uintptr
+		filter, customFilter *uint16
+		maxCustFilter, index uint32
+		file                 *uint16
+		maxFile              uint32
+		fileTitle            *uint16
+		maxFileTitle         uint32
+		initialDir, title    *uint16
+		flags                uint32
+		fileOffset, fileExt  uint16
+		defExt               *uint16
+		custData, hook       uintptr
+		template             *uint16
+		reserved             uintptr
+		reserved2, flagsEx   uint32
+	}{filter: &filter[0], index: 1, file: &file[0], maxFile: uint32(len(file)), title: t,
+		flags: 0x1000 | 0x800 | 0x8 | 0x80000} // OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER
+	ofn.size = uint32(unsafe.Sizeof(ofn))
+	r, _, _ := getOpenFileName.Call(uintptr(unsafe.Pointer(&ofn)))
+	runtime.KeepAlive(filter)
+	runtime.KeepAlive(t)
+	if r == 0 {
+		return "", false
+	}
+	return syscall.UTF16ToString(file[:]), true
+}
+
+func utf16z(s string) []uint16 {
+	out := make([]uint16, 0, len(s)+1)
+	for _, r := range s {
+		out = append(out, uint16(r))
+	}
+	return append(out, 0)
 }
