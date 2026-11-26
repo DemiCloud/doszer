@@ -45,7 +45,9 @@ type addGame struct {
 	plan       *addPlan
 	candidates []start.Candidate
 	choice     int
-	scroll     int // the report's lines scrolled up from its end
+	scroll     int  // the report's lines scrolled up from its end
+	windows9x  bool // the game boots an OS image: start --display applies
+	colors256  bool // start --display 640x480x8
 }
 
 // addPlan is where a game being added goes.
@@ -271,6 +273,21 @@ func (a *app) addGameRun() {
 	}
 	plan := &addPlan{name: g.name.text, src: src, out: out, temp: temp, keep: (g.keep || g.useFolder) && !temp, folder: g.useFolder}
 	if !g.install {
+		// An installed game in a folder: choose (or change) what it starts
+		// with before building.
+		if g.useFolder && hasInstalledPrograms(src) {
+			a.add = nil
+			if len(steps) == 0 {
+				a.chooseStart(plan)
+				return
+			}
+			a.runSteps("Build "+plan.name, steps, func(err error) {
+				if err == nil {
+					a.chooseStart(plan)
+				}
+			})
+			return
+		}
 		a.add = nil
 		a.runSteps("Build "+plan.name, append(steps, buildStep(plan)), a.added(plan))
 		return
@@ -333,12 +350,13 @@ func (a *app) added(p *addPlan) func(error) {
 // chooseStart asks which installed program starts the game (the list
 // `doszer start SOURCE` prints), then sets it and builds.
 func (a *app) chooseStart(p *addPlan) {
-	cs, _, err := start.Candidates(p.src)
+	cs, m, err := start.Candidates(p.src)
 	if err != nil {
 		a.alert("Can't read the installed game", err.Error())
 		return
 	}
-	g := &addGame{page: 2, plan: p, candidates: cs, dests: []string{filepath.Dir(p.out)}, useFolder: p.folder}
+	g := &addGame{page: 2, plan: p, candidates: cs, dests: []string{filepath.Dir(p.out)}, useFolder: p.folder,
+		windows9x: m.Model() == manifest.ModelOS}
 	for i, c := range cs {
 		if c.Current {
 			g.choice = i
@@ -357,7 +375,11 @@ func (a *app) addGameFinish(set bool) {
 	p := g.plan
 	var steps []step
 	if set && len(g.candidates) > 0 {
-		steps = append(steps, step{args: []string{"start", "--format", "plain", "--force", p.src, g.candidates[g.choice].Path}})
+		args := []string{"start", "--format", "plain", "--force"}
+		if g.windows9x && g.colors256 {
+			args = append(args, "--display", "640x480x8")
+		}
+		steps = append(steps, step{args: append(args, p.src, g.candidates[g.choice].Path)})
 	}
 	steps = append(steps, buildStep(p))
 	a.add = nil
@@ -422,6 +444,13 @@ func (a *app) drawAddGame() {
 		place("Build", btnAccent, a.addGameRun)
 		place("Back", btnNormal, func() { g.page = 0; a.focus = nil })
 	case 2:
+		if g.windows9x && len(g.candidates) > 0 {
+			box := "□  256 colours"
+			if g.colors256 {
+				box = "■  256 colours"
+			}
+			a.button(box, x+p-a.px(12), by, btnGhost, func() { g.colors256 = !g.colors256 })
+		}
 		if len(g.candidates) > 0 {
 			place("Build", btnAccent, func() { a.addGameFinish(true) })
 			place("Build without", btnNormal, func() { a.addGameFinish(false) })

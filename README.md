@@ -776,8 +776,11 @@ in the source):
   with RunExit and the program (README "Preparing a shell"), 8.3 paths;
 - OS image model: a `WINDOWS.BAT` (specification §12) that changes to the
   program's folder on D: and `START /W`s it, long names quoted; an
-  `INSTALL.REG` beside the program (from `install`) is restored first
-  with `REGEDIT /S`.
+  `INSTALL.REG` in the program's folder or one above it (from `install`)
+  is restored first with `REGEDIT /S`; `--display 640x480x8` first
+  switches Windows 98 to that mode (QuickRes: `RUNDLL
+  DESKCP16.DLL,QUICKRES_RUNDLLENTRY`, no restart), for a game that
+  wants 256 colours.
 
 An existing `WINDOWS.BAT` is replaced only with `-f`; `-n` shows the
 change. The window's Build > Import a disc runs it after `install`.

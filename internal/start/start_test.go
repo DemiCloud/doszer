@@ -48,7 +48,7 @@ func TestCandidatesAndSet(t *testing.T) {
 		if len(cs) != 1 || cs[0].Path != "GAME/PLAY.BAT" || cs[0].Runs != "GAME/GAME.EXE" || !cs[0].Likely {
 			t.Fatalf("candidates = %+v", cs)
 		}
-		res, err := Set(dir, cs[0].Path, false, false)
+		res, err := Set(dir, cs[0].Path, Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -74,7 +74,7 @@ func TestCandidatesAndSet(t *testing.T) {
 		if len(cs) != 1 || cs[0].Path != "Program Files/Some Game/Game.exe" || cs[0].Target != "Windows 95" {
 			t.Fatalf("candidates = %+v", cs)
 		}
-		res, err := Set(dir, cs[0].Path, false, false)
+		res, err := Set(dir, cs[0].Path, Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -82,7 +82,7 @@ func TestCandidatesAndSet(t *testing.T) {
 		if res.Batch != want {
 			t.Errorf("WINDOWS.BAT =\n%q\nwant\n%q", res.Batch, want)
 		}
-		if _, err := Set(dir, cs[0].Path, false, false); err == nil {
+		if _, err := Set(dir, cs[0].Path, Options{}); err == nil {
 			t.Error("replaced WINDOWS.BAT without force")
 		}
 		if cs, _, _ := Candidates(dir); !cs[0].Current {
@@ -105,25 +105,39 @@ func TestCandidatesAndSet(t *testing.T) {
 		if len(cs) != 2 || cs[0].Path != "SIERRA/ANTARA/ANTARAR.EXE" || !cs[0].Likely {
 			t.Fatalf("candidates = %+v", cs)
 		}
-		res, err := Set(dir, cs[0].Path, false, false)
+		res, err := Set(dir, cs[0].Path, Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !strings.HasPrefix(res.Batch, "@ECHO OFF\r\nREGEDIT /S D:\\SIERRA\\INSTALL.REG\r\nD:\r\nCD \\SIERRA\\ANTARA\r\n") {
 			t.Errorf("WINDOWS.BAT =\n%q", res.Batch)
 		}
+		// 256 colours first, as the game asks (the example manifest's line).
+		res, err = Set(dir, cs[0].Path, Options{Force: true, Display: "640x480x8"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(res.Batch, "INSTALL.REG\r\nSTART /W RUNDLL DESKCP16.DLL,QUICKRES_RUNDLLENTRY 640x480x8\r\nD:\r\n") {
+			t.Errorf("WINDOWS.BAT =\n%q", res.Batch)
+		}
+		if _, err := Set(dir, cs[0].Path, Options{Force: true, Display: "256"}); err == nil {
+			t.Error("a bad display mode was accepted")
+		}
 	})
 
 	t.Run("shell", func(t *testing.T) {
 		dir := source(t, "[boot]\nshell = 'dosbox_pure/Win31'\n", map[string][]byte{"SKI/SKI.EXE": winExe()})
-		res, err := Set(dir, "SKI/SKI.EXE", false, false)
+		res, err := Set(dir, "SKI/SKI.EXE", Options{})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(res.Batch, "WIN C:\\RUNEXIT\\RUNEXIT.EXE /show=3 C:\\SKI\\SKI.EXE\r\n") {
 			t.Errorf("WINDOWS.BAT =\n%s", res.Batch)
 		}
-		if _, err := Set(dir, "Long Name/x.exe", true, false); err == nil {
+		if _, err := Set(dir, "SKI/SKI.EXE", Options{Force: true, Display: "640x480x8"}); err == nil {
+			t.Error("--display accepted under the shell model")
+		}
+		if _, err := Set(dir, "Long Name/x.exe", Options{Force: true}); err == nil {
 			t.Error("a missing program was accepted")
 		}
 	})

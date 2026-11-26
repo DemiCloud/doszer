@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -143,7 +144,18 @@ type Result struct {
 // OS image models, a WINDOWS.BAT in source's root - one already there is
 // replaced only with force. An INSTALL.REG beside the program (install's
 // registry settings) is restored at startup under the OS image model.
-func Set(source, program string, force, dryRun bool) (*Result, error) {
+// Options say how Set writes the start.
+type Options struct {
+	Force   bool   // replace an existing WINDOWS.BAT
+	DryRun  bool   // report without writing
+	Display string // OS image model: a display mode to switch to first, WxHxBPP (640x480x8: 256 colours)
+}
+
+// displayMode is a QuickRes mode: width x height x bits per pixel.
+var displayMode = regexp.MustCompile(`^[0-9]{3,4}x[0-9]{3,4}x(4|8|15|16|24|32)$`)
+
+func Set(source, program string, o Options) (*Result, error) {
+	force, dryRun := o.Force, o.DryRun
 	m, err := manifest.Load(source)
 	if err != nil {
 		return nil, err
@@ -155,6 +167,14 @@ func Set(source, program string, force, dryRun bool) (*Result, error) {
 	dos, ok := platform.DOSPath(program)
 	if !ok && m.Model() != manifest.ModelOS { // Windows 9x takes long names (quoted below)
 		return nil, fmt.Errorf("%s: not a DOS path (each name at most 8.3 characters, no spaces)", program)
+	}
+	if o.Display != "" {
+		if m.Model() != manifest.ModelOS {
+			return nil, errors.New("--display: only under the OS image model (Windows 9x)")
+		}
+		if !displayMode.MatchString(o.Display) {
+			return nil, fmt.Errorf("--display %s: want WIDTHxHEIGHTxBITS, e.g. 640x480x8", o.Display)
+		}
 	}
 	res := &Result{Model: m.Model().String()}
 	if m.Model() == manifest.ModelPlain {
@@ -210,6 +230,12 @@ func Set(source, program string, force, dryRun bool) (*Result, error) {
 			if d == "." || d == "/" {
 				break
 			}
+		}
+		if o.Display != "" {
+			// Windows 98's own mode switch (QuickRes, in DESKCP16.DLL, a
+			// 16-bit DLL: RUNDLL, not RUNDLL32), with no restart prompt:
+			// for a game that wants 256 colours and warns at more.
+			b.WriteString("START /W RUNDLL DESKCP16.DLL,QUICKRES_RUNDLLENTRY " + o.Display + "\r\n")
 		}
 		b.WriteString("D:\r\n")
 		if dir != "." {

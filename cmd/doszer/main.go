@@ -2227,11 +2227,13 @@ func runStart(args []string) error {
 	fs := newFlags("start")
 	force := fs.BoolP("force", "f", false, "")
 	dryRun := fs.BoolP("dry-run", "n", false, "")
+	display := fs.String("display", "", "")
 	const help = `doszer start - list or set the program a source's game starts with
 
 Usage: doszer start [options] SOURCE [PROGRAM]
 
 Options:
+      --display MODE      Windows 9x: switch to WxHxBPP first (640x480x8: 256 colours)
   -n, --dry-run           show the change without writing
   -f, --force             replace an existing WINDOWS.BAT
 ` + flagFormatData + flagHelp
@@ -2281,7 +2283,7 @@ Options:
 			Candidates []start.Candidate `json:"candidates" yaml:"candidates" toml:"candidates"`
 		}{m.Model().String(), cs})
 	}
-	res, err := start.Set(source, fs.Arg(1), *force, *dryRun)
+	res, err := start.Set(source, fs.Arg(1), start.Options{Force: *force, DryRun: *dryRun, Display: *display})
 	if err != nil {
 		return err
 	}
