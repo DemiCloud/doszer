@@ -4,6 +4,7 @@ package gui
 
 import (
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -19,6 +20,9 @@ func (a *app) open(path string) {
 		a.say(err.Error(), true)
 	}
 }
+
+// showInFolder opens a file's folder.
+func (a *app) showInFolder(path string) { a.open(filepath.Dir(path)) }
 
 // picker is the first folder dialog program found: zenity (GNOME) or
 // kdialog (KDE).

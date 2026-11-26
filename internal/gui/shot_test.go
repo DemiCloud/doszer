@@ -11,8 +11,9 @@ import (
 // TestScreenshot draws the window over a real ROM directory and saves it
 // as PNGs, to look at: DOSZER_GUI_ROMS (the ROM directory), DOSZER_GUI_OUT
 // (where the PNGs go), DOSZER_GUI_SYSTEM (a system directory, optional),
-// DOSZER_GUI_STATS (a play time file, optional, only read). It needs a
-// display. The configuration is the real one (read, never written).
+// DOSZER_GUI_STATS (a play time file, optional, only read),
+// DOSZER_GUI_EXE (a doszer binary, optional: shots running a command). It
+// needs a display. The configuration is the real one (read, never written).
 func TestScreenshot(t *testing.T) {
 	roms, out := os.Getenv("DOSZER_GUI_ROMS"), os.Getenv("DOSZER_GUI_OUT")
 	if roms == "" || out == "" {
@@ -34,6 +35,11 @@ func TestScreenshot(t *testing.T) {
 		"systems.png":  func(a *App) { a.Show("systems") },
 		"settings.png": func(a *App) { a.Show("settings") },
 		"setup.png":    func(a *App) { a.OpenSetup() },
+		"menu.png":     func(a *App) { a.OpenGameMenu(0) },
+	}
+	exe := os.Getenv("DOSZER_GUI_EXE") // a doszer binary, for the shots that run a command
+	if exe != "" {
+		shots["deps.png"] = func(a *App) { a.RunDeps(0) }
 	}
 	for name, setup := range shots {
 		err := Run(Options{
@@ -44,6 +50,7 @@ func TestScreenshot(t *testing.T) {
 			StatsPath:  stats,
 			Screenshot: filepath.Join(out, name),
 			Setup:      setup,
+			Exe:        exe,
 		})
 		if err != nil {
 			t.Fatal(err)

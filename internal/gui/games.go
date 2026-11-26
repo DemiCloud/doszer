@@ -5,7 +5,6 @@ import (
 	"errors"
 	"image"
 	"image/draw"
-	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -363,6 +362,7 @@ func (a *app) drawGames() {
 		}
 		a.clipHit(x, y, w, h, func(double bool) {
 			a.sel = i
+			a.menuAt = func() { a.gameMenu(g) }
 			if double {
 				a.play()
 			}
@@ -519,7 +519,7 @@ func (a *app) play() {
 		a.say(g.Name+": "+g.Err, true)
 		return
 	}
-	exe, err := os.Executable()
+	exe, err := a.exe()
 	if err != nil {
 		a.say(err.Error(), true)
 		return

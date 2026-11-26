@@ -42,6 +42,15 @@ type Options struct {
 	Screenshot string
 	Setup      func(a *App)
 	StatsPath  string // play time file instead of config.StatsPath's (tests)
+	Exe        string // the doszer that runs games and commands, instead of this one (tests)
+}
+
+// exe is the doszer program games and commands run with.
+func (a *app) exe() (string, error) {
+	if a.o.Exe != "" {
+		return a.o.Exe, nil
+	}
+	return os.Executable()
 }
 
 // App is the window's state, for Options.Setup.
@@ -82,8 +91,13 @@ type app struct {
 	focus  *field
 	popup  *popup
 	setup  *setupDialog
-	mx, my int32
-	scroll [3]int32 // per page, pixels
+	dialog *dialog
+	jobs   []*dialog // dialogs whose command is still running
+	menuAt func()    // the right-click menu of what was clicked last
+
+	setupDone bool // Options.Setup ran
+	mx, my    int32
+	scroll    [3]int32 // per page, pixels
 
 	games
 	systems
@@ -175,6 +189,7 @@ func Run(o Options) error {
 			a.finished(r)
 		default:
 		}
+		a.pollJobs()
 		if a.busy() {
 			a.dirty = true // the status bar's activity
 		}
@@ -185,8 +200,12 @@ func Run(o Options) error {
 			a.draw()
 		}
 		if a.o.Screenshot != "" && !a.scanning && !a.sysScanning {
-			if a.o.Setup != nil {
+			if a.o.Setup != nil && !a.setupDone {
 				a.o.Setup(a)
+				a.setupDone = true
+			}
+			if len(a.jobs) > 0 {
+				continue // the shot shows a command's whole output
 			}
 			// Read before presenting: after it, the back buffer's
 			// content is undefined (Direct3D gave the previous frame).
@@ -203,7 +222,7 @@ func Run(o Options) error {
 	return nil
 }
 
-func (a *app) busy() bool { return a.scanning || a.sysScanning || a.running != "" }
+func (a *app) busy() bool { return a.scanning || a.sysScanning || a.running != "" || len(a.jobs) > 0 }
 
 func (a *app) destroy() {
 	a.clearCaches()
@@ -324,14 +343,19 @@ func (a *app) event(e *sdl.Event) {
 		x, y := e.MouseXY()
 		a.mx, a.my = int32(float64(x)*a.ratio), int32(float64(y)*a.ratio)
 	case sdl.EventMouseWheel:
-		if a.popup == nil && a.setup == nil {
+		if a.dialog != nil {
+			a.dialog.scroll = max(0, a.dialog.scroll+int(e.Wheel())*3)
+		} else if a.popup == nil && a.setup == nil {
 			a.scrollBy(-e.Wheel()*a.px(72), a.contentH())
 		}
 	case sdl.EventMouseButtonDown:
 		x, y := e.MouseXY()
 		a.mx, a.my = int32(float64(x)*a.ratio), int32(float64(y)*a.ratio)
-		if e.Button() == 1 {
+		switch e.Button() {
+		case 1:
 			a.click(e.Clicks() >= 2)
+		case 3:
+			a.rightClick()
 		}
 	}
 }
@@ -342,6 +366,10 @@ func (a *app) key(sc int32, mod uint16) {
 		if sc == scEscape {
 			a.popup = nil
 		}
+		return
+	}
+	if a.dialog != nil {
+		a.dialogKey(sc)
 		return
 	}
 	if a.setup != nil {
@@ -429,8 +457,9 @@ func (a *app) render() {
 	a.popClip()
 	a.drawToolbar()
 	a.drawStatus()
-	a.drawPopup()
 	a.drawSetup()
+	a.drawDialog()
+	a.drawPopup()
 }
 
 func (a *app) drawToolbar() {

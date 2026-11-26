@@ -23,6 +23,15 @@ func (a *app) open(path string) {
 	}
 }
 
+// showInFolder opens Explorer on a file's folder, the file selected.
+func (a *app) showInFolder(path string) {
+	cmd := exec.Command("explorer.exe")
+	cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: `explorer.exe /select,"` + path + `"`}
+	if err := cmd.Start(); err != nil {
+		a.say(err.Error(), true)
+	}
+}
+
 func canPick() bool { return true }
 
 var (

@@ -821,6 +821,13 @@ desktop menu). It works the same on Windows and Linux. Three pages:
   the config file, keeping its comments; empty fields fall back to the
   defaults, shown greyed in them.
 
+A right click on a game opens its menu: Play, Info, Dependencies,
+Verify, Repack, Change parent, Change OS image or shell, Show in folder.
+Every action is the doszer command that does it, run in its own process
+and shown in a dialog with its command line and live output - the
+command line can do anything the window does. Repack and the changes ask
+first.
+
 Ctrl+1, Ctrl+2 and Ctrl+3 switch pages, F5 or Ctrl+R rescans.
 
 ### First run

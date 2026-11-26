@@ -7,11 +7,12 @@ import (
 	"github.com/DemiCloud/doszer/internal/sdl"
 )
 
-// Layers, drawn in order: a click goes to the topmost.
+// Layers, drawn in order: a click goes to the topmost. A popup can open
+// over a dialog (a picker).
 const (
 	layerPage = iota
-	layerPopup
 	layerModal
+	layerPopup
 )
 
 // hit is a clickable area drawn this frame.
@@ -30,10 +31,10 @@ func (a *app) onClick(x, y, w, h int32, fn func(double bool)) {
 // top is the topmost layer open: clicks and hover below it are blocked.
 func (a *app) top() int {
 	switch {
-	case a.setup != nil:
-		return layerModal
 	case a.popup != nil:
 		return layerPopup
+	case a.setup != nil || a.dialog != nil:
+		return layerModal
 	}
 	return layerPage
 }
@@ -322,6 +323,21 @@ func (a *app) openPopup(x, y, w int32, items []string, current int, pick func(in
 	a.popup = &popup{x: x, y: y + a.px(36), w: w, items: items, current: current, pick: pick}
 }
 
+// openMenu opens a context menu at x, y: items with no current one.
+func (a *app) openMenu(x, y int32, items []string, pick func(int)) {
+	a.popup = &popup{x: x, y: y, w: a.px(200), items: items, current: -1, pick: pick}
+}
+
+// rightClick selects what's under the mouse, then opens its menu.
+func (a *app) rightClick() {
+	a.popup = nil
+	a.menuAt = nil
+	a.click(false)
+	if a.menuAt != nil {
+		a.menuAt()
+	}
+}
+
 func (a *app) drawPopup() {
 	p := a.popup
 	if p == nil {
@@ -329,12 +345,18 @@ func (a *app) drawPopup() {
 	}
 	a.layer = layerPopup
 	a.onClick(0, 0, a.w, a.h, func(bool) { a.popup = nil }) // outside closes
+	sep := 0
+	for _, it := range p.items {
+		if it == "-" {
+			sep++
+		}
+	}
 	ih := a.px(30)
 	w := p.w
 	for _, it := range p.items {
 		w = max(w, a.textWidth(it, 13, false)+a.px(40))
 	}
-	h := ih*int32(len(p.items)) + a.px(8)
+	h := ih*int32(len(p.items)-sep) + int32(sep)*a.px(9) + a.px(8)
 	x, y := min(p.x, a.w-w-a.px(8)), p.y
 	if y+h > a.h {
 		y = max(a.px(8), a.h-h-a.px(8))
@@ -342,8 +364,13 @@ func (a *app) drawPopup() {
 	a.round(x-a.px(1), y-a.px(1), w+a.px(2), h+a.px(2), a.px(8), colLine)
 	a.round(x, y, w, h, a.px(8), colPopup)
 	lh := a.lineHeight(13, false)
+	iy := y + a.px(4)
 	for i, it := range p.items {
-		iy := y + a.px(4) + int32(i)*ih
+		if it == "-" {
+			a.fill(x+a.px(10), iy+a.px(4), w-a.px(20), a.px(1), colLine)
+			iy += a.px(9)
+			continue
+		}
 		if a.hovered(x, iy, w, ih) {
 			a.round(x+a.px(4), iy, w-a.px(8), ih, a.px(5), colCardSel)
 		}
@@ -356,6 +383,7 @@ func (a *app) drawPopup() {
 			a.popup = nil
 			p.pick(i)
 		})
+		iy += ih
 	}
 	a.layer = layerPage
 }

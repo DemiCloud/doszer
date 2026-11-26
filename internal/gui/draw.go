@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/gofont/gobold"
+	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/gofont/goregular"
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
@@ -51,11 +52,13 @@ type texture struct {
 var (
 	regularFont, _ = opentype.Parse(goregular.TTF)
 	boldFont, _    = opentype.Parse(gobold.TTF)
+	monoFont, _    = opentype.Parse(gomono.TTF)
 )
 
 type faceKey struct {
 	px   int
 	bold bool
+	mono bool
 }
 
 type textKey struct {
@@ -64,16 +67,20 @@ type textKey struct {
 }
 
 // face returns the font face of px pixels.
-func (a *app) face(px int, bold bool) font.Face {
-	k := faceKey{px, bold}
+func (a *app) face(px int, bold bool) font.Face { return a.faceOf(faceKey{px: px, bold: bold}) }
+
+func (a *app) faceOf(k faceKey) font.Face {
 	if f, ok := a.faces[k]; ok {
 		return f
 	}
 	f := regularFont
-	if bold {
+	switch {
+	case k.mono:
+		f = monoFont
+	case k.bold:
 		f = boldFont
 	}
-	face, err := opentype.NewFace(f, &opentype.FaceOptions{Size: float64(px), DPI: 72, Hinting: font.HintingFull})
+	face, err := opentype.NewFace(f, &opentype.FaceOptions{Size: float64(k.px), DPI: 72, Hinting: font.HintingFull})
 	if err != nil {
 		panic(err) // the embedded Go fonts always parse
 	}
@@ -95,7 +102,18 @@ func (a *app) text(s string, x, y int32, size float64, bold bool, c rgba) int32 
 	if s == "" {
 		return 0
 	}
-	k := textKey{s, faceKey{int(a.px(size)), bold}}
+	return a.drawText(textKey{s, faceKey{px: int(a.px(size)), bold: bold}}, x, y, c)
+}
+
+// monoText draws s in the monospaced face, 12 logical pixels.
+func (a *app) monoText(s string, x, y int32, c rgba) int32 {
+	if s == "" {
+		return 0
+	}
+	return a.drawText(textKey{s, faceKey{px: int(a.px(12)), mono: true}}, x, y, c)
+}
+
+func (a *app) drawText(k textKey, x, y int32, c rgba) int32 {
 	t, ok := a.texts[k]
 	if !ok {
 		t = a.renderText(k)
@@ -124,7 +142,7 @@ func (a *app) lineHeight(size float64, bold bool) int32 {
 }
 
 func (a *app) renderText(k textKey) *texture {
-	face := a.face(k.px, k.bold)
+	face := a.faceOf(k.faceKey)
 	m := face.Metrics()
 	w := font.MeasureString(face, k.s).Ceil()
 	h := (m.Ascent + m.Descent).Ceil()
