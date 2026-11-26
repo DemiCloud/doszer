@@ -317,6 +317,10 @@ func Run(cfg Config) error {
 	return nil
 }
 
+// LoadSDL loads SDL2 from libs (the system's libSDL2 when empty), for
+// doszer's window as for Run.
+func LoadSDL(libs []string) error { return loadSDL(libs) }
+
 func loadSDL(libs []string) error {
 	if len(libs) == 0 {
 		libs = []string{"libSDL2-2.0.so.0"}

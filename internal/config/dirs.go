@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // executable is os.Executable, a variable so tests can place doszer.
@@ -181,4 +182,31 @@ func dirOf(flag, flagName, setting, key string, find func() Dir) Dir {
 		return Dir{Path: setting, From: key}
 	}
 	return find()
+}
+
+// StatsPath returns the file doszer's window keeps play time in: beside
+// the executable when portable, else $XDG_STATE_HOME/doszer (default
+// ~/.local/state/doszer) on Linux and the user config directory's doszer
+// folder elsewhere.
+func StatsPath() (string, error) {
+	const name = "playtime.json"
+	if Portable() {
+		return filepath.Join(ExeDir(), name), nil
+	}
+	if runtime.GOOS == "linux" {
+		base := os.Getenv("XDG_STATE_HOME")
+		if base == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return "", err
+			}
+			base = filepath.Join(home, ".local", "state")
+		}
+		return filepath.Join(base, "doszer", name), nil
+	}
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "doszer", name), nil
 }

@@ -1,0 +1,237 @@
+// Package library lists the archives doszer's window shows: those under
+// the ROM directory, with what each archive says about itself (name, boot
+// model, DOSZ.ICO) and how long each has been played (Stats).
+package library
+
+import (
+	"archive/zip"
+	"encoding/json"
+	"errors"
+	"io"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/DemiCloud/doszer/internal/build"
+	"github.com/DemiCloud/doszer/internal/manifest"
+)
+
+// Kind is how an archive boots, for showing.
+type Kind int
+
+// Kinds.
+const (
+	KindDOS   Kind = iota // DOSBox Pure's DOS: exec, or nothing set
+	KindShell             // a Windows 3.x shell
+	KindOS                // an OS image
+)
+
+// Game is one archive.
+type Game struct {
+	Path     string    // absolute
+	Rel      string    // relative to the ROM directory, slash-separated
+	Name     string    // the manifest's, else the file name without extension
+	Kind     Kind      //
+	System   string    // the shell or OS image it boots, without directories ("Windows 98"), or ""
+	Size     int64     //
+	Modified time.Time //
+	Icon     []byte    // DOSZ.ICO, or nil
+	Err      string    // why the archive couldn't be read, if it couldn't
+
+	LastPlayed time.Time
+	PlayTime   time.Duration
+}
+
+// Scan lists the .dosz archives under dir, at any depth, sorted by name,
+// with their play statistics from stats (nil for none). Shells, which
+// live in the system directory, aren't games; an archive that can't be
+// read is listed with Err set.
+func Scan(dir string, stats *Stats) ([]Game, error) {
+	var paths []string
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if p == dir {
+				return err
+			}
+			return nil // an unreadable subdirectory: skipped
+		}
+		if !d.IsDir() && strings.EqualFold(filepath.Ext(p), ".dosz") {
+			paths = append(paths, p)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	games := make([]Game, len(paths))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for i, p := range paths {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			games[i] = read(dir, p)
+		}()
+	}
+	wg.Wait()
+	if stats != nil {
+		for i := range games {
+			s := stats.Get(games[i].Path)
+			games[i].LastPlayed, games[i].PlayTime = s.LastPlayed, s.Duration()
+		}
+	}
+	sort.SliceStable(games, func(i, j int) bool {
+		return strings.ToLower(games[i].Name) < strings.ToLower(games[j].Name)
+	})
+	return games, nil
+}
+
+// read reads one archive's entry.
+func read(dir, p string) Game {
+	abs, _ := filepath.Abs(p)
+	rel, _ := filepath.Rel(dir, p)
+	stem := strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))
+	g := Game{Path: abs, Rel: filepath.ToSlash(rel), Name: stem}
+	if fi, err := os.Stat(p); err == nil {
+		g.Size, g.Modified = fi.Size(), fi.ModTime()
+	}
+	zr, err := zip.OpenReader(p)
+	if err != nil {
+		g.Err = err.Error()
+		return g
+	}
+	defer zr.Close()
+	for _, f := range zr.File {
+		switch {
+		case strings.EqualFold(f.Name, "AUTOBOOT.DBP"):
+			if data, err := small(f, 4<<10); err == nil {
+				line, _, _ := strings.Cut(string(data), "\n")
+				g.Kind, g.System = kind(strings.TrimRight(line, "\r"))
+			}
+		case f.Name == manifest.FileName:
+			if data, err := small(f, 1<<20); err == nil {
+				if m, err := manifest.Parse(data, stem); err == nil && m.Name != "" {
+					g.Name = m.Name
+				}
+			}
+		case strings.EqualFold(f.Name, build.IconName):
+			if data, err := small(f, 4<<20); err == nil {
+				g.Icon = data
+			}
+		}
+	}
+	return g
+}
+
+// kind reads AUTOBOOT.DBP's first line (spec §6.8.1).
+func kind(line string) (Kind, string) {
+	switch {
+	case strings.HasPrefix(line, "S*"):
+		return KindShell, path.Base(line[2:])
+	case strings.HasPrefix(line, "O*"):
+		return KindOS, path.Base(line[2:])
+	}
+	return KindDOS, ""
+}
+
+// small reads an archive entry of at most limit bytes.
+func small(f *zip.File, limit int64) ([]byte, error) {
+	if f.UncompressedSize64 > uint64(limit) {
+		return nil, errors.New("too large")
+	}
+	rc, err := f.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return io.ReadAll(io.LimitReader(rc, limit))
+}
+
+// Played is one archive's play statistics.
+type Played struct {
+	LastPlayed time.Time `json:"last_played"`
+	Seconds    int64     `json:"seconds"`
+	Sessions   int       `json:"sessions"`
+}
+
+// Duration is the total play time.
+func (p Played) Duration() time.Duration { return time.Duration(p.Seconds) * time.Second }
+
+// Stats records how long archives have been played, in a JSON file keyed
+// by each archive's path relative to the ROM directory (so a portable
+// doszer's statistics survive a change of drive letter), or its absolute
+// path outside it.
+type Stats struct {
+	path, romDir string
+	mu           sync.Mutex
+	Games        map[string]Played `json:"games"`
+}
+
+// LoadStats reads the statistics file at path (one that doesn't exist yet
+// is empty) for archives under romDir.
+func LoadStats(path, romDir string) (*Stats, error) {
+	s := &Stats{path: path, romDir: romDir, Games: map[string]Played{}}
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return s, nil
+	}
+	if err != nil {
+		return s, err
+	}
+	if err := json.Unmarshal(data, s); err != nil {
+		return s, err
+	}
+	if s.Games == nil {
+		s.Games = map[string]Played{}
+	}
+	return s, nil
+}
+
+// key is archive's key in the file.
+func (s *Stats) key(archive string) string {
+	if s.romDir != "" {
+		if rel, err := filepath.Rel(s.romDir, archive); err == nil && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
+			return filepath.ToSlash(rel)
+		}
+	}
+	return archive
+}
+
+// Get returns archive's statistics.
+func (s *Stats) Get(archive string) Played {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Games[s.key(archive)]
+}
+
+// Add records a session of archive that started at start and lasted d,
+// and writes the file.
+func (s *Stats) Add(archive string, start time.Time, d time.Duration) error {
+	s.mu.Lock()
+	k := s.key(archive)
+	p := s.Games[k]
+	p.LastPlayed = start.UTC().Truncate(time.Second)
+	p.Seconds += int64(d.Round(time.Second) / time.Second)
+	p.Sessions++
+	s.Games[k] = p
+	data, err := json.MarshalIndent(s, "", "  ")
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+		return err
+	}
+	tmp := s.path + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, s.path)
+}

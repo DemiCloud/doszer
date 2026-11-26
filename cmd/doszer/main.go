@@ -23,6 +23,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/dump"
 	"github.com/DemiCloud/doszer/internal/env"
+	"github.com/DemiCloud/doszer/internal/gui"
 	"github.com/DemiCloud/doszer/internal/info"
 	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/interrupt"
@@ -78,6 +79,7 @@ func init() {
 		{"verify", "check archives against their manifests and the specification", runVerify},
 		{"env", "show the directories, images and tools doszer finds here", runEnv},
 		{"config", "show, change or write doszer's configuration", runConfig},
+		{"gui", "open the window listing the archives in the ROM directory", runGUI},
 		{"version", "show the versions of doszer and the programs it embeds", runVersion},
 	}
 }
@@ -101,6 +103,11 @@ func run(args []string) error {
 		return nil
 	}
 	if len(args) == 0 {
+		// Started from a desktop, Explorer or a shortcut rather than a
+		// shell: the window.
+		if !fromTerminal() {
+			return runGUI(nil)
+		}
 		usage(os.Stderr)
 		return errUsage
 	}
@@ -1980,4 +1987,41 @@ func runPortable(dir, systemDir, saveDir, romDir, from string, copyFiles, dryRun
 	}
 	fmt.Printf("%s %s: %s copied (%s), %d skipped\n", verb, dir, plural(copied, "file"), env.Size(bytes), skipped)
 	return nil
+}
+
+// runGUI implements `doszer gui`.
+func runGUI(args []string) error {
+	fs := newFlags("gui")
+	systemDir := fs.String("system-dir", "", "")
+	saveDir := fs.String("save-dir", "", "")
+	romDir := fs.String("rom-dir", "", "")
+	const help = `doszer gui - open the window listing the archives in the ROM directory
+
+Usage: doszer gui [options]
+
+Options:
+` + flagROMDir + flagSystemDir + flagSaveDir + flagHelp
+	if ok, err := parse(fs, args, help, 0, 0); !ok {
+		return err
+	}
+	cfg, err := config.Load("")
+	if err != nil {
+		return err
+	}
+	_, sdlLibs, err := builtin.Extract()
+	if err != nil {
+		return err
+	}
+	stats, err := config.StatsPath()
+	if err != nil {
+		return err
+	}
+	return gui.Run(gui.Options{
+		ROMDir:    config.ROMDirOf(cfg, *romDir),
+		SystemDir: *systemDir,
+		SaveDir:   *saveDir,
+		SDL:       sdlLibs,
+		StatsPath: stats,
+		Version:   version,
+	})
 }

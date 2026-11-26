@@ -16,6 +16,10 @@ import (
 //go:embed icon.png
 var icon []byte
 
+// SetIcon sets a window's icon to doszer's, for doszer's window as for
+// Run's.
+func SetIcon(window uintptr) { setIcon(window) }
+
 // setIcon sets the window's icon; without one the window keeps SDL's
 // default, so failures are ignored.
 func setIcon(window uintptr) {

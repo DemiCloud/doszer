@@ -1,6 +1,7 @@
 // Package sdl is the small part of SDL2 doszer's built-in frontend uses
 // (internal/libretro): a window and renderer for the core's frames,
-// keyboard and mouse events, and queued audio. It loads SDL2 at run time
+// keyboard and mouse events, and queued audio; and its window
+// (internal/gui): filled rectangles, textures, text input. It loads SDL2 at run time
 // through purego, so doszer itself builds without cgo: the system's
 // libSDL2-2.0.so.0 on Linux, a given SDL2.dll on Windows.
 package sdl
@@ -47,12 +48,16 @@ const (
 	EventWindow          = 0x200
 	EventKeyDown         = 0x300
 	EventKeyUp           = 0x301
+	EventTextInput       = 0x303
 	EventMouseMotion     = 0x400
 	EventMouseButtonDown = 0x401
 	EventMouseButtonUp   = 0x402
 	EventMouseWheel      = 0x403
 
-	WindowEventFocusLost = 13
+	WindowEventFocusLost   = 13
+	WindowEventSizeChanged = 6
+
+	BlendModeBlend = 1
 )
 
 // Modifier bits (SDL_keycode.h, SDL_Keymod).
@@ -93,6 +98,24 @@ func (e *Event) Motion() (xrel, yrel int32) { return e.i32(28), e.i32(32) }
 
 // Wheel is a mouse wheel event's vertical movement (SDL_MouseWheelEvent).
 func (e *Event) Wheel() int32 { return e.i32(20) }
+
+// MouseXY is a mouse motion or button event's position in the window
+// (SDL_MouseMotionEvent and SDL_MouseButtonEvent both keep x, y there).
+func (e *Event) MouseXY() (x, y int32) { return e.i32(20), e.i32(24) }
+
+// Clicks is a mouse button event's click count: 2 for a double click.
+func (e *Event) Clicks() uint8 { return e[18] }
+
+// Text is a text input event's UTF-8 text (SDL_TextInputEvent).
+func (e *Event) Text() string {
+	b := e[12:44]
+	for i, c := range b {
+		if c == 0 {
+			return string(b[:i])
+		}
+	}
+	return string(b)
+}
 
 // Rect is SDL_Rect.
 type Rect struct{ X, Y, W, H int32 }
@@ -151,6 +174,22 @@ var (
 	QueueAudio                     func(dev uint32, data unsafe.Pointer, len uint32) int32
 	GetQueuedAudioSize             func(dev uint32) uint32
 	ClearQueuedAudio               func(dev uint32)
+
+	// For doszer's window (internal/gui).
+	RenderFillRect         func(r uintptr, rect *Rect) int32
+	SetRenderDrawBlendMode func(r uintptr, mode int32) int32
+	SetTextureBlendMode    func(t uintptr, mode int32) int32
+	SetTextureColorMod     func(t uintptr, red, green, blue uint8) int32
+	SetTextureAlphaMod     func(t uintptr, alpha uint8) int32
+	RenderSetClipRect      func(r uintptr, rect *Rect) int32
+	StartTextInput         func()
+	GetWindowSize          func(w uintptr, width, height *int32)
+	WaitEventTimeout       func(e *Event, timeout int32) int32
+	GetDisplayDPI          func(display int32, ddpi, hdpi, vdpi *float32) int32
+	GetWindowDisplayIndex  func(w uintptr) int32
+	RaiseWindow            func(w uintptr)
+	SetWindowMinimumSize   func(w uintptr, width, height int32)
+	RenderReadPixels       func(r uintptr, rect *Rect, format uint32, pixels unsafe.Pointer, pitch int32) int32
 )
 
 var loaded bool
@@ -210,6 +249,20 @@ func Load(handle uintptr, sym func(uintptr, string) (uintptr, error)) (err error
 	bind(&QueueAudio, "SDL_QueueAudio")
 	bind(&GetQueuedAudioSize, "SDL_GetQueuedAudioSize")
 	bind(&ClearQueuedAudio, "SDL_ClearQueuedAudio")
+	bind(&RenderFillRect, "SDL_RenderFillRect")
+	bind(&SetRenderDrawBlendMode, "SDL_SetRenderDrawBlendMode")
+	bind(&SetTextureBlendMode, "SDL_SetTextureBlendMode")
+	bind(&SetTextureColorMod, "SDL_SetTextureColorMod")
+	bind(&SetTextureAlphaMod, "SDL_SetTextureAlphaMod")
+	bind(&RenderSetClipRect, "SDL_RenderSetClipRect")
+	bind(&StartTextInput, "SDL_StartTextInput")
+	bind(&GetWindowSize, "SDL_GetWindowSize")
+	bind(&WaitEventTimeout, "SDL_WaitEventTimeout")
+	bind(&GetDisplayDPI, "SDL_GetDisplayDPI")
+	bind(&GetWindowDisplayIndex, "SDL_GetWindowDisplayIndex")
+	bind(&RaiseWindow, "SDL_RaiseWindow")
+	bind(&SetWindowMinimumSize, "SDL_SetWindowMinimumSize")
+	bind(&RenderReadPixels, "SDL_RenderReadPixels")
 	if err == nil {
 		loaded = true
 	}

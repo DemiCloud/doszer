@@ -46,6 +46,8 @@ internal/w9xreg/     Windows 9x registry (SYSTEM.DAT/USER.DAT) reader, diff, REG
 internal/fat/        FAT12/16/32 reader with long names, as an io/fs.FS, for install; Tree/Write rebuild a volume in its own geometry, for prepare os
 internal/vdisk/      DOSBox Pure's synthesized D: disk + .sav diffs (D: and -CDRIVE), for install
 internal/install/    doszer install and run: session content, launching the built-in DOSBox Pure, directory discovery, diffing, extraction
+internal/library/    the window's game list: .dosz archives under the ROM directory (name, boot, DOSZ.ICO), play time (playtime.json)
+internal/gui/        doszer gui: the SDL-drawn window (list/grid, search, sort), games run as `doszer run` child processes; TestScreenshot renders it to PNGs
 internal/libretro/   built-in frontend: hosts a libretro core in-process (environment, directory-only VFS, SDL window/input/audio)
 internal/sdl/        the few SDL2 functions internal/libretro uses, loaded at run time through purego
 internal/dl/         dlopen/LoadLibrary without cgo
@@ -73,6 +75,9 @@ README.md            doszer usage, configuration, install workflow
   dependencies. Current: `github.com/pelletier/go-toml/v2`,
   `github.com/spf13/pflag` (GNU-style options, the same library the
   sibling `romctl` uses through cobra - five commands don't need cobra),
+  `golang.org/x/image` (the window's text: the opentype rasterizer and
+  the Go fonts, BSD; v0.36.0, the last needing only Go 1.24, which
+  brings `golang.org/x/text` for `sfnt`'s legacy cmaps),
   `github.com/ebitengine/purego` (loading the DOSBox Pure core and SDL2
   without cgo, so every release target still cross-compiles with
   `CGO_ENABLED=0`; v0.10.0, the last needing only Go 1.18 - v0.11 needs
@@ -282,6 +287,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `info` | Implemented |
 | `env` | Implemented |
 | `config` | Implemented |
+| `gui` | Implemented; rendered on Linux (WSLg) and Windows (TestScreenshot), opened from a bare `doszer` without a terminal; launching a game from it not yet tried live |
 | `version` | Implemented |
 
 Manifest parsing and every manifest rule in specification §11 are

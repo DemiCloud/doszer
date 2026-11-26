@@ -59,6 +59,8 @@ doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
 doszer env     [--system-dir DIR] [--save-dir DIR] [--rom-dir DIR]
 doszer env portable [DIR] [--copy] [--from FILE] [-n] [-f]
+doszer gui     [--rom-dir DIR] [--system-dir DIR] [--save-dir DIR]
+doszer
 doszer config  [get KEY | set KEY VALUE | unset KEY | init [FILE] [--current] [-f]] [--file FILE]
 doszer version
 ```
@@ -760,6 +762,27 @@ is optional; keys are in DOSBox Pure's `core_options.h`). Specification
 
 `doszer FILE.dosz`, with no command, does the same, so doszer can be the
 program that opens `.dosz` files (`doszer "%1"` on Windows).
+
+## Window
+
+`doszer gui` opens a window listing every `.dosz` under the ROM
+directory (`rom_dir`, Configuration), at any depth: each archive's icon
+(`DOSZ.ICO`, else its initial), name, folder, how it boots (DOS, a
+Windows 3.x shell, an OS image), when it was last played, for how long,
+and its size. `doszer` with no arguments opens it too when started
+without a terminal: from Explorer, a shortcut or a desktop menu.
+
+Typing filters by name, folder or system (Esc clears); arrows, Page
+Up/Down, Home and End move; Enter or a double click plays the selected
+game with `doszer run` in its own process, one at a time. Ctrl+L and
+Ctrl+G switch between list and grid, F5 or Ctrl+R rescans. Sort cycles
+through name, last played, play time and size.
+
+Play time is kept in `playtime.json`: beside doszer when portable, else
+`$XDG_STATE_HOME/doszer` (default `~/.local/state/doszer`) on Linux and
+`%APPDATA%\doszer` on Windows. Archives under the ROM directory are
+recorded by their path inside it, so moving the whole folder (or a
+portable doszer to another drive) keeps their history.
 
 ## DOSBox Pure in doszer
 
