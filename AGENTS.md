@@ -47,6 +47,7 @@ internal/fat/        FAT12/16/32 reader with long names, as an io/fs.FS, for ins
 internal/vdisk/      DOSBox Pure's synthesized D: disk + .sav diffs (D: and -CDRIVE), for install
 internal/install/    doszer install and run: session content, launching the built-in DOSBox Pure, directory discovery, diffing, extraction
 internal/chain/      an archive's dependencies as DOSBox Pure resolves them: parent markers, the AUTOBOOT.DBP in effect (the nearest), the shell/OS image in the system directory; reverse (UsedBy); for deps, library, the window
+internal/start/      doszer start: a source's start program candidates; boot.exec or a WINDOWS.BAT per boot model
 internal/library/    the window's game list: .dosz archives under the ROM directory (name, boot, DOSZ.ICO), play time (playtime.json)
 internal/gui/        doszer gui: the SDL-drawn window: Games (list/grid, search, sort; games run as `doszer run` child processes), Systems, Settings, the first-run dialog, the menu bar (menubar.go), Add a game (addgame.go: dump/dump --from, init, build as one step run); widgets.go (fields, buttons, dropdowns, layers); os_*.go (Explorer/xdg-open, folder picker); TestScreenshot renders every page to PNGs (also as the Windows test binary through WSL interop)
 internal/libretro/   built-in frontend: hosts a libretro core in-process (environment, directory-only VFS, SDL window/input/audio)
@@ -286,6 +287,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `init` | Implemented; without a boot model it picks one from the programs' needs (internal/platform), which matched the hand-chosen model of all five local test sources |
 | `build` | Implemented |
 | `install` | Implemented; live plain and OS image (`--drive c`) sessions passed under standalone DOSBox Pure (before its support was removed); built-in frontend checked with the real core (headless test on Linux and on Windows via WSL interop, and a window under WSLg), no full live install yet; `--from` checked on a real D: save (Next steps) |
+| `start` | Implemented |
 | `run` | Implemented; not yet played live |
 | `repack` | Implemented |
 | `set` | Implemented |

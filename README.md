@@ -49,6 +49,7 @@ doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH | --boot MODEL] [-
 doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [-n] [--strict] [--ogg-quality N]
 doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FILE]] [-f] [-n] [--keep]
                [--os PATH] [--drive c|d] [--system-dir DIR] [--save-dir DIR]
+doszer start   SOURCE [PROGRAM] [-f] [-n]
 doszer run     FILE.dosz [--option KEY=VALUE...] [--system-dir DIR] [--save-dir DIR]
 doszer FILE.dosz
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
@@ -756,6 +757,28 @@ save or disk image:
 Limitations: a change is detected by size or modification time; the
 content must not have a `<content>.pure.zip` of its own layered over it,
 or parent archives.
+
+## Start
+
+`doszer start SOURCE` lists the programs installed in a source (not on
+its discs), helpers such as setup and uninstall programs aside, the
+likeliest first (named after its folder or the game): DOS programs under
+the plain model, each by the batch file that starts it if the game has
+one; Windows programs too under the shell and OS image models.
+
+`doszer start SOURCE PROGRAM` makes the game start with PROGRAM (a path
+in the source):
+
+- plain model: `boot.exec`, its 8.3 DOS path on C:;
+- shell model: a `WINDOWS.BAT` in the source's root that starts Windows
+  with RunExit and the program (README "Preparing a shell"), 8.3 paths;
+- OS image model: a `WINDOWS.BAT` (specification §12) that changes to the
+  program's folder on D: and `START /W`s it, long names quoted; an
+  `INSTALL.REG` beside the program (from `install`) is restored first
+  with `REGEDIT /S`.
+
+An existing `WINDOWS.BAT` is replaced only with `-f`; `-n` shows the
+change. The window's Add a game runs it after `install`.
 
 ## Run
 

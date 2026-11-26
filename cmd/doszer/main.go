@@ -34,6 +34,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/prepare"
 	"github.com/DemiCloud/doszer/internal/redump"
 	"github.com/DemiCloud/doszer/internal/repack"
+	"github.com/DemiCloud/doszer/internal/start"
 	"github.com/DemiCloud/doszer/internal/status"
 	"github.com/DemiCloud/doszer/internal/verify"
 )
@@ -72,6 +73,7 @@ func init() {
 		{"init", "write a commented DOSZ.TOML into a source directory", runInit},
 		{"build", "build an archive from a source directory", runBuild},
 		{"install", "run an installer and extract the result into a source", runInstall},
+		{"start", "list or set the program a source's game starts with", runStart},
 		{"run", "play an archive in DOSBox Pure", runRun},
 		{"repack", "rebuild an archive from its embedded manifest", runRepack},
 		{"set", "change archives' parent, OS image or shell in place", runSet},
@@ -209,7 +211,7 @@ func newFlags(name string) *pflag.FlagSet {
 }
 
 // dataCommands are the commands with a result --format can encode.
-var dataCommands = map[string]bool{"deps": true, "info": true, "verify": true, "set": true, "version": true, "env": true, "config": true}
+var dataCommands = map[string]bool{"start": true, "deps": true, "info": true, "verify": true, "set": true, "version": true, "env": true, "config": true}
 
 // format is the resolved --format of the command running.
 var format = output.Plain
@@ -2215,4 +2217,82 @@ func printChain(c *chain.Chain, systemDir string) {
 		state = "not in " + systemDir
 	}
 	fmt.Printf("%s└─ %s (%s: %s)\n", indent, c.Boot, what, state)
+}
+
+// runStart implements `doszer start`.
+func runStart(args []string) error {
+	fs := newFlags("start")
+	force := fs.BoolP("force", "f", false, "")
+	dryRun := fs.BoolP("dry-run", "n", false, "")
+	const help = `doszer start - list or set the program a source's game starts with
+
+Usage: doszer start [options] SOURCE [PROGRAM]
+
+Options:
+  -n, --dry-run           show the change without writing
+  -f, --force             replace an existing WINDOWS.BAT
+` + flagFormatData + flagHelp
+	if ok, err := parse(fs, args, help, 1, 2); !ok {
+		return err
+	}
+	source := fs.Arg(0)
+	if fs.NArg() == 1 {
+		cs, m, err := start.Candidates(source)
+		if err != nil {
+			return err
+		}
+		switch format {
+		case output.Fancy, output.Plain:
+			if len(cs) == 0 {
+				fmt.Printf("No programs installed in %s (%s model)\n", source, m.Model())
+				return nil
+			}
+			width := 0
+			for _, c := range cs {
+				width = max(width, len(c.Path))
+			}
+			for _, c := range cs {
+				var notes []string
+				notes = append(notes, c.Target)
+				if c.Runs != "" {
+					notes = append(notes, "runs "+c.Runs)
+				}
+				if c.Likely {
+					notes = append(notes, "likeliest")
+				}
+				if c.Current {
+					notes = append(notes, "current")
+				}
+				fmt.Printf("  %-*s  %s\n", width, c.Path, strings.Join(notes, ", "))
+			}
+			return nil
+		case output.CSV:
+			var rows [][]string
+			for _, c := range cs {
+				rows = append(rows, []string{c.Path, c.Target, c.Runs, strconv.FormatBool(c.Likely), strconv.FormatBool(c.Current)})
+			}
+			return output.EncodeCSV(os.Stdout, []string{"path", "target", "runs", "likely", "current"}, rows)
+		}
+		return output.Encode(os.Stdout, format, struct {
+			Model      string            `json:"model" yaml:"model" toml:"model"`
+			Candidates []start.Candidate `json:"candidates" yaml:"candidates" toml:"candidates"`
+		}{m.Model().String(), cs})
+	}
+	res, err := start.Set(source, fs.Arg(1), *force, *dryRun)
+	if err != nil {
+		return err
+	}
+	if format.Structured() {
+		return output.Encode(os.Stdout, format, res)
+	}
+	verb := "Set"
+	if *dryRun {
+		verb = "Dry run: would set"
+	}
+	if res.Exec != "" {
+		fmt.Printf("%s boot.exec = %s\n", verb, res.Exec)
+		return nil
+	}
+	fmt.Printf("%s WINDOWS.BAT (%s model):\n%s", verb, res.Model, strings.ReplaceAll(res.Batch, "\r\n", "\n"))
+	return nil
 }
