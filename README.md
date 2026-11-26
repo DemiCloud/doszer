@@ -903,6 +903,9 @@ action:
 | Tools | Settings, Verify and Lint (an archive, or all games), Environment |
 | Help | Keyboard shortcuts, Credits (doszer and what it embeds, linked), About (right-click the icon to save it) |
 
+The game folders and the system directory are rescanned when the window
+regains focus and when a page tab is clicked, as well as by View > Refresh.
+
 A file dropped on the window plays (`.dosz`), starts an import (`.cue`,
 `.zip`) or a build (a folder). Below the menu bar, four pages, the one
 shown last coming back next time:

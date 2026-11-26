@@ -22,6 +22,7 @@ type settings struct {
 	effective         map[string]config.Setting
 	cfgPath           string
 	settingsH         int32
+	settingsViewH     int32 // the form's visible height
 	settingsOpen      bool
 	settingsScroll    int32
 }
@@ -408,9 +409,9 @@ func (a *app) drawSettings(ax, ay, aw, ah int32) {
 		if *cur != "" {
 			text = items[current] + " ▼"
 		}
-		bx := fx
-		a.button(text, bx, y, btnNormal, func() {
-			a.openPopup(bx, y, a.px(260), items, current, func(i int) {
+		bx, by := fx, y // y moves on before the click
+		a.button(text, bx, by, btnNormal, func() {
+			a.openPopup(bx, by, a.px(260), items, current, func(i int) {
 				switch {
 				case i == 0:
 					*cur = ""
@@ -441,6 +442,12 @@ func (a *app) drawSettings(ax, ay, aw, ah int32) {
 	a.drawField(&a.fDat, fx, y, fw)
 	y += a.px(38)
 
-	a.settingsH = y + a.settingsScroll - ay + p
-	a.settingsScroll = max(0, min(a.settingsScroll, a.settingsH-ah))
+	a.settingsH, a.settingsViewH = y+a.settingsScroll-ay+p, ah
+	a.scrollSettings(0)
+}
+
+// scrollSettings scrolls the form by d, kept within it: clamped here,
+// not after drawing, or a frame shows it scrolled past its end.
+func (a *app) scrollSettings(d int32) {
+	a.settingsScroll = max(0, min(a.settingsScroll+d, a.settingsH-a.settingsViewH))
 }

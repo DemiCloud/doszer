@@ -55,6 +55,7 @@ const (
 	EventMouseButtonUp   = 0x402
 	EventMouseWheel      = 0x403
 
+	WindowEventFocusGained = 12
 	WindowEventFocusLost   = 13
 	WindowEventSizeChanged = 6
 

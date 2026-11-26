@@ -55,7 +55,7 @@ func (a *app) menus() []menu {
 		{label: "Grid", keys: "Ctrl+G", fn: func() { a.show(pageGames); a.Grid(true) }},
 		{label: "Sort by", sub: sorts},
 		{label: "-"},
-		{label: "Refresh", keys: "F5", fn: func() { a.rescan(); a.rescanSystems() }},
+		{label: "Refresh", keys: "F5", fn: a.refresh},
 	}
 	build := []menuItem{
 		{label: "Import a disc…", keys: "Ctrl+N", fn: a.openAddGame},

@@ -374,8 +374,15 @@ func (a *app) event(e *sdl.Event) {
 	case sdl.EventQuit:
 		a.quit = true
 	case sdl.EventWindow:
-		if e.WindowEvent() == sdl.WindowEventSizeChanged {
+		switch e.WindowEvent() {
+		case sdl.WindowEventSizeChanged:
 			a.measure()
+		case sdl.WindowEventFocusGained:
+			// Back from another program (a download, a file manager,
+			// a game): the folders may have changed.
+			if a.o.Screenshot == "" {
+				a.refresh()
+			}
 		}
 	case sdl.EventDropFile:
 		a.drop(e.DropFile())
@@ -406,7 +413,7 @@ func (a *app) event(e *sdl.Event) {
 		} else if a.add != nil && a.add.page == 2 {
 			a.add.scroll = max(0, a.add.scroll+int(e.Wheel())*3)
 		} else if a.settingsOpen && a.popup == nil {
-			a.settingsScroll = max(0, a.settingsScroll-e.Wheel()*a.px(72))
+			a.scrollSettings(-e.Wheel() * a.px(72))
 		} else if a.popup == nil && a.setup == nil && a.add == nil {
 			a.scrollBy(-e.Wheel()*a.px(72), a.contentH())
 		}
@@ -519,8 +526,7 @@ func (a *app) key(sc int32, mod uint16) {
 		a.openBuildFolder()
 		return
 	case sc == scF5 || ctrl && sc == scR:
-		a.rescan()
-		a.rescanSystems()
+		a.refresh()
 		return
 	}
 	if a.focus != nil && a.focus.key(sc, ctrl) {
@@ -534,6 +540,12 @@ func (a *app) key(sc int32, mod uint16) {
 	case pageParents:
 		a.parentsKey(sc)
 	}
+}
+
+// refresh rescans the game folders and the system directory.
+func (a *app) refresh() {
+	a.rescan()
+	a.rescanSystems()
 }
 
 // show switches to page p.
@@ -617,7 +629,7 @@ func (a *app) drawToolbar() {
 		if a.page == pg {
 			style = btnOn
 		}
-		x += a.button(label, x, y, style, func() { a.show(pg) }) + a.px(4)
+		x += a.button(label, x, y, style, func() { a.show(pg); a.refresh() }) + a.px(4)
 	}
 	tab("Dashboard", pageDashboard)
 	tab("Games", pageGames)
