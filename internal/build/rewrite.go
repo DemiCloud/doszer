@@ -17,6 +17,10 @@ type RewriteHit struct {
 // applyRewrite applies each rule in order to the files it matches that
 // contain no NUL byte (§6.5), warning per §11 on a rule that replaced
 // nothing.
+func rewriteWarning(rule manifest.Rewrite) string {
+	return fmt.Sprintf("layout.rewrite: rule %q -> %q matched nothing", rule.From, rule.To)
+}
+
 func applyRewrite(fs *fileSet, rules []manifest.Rewrite) ([]RewriteHit, []string, error) {
 	var hits []RewriteHit
 	var warnings []string
@@ -47,7 +51,7 @@ func applyRewrite(fs *fileSet, rules []manifest.Rewrite) ([]RewriteHit, []string
 		}
 
 		if total == 0 {
-			warnings = append(warnings, fmt.Sprintf("layout.rewrite: rule %q -> %q matched nothing", rule.From, rule.To))
+			warnings = append(warnings, rewriteWarning(rule))
 		}
 	}
 

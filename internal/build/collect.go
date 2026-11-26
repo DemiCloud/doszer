@@ -89,6 +89,10 @@ func collect(sourceDir string, m *manifest.Manifest, outputPath string, tempFile
 	return result, pathWarnings, mediaWarnings, nil
 }
 
+func trimWarning(pattern string) string {
+	return fmt.Sprintf("layout.trim: pattern %q matched nothing", pattern)
+}
+
 // trim removes files matching any pattern (§6.2), warning per §11 on a
 // pattern that matched nothing.
 func trim(fs *fileSet, patterns []string) (removed []string, warnings []string) {
@@ -102,7 +106,7 @@ func trim(fs *fileSet, patterns []string) (removed []string, warnings []string) 
 			}
 		}
 		if !matched {
-			warnings = append(warnings, fmt.Sprintf("layout.trim: pattern %q matched nothing", pattern))
+			warnings = append(warnings, trimWarning(pattern))
 		}
 	}
 

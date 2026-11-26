@@ -31,6 +31,7 @@ func TestCheck(t *testing.T) {
 		{name: "good", chain: osChain("dosbox_pure/Windows 98")},
 		{name: "no manifest, no icon", report: func(r *info.Report) { r.Manifest, r.Icon = nil, "" }, chain: osChain("Win98"), want: []string{"manifest", "icon"}},
 		{name: "unidentified WAV disc", report: func(r *info.Report) { r.Discs[0].Media, r.Discs[0].WAV, r.Discs[0].Ogg = nil, 2, 0 }, chain: osChain("Win98"), want: []string{"media", "audio"}},
+		{name: "WAV asked for", report: func(r *info.Report) { r.Manifest.Pack.Audio, r.Discs[0].WAV, r.Discs[0].Ogg = "wav", 2, 0 }, chain: osChain("Win98")},
 		{name: "image too old", chain: osChain("Windows 3.11"), want: []string{"os"}},
 		{name: "unknown image", chain: osChain("Games")},
 		{name: "shell runs Win16", report: func(r *info.Report) { r.Need = win31 }, chain: &chain.Chain{Links: []chain.Link{{Found: true}}, BootFrom: 0, Kind: chain.KindShell, Boot: "Win31", System: "x"}},

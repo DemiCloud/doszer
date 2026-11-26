@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,6 +30,11 @@ type Options struct {
 	Strict     bool   // Fail the build if any §11 warning condition occurs.
 	OggQuality int    // libvorbis quality for Ogg audio tracks, -1 to 10 (internal/config's ogg_quality).
 	Flatten    bool   // Turn on layout.flatten, recording its rewrite rules and moved boot paths in the manifest (recordFlatten).
+
+	// Applied is the layout already applied to the files (Repack: the
+	// archive's own embedded manifest's): its trim patterns and rewrite
+	// rules matching nothing again is expected, not warned about.
+	Applied *manifest.Layout
 
 	// Provenance, if set, is recorded in the archive comment (§8.4).
 	Provenance *Provenance
@@ -211,6 +217,11 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, pathWarnings, 
 
 	status.Step("Applying the manifest")
 	res.Trimmed, res.TrimWarnings = trim(fs, m.Layout.Trim)
+	if a := opts.Applied; a != nil {
+		for _, p := range a.Trim {
+			res.TrimWarnings = slices.DeleteFunc(res.TrimWarnings, func(w string) bool { return w == trimWarning(p) })
+		}
+	}
 
 	turnOn := opts.Flatten && !m.Layout.Flatten
 	moved, dropped, err := flatten(fs, m.Layout.Flatten || turnOn)
@@ -258,6 +269,11 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, pathWarnings, 
 	}
 	res.RewriteHits = hits
 	res.RewriteWarnings = rewriteWarnings
+	if a := opts.Applied; a != nil {
+		for _, r := range a.Rewrite {
+			res.RewriteWarnings = slices.DeleteFunc(res.RewriteWarnings, func(w string) bool { return w == rewriteWarning(r) })
+		}
+	}
 
 	// After the manifest's own rules, so only references they leave are
 	// suggested.

@@ -112,7 +112,7 @@ it, and ends with a count; any failure makes it exit 1.
 each warning tagged with its check: `manifest` (none embedded, so
 `repack` can't rebuild it), `icon` (no `DOSZ.ICO`; games only), `media`
 (a disc image no `[[source.media]]` entry identifies), `audio` (CD audio
-in WAV, where Ogg Vorbis is smaller), `chain` (a parent, shell or OS
+in WAV the manifest didn't ask for, where Ogg Vorbis is smaller), `chain` (a parent, shell or OS
 image missing), `os` (its programs need a newer Windows than the one it
 boots, judged by the image's name), `type` (a `.dosz` other archives use
 as a parent with no programs of its own, or a `.dosp` nothing uses) and

@@ -113,6 +113,17 @@ func Run(opts Options) (*build.Result, error) {
 		return nil, fmt.Errorf("%s is invalid: %w", manifestSource, err)
 	}
 
+	// The layout the archive's own manifest records was applied when it
+	// was built: its rules finding nothing more to do is expected.
+	var applied *manifest.Layout
+	if mf != nil {
+		if own, err := readEntry(mf); err == nil {
+			if em, err := manifest.Parse(own, defaultName); err == nil {
+				applied = &em.Layout
+			}
+		}
+	}
+
 	for _, p := range opts.Remove {
 		for q := range entries {
 			if strings.EqualFold(q, p) {
@@ -162,6 +173,7 @@ func Run(opts Options) (*build.Result, error) {
 		Strict:       opts.Strict,
 		OggQuality:   opts.OggQuality,
 		Flatten:      opts.Flatten,
+		Applied:      applied,
 		Provenance:   opts.Provenance,
 		BeforeRename: closeInput,
 	})

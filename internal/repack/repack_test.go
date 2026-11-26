@@ -876,3 +876,21 @@ func TestRepackNormalizesLegacyEntryNames(t *testing.T) {
 		})
 	}
 }
+
+// TestRepackStrictAfterLayout: the archive's own trim patterns and
+// rewrite rules were applied when it was built, so finding nothing more
+// on a repack is no warning, and --strict passes; a new rule from
+// another manifest that matches nothing still fails it.
+func TestRepackStrictAfterLayout(t *testing.T) {
+	const layout = plainManifest + "[layout]\ntrim = ['*.TMP']\n[[layout.rewrite]]\nfrom = 'OLD'\nto = 'NEW'\nfiles = ['GAME.CFG']\n"
+	in := buildArchive(t, layout, map[string]string{"GAME.EXE": "MZ", "X.TMP": "x", "GAME.CFG": "dir=OLD\r\n"})
+	out := filepath.Join(t.TempDir(), "out.dosz")
+	if _, err := repack.Run(repack.Options{InputPath: in, OutputPath: out, Strict: true}); err != nil {
+		t.Fatalf("strict repack of its own layout: %v", err)
+	}
+	other := filepath.Join(t.TempDir(), "DOSZ.TOML")
+	os.WriteFile(other, []byte(layout+"[[layout.rewrite]]\nfrom = 'NONE'\nto = 'X'\nfiles = ['GAME.CFG']\n"), 0o644)
+	if _, err := repack.Run(repack.Options{InputPath: in, OutputPath: out, ManifestPath: other, Strict: true}); err == nil {
+		t.Error("a new rule matching nothing passed --strict")
+	}
+}

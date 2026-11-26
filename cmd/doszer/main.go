@@ -189,8 +189,12 @@ func wslToWindows(p string) string {
 func usage(w io.Writer) {
 	fmt.Fprint(w, "doszer - build .dosz archives for DOSBox Pure from DOSZ.TOML manifests\n\n")
 	fmt.Fprint(w, "Usage: doszer COMMAND [options] [ARG...]\n       doszer FILE.dosz\n\nCommands:\n")
+	width := 0
 	for _, c := range commands {
-		fmt.Fprintf(w, "  %-8s %s\n", c.name, c.summary)
+		width = max(width, len(c.name))
+	}
+	for _, c := range commands {
+		fmt.Fprintf(w, "  %-*s  %s\n", width, c.name, c.summary)
 	}
 	fmt.Fprint(w, "\nOptions:\n"+flagHelp+flagVersion)
 }

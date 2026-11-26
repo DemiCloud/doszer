@@ -62,7 +62,7 @@ func check(r *info.Report, c *chain.Chain, users int, located bool) []Finding {
 		if d.Media == nil {
 			add("media", "%s: not identified by a [[source.media]] entry", d.Path)
 		}
-		if d.WAV > 0 {
+		if d.WAV > 0 && (r.Manifest == nil || r.Manifest.Pack.Audio != "wav") { // asked for (Redump checks need it)
 			add("audio", "%s: %s in WAV (Ogg Vorbis is smaller)", d.Path, plural(d.WAV, "audio track"))
 		}
 	}
