@@ -453,6 +453,7 @@ const (
 	sc1         = 30
 	sc2         = 31
 	sc3         = 32
+	sc4         = 33
 	scReturn    = 40
 	scEscape    = 41
 	scBackspace = 42

@@ -63,7 +63,11 @@ const (
 	pageGames page = iota
 	pageParents
 	pageSystems
+	pageDashboard
 )
+
+// pageNames name the pages, for window.json and Show.
+var pageNames = map[page]string{pageDashboard: "dashboard", pageGames: "games", pageParents: "parents", pageSystems: "systems"}
 
 type app struct {
 	o        Options
@@ -112,7 +116,8 @@ type app struct {
 	exp             *exportDialog
 	selectAfterScan string // an archive to select once the list is read again
 	mx, my          int32
-	scroll          [3]int32       // per page, pixels
+	scroll          [4]int32       // per page, pixels
+	dashboardH      int32          // the Dashboard's height, as last drawn
 	parentList      []library.Game // the .dosp archives
 	parentSel       int
 
@@ -178,6 +183,19 @@ func Run(o Options) error {
 	}
 	a.initGames(st)
 	a.initSystems()
+	// The page shown last, else the Dashboard; screenshots start at Games.
+	if o.Screenshot == "" {
+		a.page = pageDashboard
+		for p, n := range pageNames {
+			if n == st.Page {
+				a.page = p
+			}
+		}
+		a.focus = nil
+		if a.page == pageGames {
+			a.focus = &a.search
+		}
+	}
 	a.initSettings()
 	defer a.destroy()
 	a.makeCircle()
@@ -473,12 +491,15 @@ func (a *app) key(sc int32, mod uint16) {
 		a.quit = true
 		return
 	case ctrl && sc == sc1:
-		a.show(pageGames)
+		a.show(pageDashboard)
 		return
 	case ctrl && sc == sc2:
-		a.show(pageParents)
+		a.show(pageGames)
 		return
 	case ctrl && sc == sc3:
+		a.show(pageParents)
+		return
+	case ctrl && sc == sc4:
 		a.show(pageSystems)
 		return
 	case ctrl && sc == scComma:
@@ -524,6 +545,8 @@ func (a *app) contentH() int32 {
 		return a.systemsH
 	case pageParents:
 		return a.parentsH()
+	case pageDashboard:
+		return a.dashboardH
 	}
 	return a.gamesH()
 }
@@ -558,6 +581,8 @@ func (a *app) render() {
 		a.drawSystems()
 	case pageParents:
 		a.drawParents()
+	case pageDashboard:
+		a.drawDashboard()
 	}
 	a.popClip()
 	a.drawToolbar()
@@ -586,6 +611,7 @@ func (a *app) drawToolbar() {
 		}
 		x += a.button(label, x, y, style, func() { a.show(pg) }) + a.px(4)
 	}
+	tab("Dashboard", pageDashboard)
 	tab("Games", pageGames)
 	tab("Parents", pageParents)
 	tab("Systems", pageSystems)
@@ -618,6 +644,8 @@ func (a *app) drawStatus() {
 		left = a.systemsStatus()
 	case pageParents:
 		left = plural(len(a.parentList), "parent")
+	case pageDashboard:
+		left = a.dashboardStatus()
 	}
 	x := p + a.text(a.ellipsize(left, a.w/2, 12, false), p, ty, 12, false, colMuted)
 
@@ -678,6 +706,7 @@ type guiState struct {
 	Grid   bool   `json:"grid,omitempty"`
 	Sort   string `json:"sort,omitempty"`
 	Export string `json:"export,omitempty"` // the folder Export last used
+	Page   string `json:"page,omitempty"`   // the page shown last
 }
 
 func statePath() string {
@@ -710,7 +739,7 @@ func (a *app) saveState() {
 	}
 	var ww, wh int32
 	sdl.GetWindowSize(a.win, &ww, &wh)
-	data, _ := json.MarshalIndent(guiState{Width: ww, Height: wh, Grid: a.grid, Sort: a.sort.String(), Export: a.exportDir}, "", "  ")
+	data, _ := json.MarshalIndent(guiState{Width: ww, Height: wh, Grid: a.grid, Sort: a.sort.String(), Export: a.exportDir, Page: pageNames[a.page]}, "", "  ")
 	os.MkdirAll(filepath.Dir(p), 0o755)
 	os.WriteFile(p, append(data, '\n'), 0o644)
 }

@@ -879,13 +879,22 @@ action:
 | Menu | |
 |---|---|
 | File | Open (an archive, to play), Export all games (to RetroDECK), Quit |
-| View | Games, Parents, Systems; list or grid, sort, refresh |
+| View | Dashboard, Games, Parents, Systems; list or grid, sort, refresh |
 | Build | Import a disc, Build a folder, Repack an archive, Prepare a shell or OS image |
 | Tools | Settings, Verify and Lint (an archive, or all games), Environment |
 | Help | Keyboard shortcuts, Credits (doszer and what it embeds, linked), About (right-click the icon to save it) |
 
 A file dropped on the window plays (`.dosz`), starts an import (`.cue`,
-`.zip`) or a build (a folder). Below the menu bar, three pages:
+`.zip`) or a build (a folder). Below the menu bar, four pages, the one
+shown last coming back next time:
+
+- **Dashboard** (the first page on a first run): the totals (games,
+  parents, systems, size, play time), each opening its page; the
+  problems (unreadable archives, broken parent chains, a missing system,
+  programs needing a newer system than any here, no icon), each with its
+  count, opening the games it applies to; the games played and built
+  most recently, each opening the game; and what the games boot, each
+  opening those games.
 
 - **Games**: every `.dosz` under the ROM directory, at any depth, as a
   list or grid: each archive's icon (`DOSZ.ICO`, else its initial),

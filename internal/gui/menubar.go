@@ -45,9 +45,10 @@ func (a *app) menus() []menu {
 		sorts = append(sorts, menuItem{label: m.String(), fn: func() { a.show(pageGames); a.sort = m; a.refilter(a.keepPath()) }})
 	}
 	view := []menuItem{
-		{label: "Games", keys: "Ctrl+1", fn: func() { a.show(pageGames) }},
-		{label: "Parents", keys: "Ctrl+2", fn: func() { a.show(pageParents) }},
-		{label: "Systems", keys: "Ctrl+3", fn: func() { a.show(pageSystems) }},
+		{label: "Dashboard", keys: "Ctrl+1", fn: func() { a.show(pageDashboard) }},
+		{label: "Games", keys: "Ctrl+2", fn: func() { a.show(pageGames) }},
+		{label: "Parents", keys: "Ctrl+3", fn: func() { a.show(pageParents) }},
+		{label: "Systems", keys: "Ctrl+4", fn: func() { a.show(pageSystems) }},
 		{label: "-"},
 		{label: "List", keys: "Ctrl+L", fn: func() { a.show(pageGames); a.Grid(false) }},
 		{label: "Grid", keys: "Ctrl+G", fn: func() { a.show(pageGames); a.Grid(true) }},
@@ -249,7 +250,7 @@ func (a *app) showShortcuts() {
 		{"Ctrl+N", "Import a disc", ""},
 		{"Ctrl+B", "Build a folder", ""},
 		{"Ctrl+,", "Settings", ""},
-		{"Ctrl+1 to Ctrl+3", "Games, Parents, Systems", ""},
+		{"Ctrl+1 to Ctrl+4", "Dashboard, Games, Parents, Systems", ""},
 		{"Ctrl+L, Ctrl+G", "List, grid", ""},
 		{"F5", "Refresh", ""},
 		{"Ctrl+Q", "Quit", ""},

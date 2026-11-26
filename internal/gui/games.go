@@ -87,13 +87,17 @@ func (a *app) Grid(on bool) { a.grid = on; a.reveal() }
 // Filter shows only the games booting system label (Options.Setup).
 func (a *app) Filter(label string) { a.filter = label; a.refilter(a.keepPath()) }
 
-// Show switches to a page: "games", "parents", "systems" or "settings" (Options.Setup).
+// Show switches to a page: "dashboard", "games", "parents", "systems" or "settings" (Options.Setup).
 func (a *app) Show(name string) {
 	if name == "settings" {
 		a.openSettings()
 		return
 	}
-	a.show(map[string]page{"games": pageGames, "parents": pageParents, "systems": pageSystems}[name])
+	for p, n := range pageNames {
+		if n == name {
+			a.show(p)
+		}
+	}
 }
 
 // rescan lists the ROM directory in the background.
@@ -709,7 +713,6 @@ const (
 // games boot, and the problems.
 func (a *app) filters() []string {
 	boots, needs := map[string]bool{}, map[string]bool{}
-	missing, broken := false, false
 	for i := range a.list {
 		g := &a.list[i]
 		l, _ := kindLabel(g)
@@ -717,8 +720,6 @@ func (a *app) filters() []string {
 		if n := needLabel(g); n != "" {
 			needs[n] = true
 		}
-		missing = missing || g.Boot != "" && a.files != nil && !a.hasSystem(g.Boot, g.Kind == library.KindShell)
-		broken = broken || g.Broken != ""
 	}
 	sorted := func(m map[string]bool) []string {
 		var out []string
@@ -744,14 +745,16 @@ func (a *app) filters() []string {
 		}
 		group(dirs)
 	}
-	var problems []string
-	if missing {
-		problems = append(problems, filterMissing)
+	var found []string
+	for _, f := range problems {
+		for i := range a.list {
+			if a.problem(&a.list[i], f) {
+				found = append(found, f)
+				break
+			}
+		}
 	}
-	if broken {
-		problems = append(problems, filterBroken)
-	}
-	group(problems)
+	group(found)
 	return out
 }
 
@@ -768,8 +771,8 @@ func (a *app) matchesFilter(g *library.Game) bool {
 	switch a.filter {
 	case filterMissing:
 		return g.Boot != "" && a.files != nil && !a.hasSystem(g.Boot, g.Kind == library.KindShell)
-	case filterBroken:
-		return g.Broken != ""
+	case filterBroken, filterUnmet, filterNoIcon, filterUnreadable:
+		return a.problem(g, a.filter)
 	}
 	if root, ok := strings.CutPrefix(a.filter, filterIn); ok {
 		return g.Root == root
