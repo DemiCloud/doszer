@@ -131,6 +131,14 @@ func Plan(archives []string, systemDir string, t Target, overwrite bool) ([]Step
 		if c.Kind == chain.KindShell || c.Kind == chain.KindOS {
 			c.Locate(systemDir)
 			if c.System == "" {
+				there := *c
+				if there.Locate(t.BIOS); there.System != "" { // not here, but there already
+					if !seen[strings.ToLower(there.System)] {
+						seen[strings.ToLower(there.System)] = true
+						steps = append(steps, Step{What: "system", From: there.System, To: there.System, Action: Same})
+					}
+					continue
+				}
 				add("system", filepath.Join(systemDir, filepath.FromSlash(c.Boot)), filepath.Join(t.BIOS, filepath.FromSlash(c.Boot)), false)
 				continue
 			}

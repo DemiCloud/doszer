@@ -72,6 +72,14 @@ func TestPlan(t *testing.T) {
 		t.Fatalf("second export:\n got %q\nwant %q", got, want)
 	}
 
+	// A shell not here but there already is no problem.
+	os.MkdirAll(filepath.Join(tg.BIOS), 0o755)
+	writeZip(t, filepath.Join(tg.BIOS, "Win31.dosz"), map[string]string{"WINDOWS/WIN.COM": "x"})
+	steps, _ = Plan(archives[1:2], sys, tg, false)
+	if got, want := actions(steps), []string{"same roms/windows3x/Old.dosz", "same bios/Win31.dosz"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("shell there already:\n got %q\nwant %q", got, want)
+	}
+
 	writeZip(t, filepath.Join(src, "Game.dosz"), map[string]string{"Base.dosp.parent": "", "GAME.EXE": "MZ2"})
 	os.WriteFile(img, make([]byte, 8<<20), 0o644)
 	for _, tt := range []struct {
