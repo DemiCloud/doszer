@@ -111,9 +111,9 @@ func (a *app) drawChild() {
 		items[i] = strings.ReplaceAll(cand.Path, "/", `\`) + "\t" + cand.Target
 	}
 	label := strings.ReplaceAll(c.cands[c.choice].Path, "/", `\`) + " ▼"
-	bx, by := fx, ry
-	a.button(label, bx, by, btnNormal, func() {
-		a.openPopup(bx, by, max(a.buttonW(label), a.px(320)), items, c.choice, func(i int) {
+	dx, dy := fx, ry // the closure keeps these; the buttons below have their own
+	a.button(label, dx, dy, btnNormal, func() {
+		a.openPopup(dx, dy, max(a.buttonW(label), a.px(320)), items, c.choice, func(i int) {
 			c.choice = i
 			if !c.named {
 				c.name.set(programName(c.cands[i].Path))
@@ -132,8 +132,8 @@ func (a *app) drawChild() {
 		a.text(a.ellipsize(filepath.Base(out), fw, 12, false), fx, ry, 12, false, colFaint)
 	}
 
-	by = y + h - p - a.px(32)
-	bx = x + w - p - a.buttonW("Create")
+	by := y + h - p - a.px(32)
+	bx := x + w - p - a.buttonW("Create")
 	var create func()
 	if safeName(strings.TrimSpace(c.name.text)) != "" {
 		create = a.createChild

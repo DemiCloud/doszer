@@ -112,13 +112,13 @@ func (a *app) drawExport() {
 
 	row("Type")
 	label := exportTypes[e.kind].label + " ▼"
-	bx, by := fx, ry
-	a.button(label, bx, by, btnNormal, func() {
+	dx, dy := fx, ry // the closure keeps these; the buttons below have their own
+	a.button(label, dx, dy, btnNormal, func() {
 		items := make([]string, len(exportTypes))
 		for i, t := range exportTypes {
 			items[i] = t.label
 		}
-		a.openPopup(bx, by, a.buttonW(label), items, e.kind, func(i int) { e.kind = i })
+		a.openPopup(dx, dy, a.buttonW(label), items, e.kind, func(i int) { e.kind = i })
 	})
 	ry += a.px(44)
 
@@ -153,8 +153,8 @@ func (a *app) drawExport() {
 	row("Overwrite")
 	a.checkbox(fx, ry, e.overwrite, "", func() { e.overwrite = !e.overwrite })
 
-	by = y + h - p - a.px(32)
-	bx = x + w - p - a.buttonW("Export")
+	by := y + h - p - a.px(32)
+	bx := x + w - p - a.buttonW("Export")
 	var run func()
 	if ok {
 		run = a.runExport
