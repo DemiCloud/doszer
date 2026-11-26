@@ -3,41 +3,54 @@ package gui
 import (
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/export"
 )
 
-// exportTypes are the frontends Export copies into, as `doszer export
-// --to` names them.
-var exportTypes = []struct{ label, flag string }{
-	{"RetroDECK", "retrodeck"},
+// exportTypes are what Export writes, as `doszer export --to` names
+// them, what its folder is and the folder picker's name for it.
+var exportTypes = []struct{ label, flag, folder, pick string }{
+	{"RetroDECK", "retrodeck", "RetroDECK root", "RetroDECK"},
+	{"ZIP", "zip", "Folder", "ZIP's"},
 }
 
-// exportDialog is Export's form: the type, the folder, the games.
+const exportZip = 1 // index of ZIP in exportTypes
+
+// exportSystems label export.Systems.
+var exportSystems = []string{"DOS", "Windows 3.x", "Windows 9x"}
+
+// exportDialog is Export's form: the type, its folder, the games.
 type exportDialog struct {
 	title     string
 	files     []string // the games; nil: every game in the ROM folders
 	kind      int      // index into exportTypes
-	folder    field
+	folders   []field  // a folder per type
+	systems   []bool   // by export.Systems
 	overwrite bool
 }
 
-// openExport opens Export for files (nil: all games), the folder the
+// openExport opens Export for files (nil: all games), the folders the
 // last export used, else the RetroDECK folder found (export.FindRetroDECK).
 func (a *app) openExport(title string, files []string) {
 	if files == nil && len(a.romDirs) == 0 {
 		a.alert("No ROM folder", "Choose where games go first: Tools, Settings.")
 		return
 	}
-	e := &exportDialog{title: title, files: files}
+	e := &exportDialog{title: title, files: files, folders: make([]field, len(exportTypes)), systems: make([]bool, len(export.Systems))}
+	for i := range e.systems {
+		e.systems[i] = true
+	}
 	dir := a.exportDir
 	if dir == "" {
 		if t, err := export.FindRetroDECK("", a.sysDir.Path); err == nil && filepath.Dir(t.ROMs) == filepath.Dir(t.BIOS) {
 			dir = filepath.Dir(t.ROMs)
 		}
 	}
-	e.folder.set(dir)
+	e.folders[0].set(dir)
+	e.folders[exportZip].set(a.exportZipDir)
 	a.exp, a.focus, a.popup = e, nil, nil
 }
 
@@ -51,11 +64,35 @@ func exportFolderOK(dir string) bool {
 	return dir != ""
 }
 
+// folderOK reports whether the export's folder will do: a RetroDECK
+// root, or any folder for a ZIP.
+func (e *exportDialog) folderOK() bool {
+	dir := e.folders[e.kind].text
+	if e.kind == exportZip {
+		fi, err := os.Stat(dir)
+		return dir != "" && err == nil && fi.IsDir()
+	}
+	return exportFolderOK(dir)
+}
+
+// chosen are the ticked systems, as export.Systems names them.
+func (e *exportDialog) chosen() []string {
+	var out []string
+	for i, on := range e.systems {
+		if on {
+			out = append(out, export.Systems[i])
+		}
+	}
+	return out
+}
+
+func (e *exportDialog) ready() bool { return e.folderOK() && len(e.chosen()) > 0 }
+
 func (a *app) runExport() {
 	e := a.exp
-	dir := e.folder.text
-	args := []string{"export", "--format", "plain", "--to", exportTypes[e.kind].flag, "--dir", dir}
-	if e.overwrite {
+	dir := e.folders[e.kind].text
+	args := []string{"export", "--format", "plain", "--to", exportTypes[e.kind].flag, "--dir", dir, "--systems", strings.Join(e.chosen(), ",")}
+	if e.overwrite && e.kind != exportZip {
 		args = append(args, "--overwrite")
 	}
 	if e.files == nil {
@@ -63,7 +100,11 @@ func (a *app) runExport() {
 	} else {
 		args = append(args, e.files...)
 	}
-	a.exportDir = dir
+	if e.kind == exportZip {
+		a.exportZipDir = dir
+	} else {
+		a.exportDir = dir
+	}
 	a.saveState()
 	a.exp, a.focus = nil, nil
 	a.runDoszer(e.title, args, nil)
@@ -81,7 +122,7 @@ func (a *app) exportKey(sc int32, ctrl bool) {
 			a.exp = nil
 		}
 	case scReturn, scKPEnter:
-		if exportFolderOK(a.exp.folder.text) {
+		if a.exp.ready() {
 			a.runExport()
 		}
 	}
@@ -96,7 +137,7 @@ func (a *app) drawExport() {
 	defer func() { a.layer = layerPage }()
 	a.fill(0, 0, a.w, a.h, rgba{0, 0, 0, 170})
 	a.onClick(0, 0, a.w, a.h, func(bool) { a.focus = nil })
-	w, h := min(a.w-a.px(40), a.px(720)), a.px(330)
+	w, h := min(a.w-a.px(40), a.px(720)), a.px(374)
 	x, y := (a.w-w)/2, (a.h-h)/2
 	a.round(x-a.px(1), y-a.px(1), w+a.px(2), h+a.px(2), a.px(14), colLine)
 	a.round(x, y, w, h, a.px(14), colPopup)
@@ -118,25 +159,33 @@ func (a *app) drawExport() {
 		for i, t := range exportTypes {
 			items[i] = t.label
 		}
-		a.openPopup(dx, dy, a.buttonW(label), items, e.kind, func(i int) { e.kind = i })
+		a.openPopup(dx, dy, a.buttonW(label), items, e.kind, func(i int) {
+			if i != e.kind {
+				e.kind, a.focus = i, nil
+			}
+		})
 	})
 	ry += a.px(44)
 
-	row("Folder")
+	row(exportTypes[e.kind].folder)
+	folder := &e.folders[e.kind]
 	bw := a.buttonW("Browse…")
-	a.drawField(&e.folder, fx, ry, fw-bw-a.px(8))
+	a.drawField(folder, fx, ry, fw-bw-a.px(8))
 	a.button("Browse…", fx+fw-bw, ry, btnNormal, func() {
-		if dir, ok := pickFolder("RetroDECK's folder", e.folder.text); ok {
-			e.folder.set(dir)
+		if dir, ok := pickFolder(exportTypes[e.kind].pick, folder.text); ok {
+			folder.set(dir)
 		}
 	})
 	ry += a.px(36)
-	ok := exportFolderOK(e.folder.text)
+	dir := folder.text
 	switch {
-	case e.folder.text == "":
-		a.text("Holding roms and bios", fx, ry, 12, false, colFaint)
-	case ok:
-		a.text(a.ellipsize(filepath.Join(e.folder.text, "roms")+",  "+filepath.Join(e.folder.text, "bios"), fw, 12, false), fx, ry, 12, false, colFaint)
+	case dir == "":
+	case e.kind == exportZip && e.folderOK():
+		a.text(a.ellipsize(filepath.Base(export.ZipName(dir, time.Now())), fw, 12, false), fx, ry, 12, false, colFaint)
+	case e.kind == exportZip:
+		a.text("No such folder", fx, ry, 12, false, colError)
+	case e.folderOK():
+		a.text(a.ellipsize(filepath.Join(dir, "roms")+",  "+filepath.Join(dir, "bios"), fw, 12, false), fx, ry, 12, false, colFaint)
 	default:
 		a.text("No roms and bios folders here", fx, ry, 12, false, colError)
 	}
@@ -150,13 +199,22 @@ func (a *app) drawExport() {
 	a.text(a.ellipsize(games, fw, 13, false), fx, ry+a.px(7), 13, false, colText)
 	ry += a.px(44)
 
-	row("Overwrite")
-	a.checkbox(fx, ry, e.overwrite, "", func() { e.overwrite = !e.overwrite })
+	row("Systems")
+	cx := fx
+	for i, name := range exportSystems {
+		cx += a.checkbox(cx, ry, e.systems[i], name, func() { e.systems[i] = !e.systems[i] }) + a.px(24)
+	}
+	ry += a.px(44)
+
+	if e.kind != exportZip { // a ZIP is a new file
+		row("Overwrite")
+		a.checkbox(fx, ry, e.overwrite, "", func() { e.overwrite = !e.overwrite })
+	}
 
 	by := y + h - p - a.px(32)
 	bx := x + w - p - a.buttonW("Export")
 	var run func()
-	if ok {
+	if e.ready() {
 		run = a.runExport
 	}
 	a.button("Export", bx, by, btnAccent, run)

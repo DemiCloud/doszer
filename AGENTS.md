@@ -36,7 +36,7 @@ internal/cue/        CUE parsing, track byte ranges, normalized track hash (§7.
 internal/iso9660/    ISO 9660 reader, for [[extract]] (§5.7)
 internal/padmap/     [[input.pad]] (§5.9): PADMAP.DBP and DOS.YML encoding (§6.8.2, §6.8.3)
 internal/verify/     doszer verify: an archive against its manifest and spec §8/§11
-internal/export/     doszer export: archives into RetroDECK's roms/<system> (dos, windows3x, windows9x), parents beside, shell/OS image into bios (never replaced)
+internal/export/     doszer export: archives into RetroDECK's roms/<system> (dos, windows3x, windows9x), parents beside, shell/OS image into bios (never replaced); or that layout into a new ZIP (WriteZip); --systems filter
 internal/lint/       doszer lint: quality warnings verify doesn't give (icon, identified discs, boot OS new enough, .dosp)
 internal/platform/   AUTORUN.INF/program icon suggestion for init; what a program needs (MZ/NE/PE headers, NE expected and PE subsystem versions), a game's programs together (installed over disc, helpers aside, DOS versions), source scanning incl. disc images; for info and init
 internal/env/        doszer env: this machine's config files, system/save directories and where they came from, shells and images (fixed/dynamic), configured names, Redump datfiles, ffmpeg

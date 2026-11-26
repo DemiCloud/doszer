@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func writeZip(t *testing.T, path string, files map[string]string) {
@@ -93,5 +94,94 @@ func TestPlan(t *testing.T) {
 		if got := actions(steps); !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("changed, overwrite %v:\n got %q\nwant %q", tt.overwrite, got, tt.want)
 		}
+	}
+}
+
+// TestZip: the same layout into a ZIP, archives stored and images
+// deflated, filtered by system, never replacing a file.
+func TestZip(t *testing.T) {
+	src, sys, out := t.TempDir(), t.TempDir(), t.TempDir()
+	writeZip(t, filepath.Join(src, "Base.dosp"), map[string]string{"AUTOBOOT.DBP": "O*dosbox_pure/Windows 98\n"})
+	writeZip(t, filepath.Join(src, "Game.dosz"), map[string]string{"Base.dosp.parent": "", "GAME.EXE": "MZ"})
+	writeZip(t, filepath.Join(src, "Old.dosz"), map[string]string{"AUTOBOOT.DBP": "S*Win31\n"})
+	writeZip(t, filepath.Join(src, "Plain.dosz"), map[string]string{"AUTOBOOT.DBP": "C:\\GAME.EXE\n"})
+	img := filepath.Join(sys, "dosbox_pure", "Windows 98.vhd")
+	os.MkdirAll(filepath.Dir(img), 0o755)
+	os.WriteFile(img, make([]byte, 7<<20), 0o644)
+	all := []string{filepath.Join(src, "Game.dosz"), filepath.Join(src, "Old.dosz"), filepath.Join(src, "Plain.dosz")}
+
+	for _, tt := range []struct {
+		systems []string
+		want    []string
+	}{
+		{Systems, []string{"Game.dosz", "Old.dosz", "Plain.dosz"}},
+		{[]string{"dos"}, []string{"Plain.dosz"}},
+		{[]string{"windows3x", "windows9x"}, []string{"Game.dosz", "Old.dosz"}},
+		{nil, nil},
+	} {
+		var got []string
+		for _, a := range Filter(all, tt.systems) {
+			got = append(got, filepath.Base(a))
+		}
+		if !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("Filter(%v) = %q, want %q", tt.systems, got, tt.want)
+		}
+	}
+
+	steps, err := PlanZip(all, sys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan []string
+	for _, s := range steps {
+		plan = append(plan, s.Action+" "+s.To)
+	}
+	want := []string{
+		"copy roms/windows9x/Game.dosz",
+		"copy roms/windows9x/Base.dosp",
+		"copy bios/dosbox_pure/Windows 98.vhd",
+		"copy roms/windows3x/Old.dosz",
+		"missing bios/Win31",
+		"copy roms/dos/Plain.dosz",
+	}
+	if !reflect.DeepEqual(plan, want) {
+		t.Fatalf("plan:\n got %q\nwant %q", plan, want)
+	}
+
+	day := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	path := ZipName(out, day)
+	if filepath.Base(path) != "doszer 2026-11-26.zip" {
+		t.Errorf("ZipName = %s", path)
+	}
+	if err := WriteZip(path, steps, nil); err != nil {
+		t.Fatal(err)
+	}
+	if next := filepath.Base(ZipName(out, day)); next != "doszer 2026-11-26 (2).zip" {
+		t.Errorf("ZipName with one there = %s", next)
+	}
+	if err := WriteZip(path, steps, nil); err == nil {
+		t.Error("WriteZip replaced a file")
+	}
+	r, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	methods := map[string]uint16{}
+	for _, f := range r.File {
+		methods[f.Name] = f.Method
+	}
+	wantMethods := map[string]uint16{
+		"roms/windows9x/Game.dosz":        zip.Store,
+		"roms/windows9x/Base.dosp":        zip.Store,
+		"bios/dosbox_pure/Windows 98.vhd": zip.Deflate,
+		"roms/windows3x/Old.dosz":         zip.Store,
+		"roms/dos/Plain.dosz":             zip.Store,
+	}
+	if !reflect.DeepEqual(methods, wantMethods) {
+		t.Errorf("entries %v, want %v", methods, wantMethods)
+	}
+	if left, _ := filepath.Glob(filepath.Join(out, ".doszer-export-*")); len(left) > 0 {
+		t.Errorf("temporary files left: %q", left)
 	}
 }

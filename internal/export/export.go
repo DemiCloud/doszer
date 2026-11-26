@@ -4,7 +4,8 @@
 // beside it (DOSBox Pure looks for a parent in the archive's own
 // directory: src/dos/drive_zip.cpp, zipDriveImpl), and the shell or OS
 // image it boots into the BIOS folder, DOSBox Pure's system directory, at
-// the path AUTOBOOT.DBP names (dosbox_pure_run.h, ReadAutoBoot).
+// the path AUTOBOOT.DBP names (dosbox_pure_run.h, ReadAutoBoot). Or the
+// same layout into a ZIP, to unpack into a RetroDECK folder.
 package export
 
 import (
@@ -19,7 +20,9 @@ import (
 	"github.com/DemiCloud/doszer/internal/chain"
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/install"
+	"github.com/DemiCloud/doszer/internal/interrupt"
 	"github.com/DemiCloud/doszer/internal/platform"
+	"github.com/DemiCloud/doszer/internal/zipw"
 )
 
 // Target is where archives go: a ROM folder holding a folder per system,
@@ -27,6 +30,24 @@ import (
 type Target struct {
 	ROMs, BIOS string
 	From       string // where they came from: "--dir", "RetroDECK", "system directory"
+	zip        bool   // into a new ZIP: ROMs and BIOS are its roms and bios
+}
+
+// Systems are the ES-DE system folders archives go in, by System.
+var Systems = []string{"dos", "windows3x", "windows9x"}
+
+// Filter keeps the archives whose System is one of systems.
+func Filter(archives, systems []string) []string {
+	var out []string
+	for _, a := range archives {
+		for _, s := range systems {
+			if System(chain.Resolve(a)) == s {
+				out = append(out, a)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // FindRetroDECK finds RetroDECK's folders: dir's roms/ and bios/ if dir
@@ -105,7 +126,11 @@ func Plan(archives []string, systemDir string, t Target, overwrite bool) ([]Step
 		seen[key] = true
 		s := Step{What: what, From: from, To: to, Action: Copy}
 		src, err := os.Stat(from)
-		switch dst, derr := os.Stat(to); {
+		dst, derr := os.Stat(to)
+		if t.zip {
+			s.To, derr = filepath.ToSlash(to), os.ErrNotExist // a new file: nothing there
+		}
+		switch {
 		case err != nil:
 			s.Action = Missing
 		case derr != nil:
@@ -131,13 +156,14 @@ func Plan(archives []string, systemDir string, t Target, overwrite bool) ([]Step
 		if c.Kind == chain.KindShell || c.Kind == chain.KindOS {
 			c.Locate(systemDir)
 			if c.System == "" {
-				there := *c
-				if there.Locate(t.BIOS); there.System != "" { // not here, but there already
-					if !seen[strings.ToLower(there.System)] {
-						seen[strings.ToLower(there.System)] = true
-						steps = append(steps, Step{What: "system", From: there.System, To: there.System, Action: Same})
+				if there := *c; !t.zip { // not here, but there already?
+					if there.Locate(t.BIOS); there.System != "" {
+						if !seen[strings.ToLower(there.System)] {
+							seen[strings.ToLower(there.System)] = true
+							steps = append(steps, Step{What: "system", From: there.System, To: there.System, Action: Same})
+						}
+						continue
 					}
-					continue
 				}
 				add("system", filepath.Join(systemDir, filepath.FromSlash(c.Boot)), filepath.Join(t.BIOS, filepath.FromSlash(c.Boot)), false)
 				continue
@@ -166,6 +192,98 @@ func Apply(steps []Step, progress func(Step)) error {
 		if err := copyFile(s.From, s.To); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// PlanZip is Plan into a new ZIP: each step's To is its path in the
+// archive, roms/<system>/... and bios/..., RetroDECK's layout.
+func PlanZip(archives []string, systemDir string) ([]Step, error) {
+	return Plan(archives, systemDir, Target{ROMs: "roms", BIOS: "bios", zip: true}, false)
+}
+
+// ZipName is the ZIP an export into dir writes: doszer <date>.zip, or
+// doszer <date> (2).zip and so on past the ones there.
+func ZipName(dir string, now time.Time) string {
+	base := "doszer " + now.Format("2006-01-02")
+	p := filepath.Join(dir, base+".zip")
+	for n := 2; ; n++ {
+		if _, err := os.Lstat(p); errors.Is(err, os.ErrNotExist) {
+			return p
+		}
+		p = filepath.Join(dir, fmt.Sprintf("%s (%d).zip", base, n))
+	}
+}
+
+// WriteZip writes the steps that copy into a new ZIP at path, each with
+// its file's modification time. Archives and shells are ZIPs already
+// and are stored; OS images are deflated. It goes to a temporary file
+// beside path first, renamed into place, and never replaces a file.
+func WriteZip(path string, steps []Step, progress func(Step)) (err error) {
+	if _, err := os.Lstat(path); err == nil {
+		return fmt.Errorf("%s: already there", path)
+	}
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".doszer-export-*.zip")
+	if err != nil {
+		return err
+	}
+	done := interrupt.Remove(tmp.Name())
+	defer func() {
+		if err != nil {
+			tmp.Close()
+			os.Remove(tmp.Name())
+		}
+		done()
+	}()
+	w := zipw.New(tmp)
+	w.TempDir = dir
+	for _, s := range steps {
+		if s.Action != Copy {
+			continue
+		}
+		if progress != nil {
+			progress(s)
+		}
+		if err := addFile(w, s); err != nil {
+			return err
+		}
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil { // CreateTemp's is 0600
+		return err
+	}
+	if _, err := os.Lstat(path); err == nil { // appeared meanwhile
+		return fmt.Errorf("%s: already there", path)
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+func addFile(w *zipw.Writer, s Step) error {
+	f, err := os.Open(s.From)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	ext := strings.ToLower(filepath.Ext(s.From))
+	store := ext == ".dosz" || ext == ".dosp" || ext == ".zip"
+	// zipw writes a time's UTC fields (a build mustn't depend on the
+	// time zone); unpacking reads them as local time, so give it the
+	// local wall clock: an unpacked file keeps its time, and a later
+	// export into that folder finds it the same (Plan's sameTime).
+	m := fi.ModTime()
+	m = time.Date(m.Year(), m.Month(), m.Day(), m.Hour(), m.Minute(), m.Second(), 0, time.UTC)
+	if err := w.Add(s.To, f, store, m); err != nil {
+		return fmt.Errorf("%s: %w", s.From, err)
 	}
 	return nil
 }

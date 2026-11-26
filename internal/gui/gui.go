@@ -112,7 +112,8 @@ type app struct {
 	selText map[string][]string
 
 	setupDone       bool   // Options.Setup ran
-	exportDir       string // the folder Export last used (window.json)
+	exportDir       string // the RetroDECK root Export last used (window.json)
+	exportZipDir    string // the folder its last ZIP went in
 	exp             *exportDialog
 	child           *childDialog
 	selectAfterScan string // an archive to select once the list is read again
@@ -723,12 +724,13 @@ func (a *app) heading(title string, x, y int32) int32 {
 // guiState is what the window remembers between runs, beside the play
 // time file.
 type guiState struct {
-	Width  int32  `json:"width,omitempty"`
-	Height int32  `json:"height,omitempty"`
-	Grid   bool   `json:"grid,omitempty"`
-	Sort   string `json:"sort,omitempty"`
-	Export string `json:"export,omitempty"` // the folder Export last used
-	Page   string `json:"page,omitempty"`   // the page shown last
+	Width     int32  `json:"width,omitempty"`
+	Height    int32  `json:"height,omitempty"`
+	Grid      bool   `json:"grid,omitempty"`
+	Sort      string `json:"sort,omitempty"`
+	Export    string `json:"export,omitempty"`     // the RetroDECK root Export last used
+	ExportZip string `json:"export_zip,omitempty"` // the folder its last ZIP went in
+	Page      string `json:"page,omitempty"`       // the page shown last
 }
 
 func statePath() string {
@@ -761,7 +763,7 @@ func (a *app) saveState() {
 	}
 	var ww, wh int32
 	sdl.GetWindowSize(a.win, &ww, &wh)
-	data, _ := json.MarshalIndent(guiState{Width: ww, Height: wh, Grid: a.grid, Sort: a.sort.String(), Export: a.exportDir, Page: pageNames[a.page]}, "", "  ")
+	data, _ := json.MarshalIndent(guiState{Width: ww, Height: wh, Grid: a.grid, Sort: a.sort.String(), Export: a.exportDir, ExportZip: a.exportZipDir, Page: pageNames[a.page]}, "", "  ")
 	os.MkdirAll(filepath.Dir(p), 0o755)
 	os.WriteFile(p, append(data, '\n'), 0o644)
 }

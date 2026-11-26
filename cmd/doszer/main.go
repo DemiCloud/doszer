@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -88,7 +89,7 @@ func init() {
 		{"deps", "show what archives need: parents, shell or OS image", runDeps},
 		{"verify", "check archives against their manifests and the specification", runVerify},
 		{"lint", "warn about what makes archives worse without making them wrong", runLint},
-		{"export", "copy archives into RetroDECK's folders, with what they need", runExport},
+		{"export", "copy archives into RetroDECK's folders or a ZIP, with what they need", runExport},
 		{"env", "show the directories, images and tools doszer finds here", runEnv},
 		{"config", "show, change or write doszer's configuration", runConfig},
 		{"gui", "open the window listing the archives in the ROM directory", runGUI},
@@ -2493,17 +2494,19 @@ func runExport(args []string) error {
 	dir := fs.String("dir", "", "")
 	systemDir := fs.String("system-dir", "", "")
 	overwrite := fs.Bool("overwrite", false, "")
+	systems := fs.StringSlice("systems", export.Systems, "")
 	dryRun := fs.BoolP("dry-run", "n", false, "")
-	const help = `doszer export - copy archives into RetroDECK's folders, with what they need
+	const help = `doszer export - copy archives into RetroDECK's folders or a ZIP, with what they need
 
 Usage: doszer export [options] FILE...
        doszer export --all [DIR...]
 
 Options:
       --all               export every .dosz under DIR (default: the ROM directories)
-      --to TYPE           frontend: retrodeck (default: retrodeck)
-      --dir DIR           folder holding roms and bios (default: RetroDECK's settings)
-      --overwrite         replace archives that differ (never a shell or OS image)
+      --to TYPE           retrodeck or zip (default: retrodeck)
+      --dir DIR           RetroDECK root, or the ZIP's folder (default: RetroDECK's settings, or .)
+      --systems LIST      dos, windows3x, windows9x (default: all)
+      --overwrite         replace archives that differ (never a shell or OS image; not for zip)
   -n, --dry-run           show the copies without making them
 ` + flagSystemDir + flagFormatData + flagHelp
 	if ok, err := parse(fs, args, help, 0, 1<<20); !ok {
@@ -2538,8 +2541,23 @@ Options:
 			return fmt.Errorf("no .dosz files under %s", strings.Join(dirs, ", "))
 		}
 	}
-	if *to != "retrodeck" {
-		return fmt.Errorf("--to %s: want retrodeck", *to)
+	for _, s := range *systems {
+		if !slices.Contains(export.Systems, s) {
+			return fmt.Errorf("--systems: %s: want %s", s, strings.Join(export.Systems, ", "))
+		}
+	}
+	if paths = export.Filter(paths, *systems); len(paths) == 0 {
+		return fmt.Errorf("no games for %s", strings.Join(*systems, ", "))
+	}
+	switch *to {
+	case "zip":
+		if *overwrite {
+			return errors.New("--overwrite: a ZIP export writes a new file")
+		}
+		return exportZip(paths, sys, *dir, *dryRun)
+	case "retrodeck":
+	default:
+		return fmt.Errorf("--to %s: want retrodeck or zip", *to)
 	}
 	t, err := export.FindRetroDECK(*dir, sys)
 	if err != nil {
@@ -2589,6 +2607,59 @@ Options:
 	}
 	if counts[export.Missing] > 0 {
 		return fmt.Errorf("%s not found here", plural(counts[export.Missing], "file"))
+	}
+	return nil
+}
+
+// exportZip writes the archives, their parents and images into a new
+// ZIP in dir.
+func exportZip(paths []string, sys, dir string, dryRun bool) error {
+	if dir == "" {
+		dir = "."
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return fmt.Errorf("%s: not a folder", dir)
+	}
+	steps, err := export.PlanZip(paths, sys)
+	if err != nil {
+		return err
+	}
+	path := export.ZipName(dir, time.Now())
+	if !dryRun {
+		err = export.WriteZip(path, steps, func(s export.Step) { status.Step("Adding %s", filepath.Base(s.To)) })
+		endSteps(err)
+		if err != nil {
+			return err
+		}
+	}
+	switch format {
+	case output.CSV:
+		rows := make([][]string, len(steps))
+		for i, s := range steps {
+			rows[i] = []string{s.What, s.Action, s.From, s.To}
+		}
+		return output.EncodeCSV(os.Stdout, []string{"what", "action", "from", "to"}, rows)
+	case output.JSON, output.YAML, output.TOML:
+		return output.Encode(os.Stdout, format, struct {
+			Archive string        `json:"archive" yaml:"archive" toml:"archive"`
+			Steps   []export.Step `json:"steps" yaml:"steps" toml:"steps"`
+		}{path, steps})
+	}
+	fmt.Printf("ZIP:  %s\n\n", path)
+	word := "Added"
+	if dryRun {
+		word = "Would add"
+	}
+	missing := 0
+	for _, s := range steps {
+		w := word
+		if s.Action == export.Missing {
+			w, missing = "Not here", missing+1
+		}
+		fmt.Printf("%-14s %s\n", w, s.To)
+	}
+	if missing > 0 {
+		return fmt.Errorf("%s not found here", plural(missing, "file"))
 	}
 	return nil
 }

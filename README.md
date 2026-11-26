@@ -63,7 +63,7 @@ doszer info    FILE.dosz|SOURCE...
 doszer deps    FILE... [--used-by] [--system-dir DIR]
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
-doszer export  FILE... | --all [DIR...] [--to retrodeck] [--dir DIR] [--overwrite] [-n] [--system-dir DIR]
+doszer export  FILE... | --all [DIR...] [--to retrodeck|zip] [--dir DIR] [--systems LIST] [--overwrite] [-n] [--system-dir DIR]
 doszer env     [--system-dir DIR] [--save-dir DIR] [--rom-dir DIR]
 doszer env portable [DIR] [--copy] [--from FILE] [-n] [-f]
 doszer gui     [--rom-dir DIR] [--system-dir DIR] [--save-dir DIR]
@@ -1116,7 +1116,7 @@ same name.
 ### Exporting to RetroDECK
 
 `doszer export FILE...` (or `--all`, every game in the ROM directories)
-copies archives into RetroDECK's folders with what they need:
+copies archives into RetroDECK's folders, or a ZIP, with what they need:
 
 - each game into `roms/<system>/`, ES-DE's system folder for how it
   boots: `dos`, `windows3x` (a Windows 3.x shell or image) or
@@ -1131,11 +1131,23 @@ copy), else `--dir`: a folder holding `roms` and `bios`. A file already
 there with the same size and time is left alone; one that differs is
 kept unless `--overwrite`. A shell or OS image is only ever copied when
 missing, never replaced: the frontend's copy may have changed by being
-played. `-n` shows the copies without making them. `--to` names the
-frontend; `retrodeck` is the only one so far. The window's File > Export
-all games and a game's Tools > Export open a dialog: the type, the
-folder (the last one used, else the RetroDECK folder found), and
-Overwrite.
+played. `-n` shows the copies without making them. `--systems` limits
+the export to some of `dos`, `windows3x` and `windows9x`.
+
+`--to zip` writes the same layout into a new ZIP in `--dir` (default:
+the current folder), `doszer <date>.zip` (numbered if there is one), to
+unpack into a RetroDECK folder: the games and shells stored as they are
+(already compressed), OS images deflated, each file keeping its time.
+It never replaces a file, so it takes no `--overwrite`. ZIP over 7z: 7z
+would shrink OS images about a third further (a Windows 98 VHD: 84 MB
+deflated, 58 MB with xz) but games barely at all (a `.dosz` is deflated
+already), and it would need an external program; every system opens a
+ZIP.
+
+The window's File > Export all games and a game's Tools > Export open a
+dialog: the type (RetroDECK or ZIP), the RetroDECK root or the ZIP's
+folder (the last one used, else the RetroDECK folder found), the
+systems, and for RetroDECK Overwrite.
 
 ### Preparing a shell
 
