@@ -201,6 +201,7 @@ const (
 	flagVersion    = "  -V, --version           show version\n"
 	flagOggQuality = "      --ogg-quality N     Ogg Vorbis quality, -1 to 10 (default: build.ogg_quality, else 6)\n"
 	flagStrict     = "      --strict            fail on any warning\n"
+	flagFlatten    = "      --flatten           collapse single-folder chains, recording it in the manifest\n"
 	flagSaveDir    = "      --save-dir DIR      DOSBox Pure save directory (default: paths.saves, else ./saves, else doszer's once set up)\n"
 	flagSystemDir  = "      --system-dir DIR    DOSBox Pure system directory (default: paths.system, else ./system, else RetroDECK's)\n"
 	flagROMDir     = "      --rom-dir DIR       archive directory (default: paths.roms, else ./roms, else RetroDECK's)\n"
@@ -466,13 +467,14 @@ func runBuild(args []string) error {
 	name := fs.String("name", "", "")
 	oggQuality := fs.Int("ogg-quality", 0, "")
 	strict := fs.Bool("strict", false, "")
+	flatten := fs.Bool("flatten", false, "")
 	const help = `doszer build - build an archive from a source directory
 
 Usage: doszer build [options] SOURCE [OUTPUT.dosz]
 
 Options:
   -n, --dry-run           print the build plan without writing an archive
-      --name NAME         override the manifest's effective name
+` + flagFlatten + `      --name NAME         override the manifest's effective name
 ` + flagOggQuality + flagStrict + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 2); !ok {
 		return err
@@ -487,6 +489,7 @@ Options:
 		Name:       *name,
 		DryRun:     *dryRun,
 		Strict:     *strict,
+		Flatten:    *flatten,
 		OggQuality: flagOr(fs, "ogg-quality", *oggQuality, cfg.Build.OggQuality),
 	}
 	if fs.NArg() == 2 {
@@ -1362,6 +1365,7 @@ func runRepack(args []string) error {
 	oggQuality := fs.Int("ogg-quality", 0, "")
 	strict := fs.Bool("strict", false, "")
 	add := fs.StringArray("add", nil, "")
+	flatten := fs.Bool("flatten", false, "")
 	const help = `doszer repack - rebuild an archive from its embedded manifest
 
 Usage: doszer repack [options] INPUT.dosz [OUTPUT.dosz]
@@ -1369,7 +1373,7 @@ Usage: doszer repack [options] INPUT.dosz [OUTPUT.dosz]
 Options:
       --add PATH=FILE     add FILE to the archive as PATH, replacing any (repeatable)
   -n, --dry-run           print the rebuild plan without writing an archive
-      --manifest FILE     use this manifest instead of the archive's embedded one
+` + flagFlatten + `      --manifest FILE     use this manifest instead of the archive's embedded one
 ` + flagOggQuality + flagStrict + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 2); !ok {
 		return err
@@ -1384,6 +1388,7 @@ Options:
 		DryRun:       *dryRun,
 		Strict:       *strict,
 		ManifestPath: *manifestPath,
+		Flatten:      *flatten,
 		OggQuality:   flagOr(fs, "ogg-quality", *oggQuality, cfg.Build.OggQuality),
 	}
 	for _, a := range *add {

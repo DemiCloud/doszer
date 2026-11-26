@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/DemiCloud/doszer/internal/manifest"
 )
 
 // maxScanSize skips scanning disk-backed files larger than this (disc images).
@@ -15,6 +17,19 @@ const maxScanSize = 8 << 20
 // it can't rewrite (§6.5). Each file is read and lower-cased once, however
 // many names it is searched for.
 func suggestRewrites(fs *fileSet, dropped []string) (suggestions []string, binaryRefs []string) {
+	rules, binaryRefs := suggestRewriteRules(fs, dropped)
+	for _, r := range rules {
+		suggestions = append(suggestions, fmt.Sprintf(
+			"[[layout.rewrite]]\nfrom  = %s\nto    = \"\"\nfiles = %s",
+			strconv.Quote(r.From), quotePaths(r.Files)))
+	}
+	return suggestions, binaryRefs
+}
+
+// suggestRewriteRules is suggestRewrites' rules as manifest entries: for
+// each collapsed directory name D that text files mention as a path
+// ("D\" or "D/"), a rule removing "D\" from those files.
+func suggestRewriteRules(fs *fileSet, dropped []string) (rules []manifest.Rewrite, binaryRefs []string) {
 	var names []string // unique case-insensitively, first casing kept
 	seen := make(map[string]bool, len(dropped))
 	for _, name := range dropped {
@@ -30,6 +45,10 @@ func suggestRewrites(fs *fileSet, dropped []string) (suggestions []string, binar
 	textFiles := make([][]string, len(names))
 	binary := make([][]string, len(names))
 	for _, p := range fs.paths() {
+		switch strings.ToUpper(p) {
+		case "AUTOBOOT.DBP", "PADMAP.DBP", strings.ToUpper(manifest.FileName):
+			continue // generated (§6.8): rewritten anyway
+		}
 		e, _ := fs.get(p)
 		if size, err := e.size(); err != nil || size > maxScanSize {
 			continue
@@ -55,12 +74,10 @@ func suggestRewrites(fs *fileSet, dropped []string) (suggestions []string, binar
 	for i, name := range names {
 		binaryRefs = append(binaryRefs, binary[i]...)
 		if len(textFiles[i]) > 0 {
-			suggestions = append(suggestions, fmt.Sprintf(
-				"[[layout.rewrite]]\nfrom  = %s\nto    = \"\"\nfiles = %s",
-				strconv.Quote(name+`\`), quotePaths(textFiles[i])))
+			rules = append(rules, manifest.Rewrite{From: name + `\`, To: "", Files: textFiles[i]})
 		}
 	}
-	return suggestions, binaryRefs
+	return rules, binaryRefs
 }
 
 func quotePaths(paths []string) string {

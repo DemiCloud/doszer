@@ -47,6 +47,7 @@ type editDialog struct {
 	parent    string
 	program   string // Windows: what WINDOWS.BAT starts (a path in the archive)
 	colors256 bool
+	flatten   bool     // layout.flatten: once on, it stays (the files have moved)
 	dosProgs  []string // the archive's DOS programs and batch files, as DOS paths
 	winProgs  []string // its Windows programs, as paths
 	files     map[string]bool
@@ -262,6 +263,7 @@ func (e *editDialog) fromManifest() {
 	}
 	p, d := start.ParseBatch(e.bat.text())
 	e.program, e.colors256 = p, d == "640x480x8"
+	e.flatten = m.Layout.Flatten
 	e.changed = false
 }
 
@@ -391,6 +393,9 @@ func (a *app) saveEditor() {
 	tmp.Close()
 	path, name := e.path, e.name
 	args := []string{"repack", "--format", "plain", "--manifest", tmp.Name()}
+	if e.flatten && !m.Layout.Flatten {
+		args = append(args, "--flatten")
+	}
 	if e.iconAdd != "" {
 		args = append(args, "--add", e.iconPath+"="+e.iconAdd)
 	}
@@ -536,6 +541,14 @@ func (a *app) drawEditForm(e *editDialog, x, y, w int32) {
 	}
 	row("256 colours", toggle != nil)
 	a.checkbox(fx, y, e.colors256, "", toggle)
+	y += a.px(48)
+
+	var flat func()
+	if !e.m.Layout.Flatten {
+		flat = func() { e.flatten, e.changed = !e.flatten, true }
+	}
+	row("Flatten folders", flat != nil)
+	a.checkbox(fx, y, e.flatten, "", flat)
 	y += a.px(48)
 
 	row("Parent", true)

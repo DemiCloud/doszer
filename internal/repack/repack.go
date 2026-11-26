@@ -37,6 +37,7 @@ type Options struct {
 	ManifestPath string            // use this manifest instead of the archive's embedded one
 	OggQuality   int               // libvorbis quality for Ogg audio tracks (build.Options.OggQuality)
 	DryRun       bool              // compute and report the plan without writing an archive
+	Flatten      bool              // turn on layout.flatten (build.Options.Flatten)
 	Strict       bool              // fail if any §11 warning condition occurs
 	Add          map[string]string // files to add or replace: path in the archive -> file on disk (an icon, a tool)
 
@@ -151,6 +152,7 @@ func Run(opts Options) (*build.Result, error) {
 		DryRun:       opts.DryRun,
 		Strict:       opts.Strict,
 		OggQuality:   opts.OggQuality,
+		Flatten:      opts.Flatten,
 		Provenance:   opts.Provenance,
 		BeforeRename: closeInput,
 	})

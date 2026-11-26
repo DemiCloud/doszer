@@ -28,6 +28,7 @@ type Options struct {
 	DryRun     bool   // Compute and report the plan without writing an archive.
 	Strict     bool   // Fail the build if any §11 warning condition occurs.
 	OggQuality int    // libvorbis quality for Ogg audio tracks, -1 to 10 (internal/config's ogg_quality).
+	Flatten    bool   // Turn on layout.flatten, recording its rewrite rules and moved boot paths in the manifest (recordFlatten).
 
 	// Provenance, if set, is recorded in the archive comment (§8.4).
 	Provenance *Provenance
@@ -211,9 +212,14 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, pathWarnings, 
 	status.Step("Applying the manifest")
 	res.Trimmed, res.TrimWarnings = trim(fs, m.Layout.Trim)
 
-	moved, dropped, err := flatten(fs, m.Layout.Flatten)
+	turnOn := opts.Flatten && !m.Layout.Flatten
+	moved, dropped, err := flatten(fs, m.Layout.Flatten || turnOn)
 	if err != nil {
 		return nil, err
+	}
+	if turnOn {
+		rules, _ := suggestRewriteRules(fs, dropped)
+		recordFlatten(m, moved, rules)
 	}
 	for _, from := range sortedKeys(moved) {
 		res.Moved = append(res.Moved, Move{From: from, To: moved[from]})

@@ -36,6 +36,7 @@ type addGame struct {
 	keep     bool
 	named    bool // the name was typed, not suggested
 	install  bool // run its setup in DOSBox Pure, then choose the program it starts
+	flatten  bool // collapse single-folder chains (C:\VENDOR\GAME to C:\GAME): build --flatten
 
 	// Build a folder: game files already on disk, built where they are.
 	useFolder   bool
@@ -59,6 +60,7 @@ type addPlan struct {
 	install        []step   // the install step, to run again
 	report         []string // install's output
 	folder         bool     // Build a folder, not Import a disc
+	flatten        bool     // build --flatten
 }
 
 var bootChoices = []struct{ label, flag string }{
@@ -78,7 +80,7 @@ func (a *app) openAddGame() {
 		a.alert("No ROM folder", "Choose where games go first: Tools, Settings, Games (ROMs).")
 		return
 	}
-	g := &addGame{drives: opticalDrives(), discs: 1, keep: true, install: true}
+	g := &addGame{drives: opticalDrives(), discs: 1, keep: true, install: true, flatten: true}
 	if !haveFFmpeg() {
 		g.audio = 1 // WAV: Ogg Vorbis is encoded by ffmpeg
 	}
@@ -273,7 +275,7 @@ func (a *app) addGameRun() {
 	if !g.hasManifest {
 		steps = append(steps, step{args: append(initArgs, src)})
 	}
-	plan := &addPlan{name: g.name.text, src: src, out: out, temp: temp, keep: (g.keep || g.useFolder) && !temp, folder: g.useFolder}
+	plan := &addPlan{name: g.name.text, src: src, out: out, temp: temp, keep: (g.keep || g.useFolder) && !temp, folder: g.useFolder, flatten: g.flatten}
 	if !g.install {
 		// An installed game in a folder: choose (or change) what it starts
 		// with before building.
@@ -326,7 +328,11 @@ func (a *app) installed(plan *addPlan) func(error) {
 
 // buildStep builds plan's archive.
 func buildStep(p *addPlan) step {
-	return step{args: []string{"build", "--format", "plain", p.src, p.out}}
+	args := []string{"build", "--format", "plain"}
+	if p.flatten {
+		args = append(args, "--flatten")
+	}
+	return step{args: append(args, p.src, p.out)}
 }
 
 // added is what happens once a game is built: its dump removed unless
@@ -744,6 +750,10 @@ func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {
 
 	row("Install first")
 	a.checkbox(fx, y, g.install, "", func() { g.install = !g.install })
+	y += a.px(44)
+
+	row("Flatten folders")
+	a.checkbox(fx, y, g.flatten, "", func() { g.flatten = !g.flatten })
 	y += a.px(44)
 
 	srcs := config.SourcesDirOf(a.cfg)

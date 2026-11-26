@@ -46,7 +46,7 @@ make help    # every target
 doszer dump    DIR [--drive DRIVE] [--dat FILE]
 doszer redump  [SHA1|FILE|IMAGE|FILE.dosz...] [--update] [--dat FILE] [--offset SAMPLES]
 doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH | --boot MODEL] [--audio FMT] [--name NAME] [--no-media] [--no-icon] [--system-dir DIR] [-f]
-doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [-n] [--strict] [--ogg-quality N]
+doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [--flatten] [-n] [--strict] [--ogg-quality N]
 doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FILE]] [-f] [-n] [--keep]
                [--os PATH] [--drive c|d] [--system-dir DIR] [--save-dir DIR]
 doszer start   SOURCE [PROGRAM] [-f] [-n]
@@ -54,7 +54,7 @@ doszer run     FILE.dosz [--option KEY=VALUE...] [--system-dir DIR] [--save-dir 
 doszer FILE.dosz
 doszer manifest FILE.dosz
 doszer convert FILE [--to dosp|dosz] [-n]
-doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [--add PATH=FILE...] [-n] [--strict] [--ogg-quality N]
+doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [--add PATH=FILE...] [--flatten] [-n] [--strict] [--ogg-quality N]
 doszer set     FILE.dosz... [--parent [OLD:]NEW | --no-parent] [--os [OLD:]NEW] [--shell [OLD:]NEW] [-n]
 doszer verify  FILE.dosz... | --all [DIR...]
 doszer lint    FILE... | --all [DIR...] [--system-dir DIR]
@@ -282,6 +282,15 @@ files up to 8 MB for references, suggests `[[layout.rewrite]]` rules, and
 reports references in binary files (containing a NUL byte) that cannot be
 rewritten. A rewrite rule applies to any file without a NUL byte that its
 `files` patterns name, e.g. an INI-style `RESOURCE.CFG` (spec §6.5).
+
+`build --flatten` (and `repack --flatten`) turns flattening on and
+records what it did in the archive's manifest: `flatten = true`, those
+suggested rewrite rules, and `boot.exec`, `boot.disc` and the icon path
+moved to where their files went. An installer's `C:\DYNAMIX\BAKCD` becomes
+`C:\BAKCD`, its `RESOURCE.CFG`'s `directory = \DYNAMIX\BAKCD` too.
+Binary files naming the old path are warned about, not changed. The
+window flattens by default (Flatten folders, in Import a disc, Build a
+folder and Edit).
 
 ## Dumping and verifying discs
 
