@@ -9,68 +9,74 @@ import (
 	"github.com/DemiCloud/doszer/internal/library"
 )
 
-// gameMenu opens a game's right-click menu at the mouse. Each action is a
-// doszer command (runDoszer), shown with its command line.
+// gameMenu opens a game's right-click menu at the mouse, its submenus
+// cascading. Each action is a doszer command (runDoszer), shown with its
+// command line.
 func (a *app) gameMenu(g *library.Game) {
-	type item struct {
-		label string
-		fn    func()
-	}
 	path, name := g.Path, g.Name
 	rescan := func(err error) {
 		if err == nil {
 			a.rescan()
 		}
 	}
-	items := []item{
-		{"Play", a.play},
-		{"-", nil},
-		{"Info", func() { a.runDoszer("Info: "+name, []string{"info", "--format", "plain", path}, nil) }},
-		{"Dependencies", func() { a.showDeps(path, name) }},
-		{"Verify", func() { a.runDoszer("Verify: "+name, []string{"verify", "--format", "plain", path}, nil) }},
-		{"-", nil},
-		{"Repack…", func() {
+	tools := []menuItem{
+		{label: "Info", fn: func() { a.runDoszer("Info: "+name, []string{"info", "--format", "plain", path}, nil) }},
+		{label: "Dependencies", fn: func() { a.showDeps(path, name) }},
+		{label: "Verify", fn: func() { a.runDoszer("Verify: "+name, []string{"verify", "--format", "plain", path}, nil) }},
+		{label: "-"},
+		{label: "Repack…", fn: func() {
 			a.confirm("Repack "+name+"?", "Repack", func() {
 				a.runDoszer("Repack: "+name, []string{"repack", "--format", "plain", path, path}, rescan)
-			}, "Rebuilds the archive from its embedded manifest, in place.", "Its saves are named after the file, so they stay with it.")
+			}, "Rebuilds the archive from its embedded manifest, in place.")
 		}},
-		{"Change parent…", func() { a.pickParent(g) }},
 	}
+	change := []menuItem{{label: "Parent", sub: a.parentItems(g)}}
 	switch g.Kind {
 	case library.KindOS:
-		items = append(items, item{"Change OS image…", func() { a.pickSystem(g, false) }})
+		change = append(change, menuItem{label: "OS image", sub: a.systemItems(g, false)})
 	case library.KindShell:
-		items = append(items, item{"Change shell…", func() { a.pickSystem(g, true) }})
+		change = append(change, menuItem{label: "Shell", sub: a.systemItems(g, true)})
 	}
-	items = append(items, item{"-", nil}, item{"Show in folder", func() { a.showInFolder(path) }})
-	if !canOpen() {
-		items = items[:len(items)-2]
+	items := []menuItem{
+		{label: "Play", fn: a.play},
+		{label: "Edit…", fn: func() { a.openEditor(g) }},
+		{label: "-"},
+		{label: "Tools", sub: tools},
+		{label: "Change", sub: change},
 	}
-	labels := make([]string, len(items))
-	for i, it := range items {
-		labels[i] = it.label
+	if canOpen() {
+		items = append(items, menuItem{label: "-"}, menuItem{label: "Show in folder", fn: func() { a.showInFolder(path) }})
 	}
-	a.openMenu(a.mx, a.my, labels, func(i int) {
-		if items[i].fn != nil {
-			items[i].fn()
-		}
-	})
+	a.openMenuItems(a.mx, a.my, items)
 }
 
-// pickParent offers the archives beside g as its parent: any but g and
-// those g already holds up (which would loop).
-func (a *app) pickParent(g *library.Game) {
+// parentItems are the archives beside g that can be its parent: any but
+// g and those g already holds up (which would loop), and None. The
+// current one is marked.
+func (a *app) parentItems(g *library.Game) []menuItem {
 	dir := filepath.Dir(g.Path)
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		a.say(err.Error(), true)
-		return
-	}
+	entries, _ := os.ReadDir(dir)
 	cur := ""
 	if len(g.Parents) > 0 {
 		cur = g.Parents[0]
 	}
-	items, current := []string{"None"}, 0
+	path, name := g.Path, g.Name
+	set := func(label string, args []string, what string) menuItem {
+		return menuItem{label: label, fn: func() {
+			a.confirm("Change "+name+"'s parent?", "Change", func() {
+				a.runDoszer("Parent: "+name, args, func(err error) {
+					if err == nil {
+						a.rescan()
+					}
+				})
+			}, "Gives "+filepath.Base(path)+" "+what+".")
+		}}
+	}
+	none := set("None", []string{"set", "--format", "plain", "--no-parent", path}, "no parent")
+	if cur == "" {
+		none = menuItem{label: "• None"}
+	}
+	items := []menuItem{none}
 	for _, e := range entries {
 		n := e.Name()
 		ext := strings.ToLower(filepath.Ext(n))
@@ -83,68 +89,48 @@ func (a *app) pickParent(g *library.Game) {
 				loops = true
 			}
 		}
-		if loops {
-			continue
-		}
-		items = append(items, n)
-		if n == cur {
-			current = len(items) - 1
+		switch {
+		case loops:
+		case n == cur:
+			items = append(items, menuItem{label: "• " + n})
+		default:
+			items = append(items, set(n, []string{"set", "--format", "plain", "--parent", n, path}, n+" as its parent"))
 		}
 	}
-	path, name := g.Path, g.Name
-	a.openPopup(a.mx, a.my-a.px(36), a.px(260), items, current, func(i int) {
-		if i == current {
-			return
-		}
-		args := []string{"set", "--format", "plain", "--no-parent", path}
-		what := "no parent"
-		if i > 0 {
-			args = []string{"set", "--format", "plain", "--parent", items[i], path}
-			what = items[i] + " as its parent"
-		}
-		a.confirm("Change "+name+"'s parent?", "Change", func() {
-			a.runDoszer("Parent: "+name, args, func(err error) {
-				if err == nil {
-					a.rescan()
-				}
-			})
-		}, "Gives "+filepath.Base(path)+" "+what+", rewriting it in place.")
-	})
+	return items
 }
 
-// pickSystem offers the system directory's shells or OS images to boot g.
-func (a *app) pickSystem(g *library.Game, shell bool) {
-	items, current := []string{}, -1
-	for _, f := range a.files {
-		if f.Shell == shell && !f.missing {
-			items = append(items, f.Name)
-			if f.Name == g.Boot {
-				current = len(items) - 1
-			}
-		}
-	}
+// systemItems are the system directory's shells or OS images to boot g.
+func (a *app) systemItems(g *library.Game, shell bool) []menuItem {
 	what, flag := "OS image", "--os"
 	if shell {
 		what, flag = "shell", "--shell"
 	}
-	if len(items) == 0 {
-		a.alert("No "+what+" to choose", "The system folder has none: "+a.sysDir.Path)
-		return
-	}
 	path, name := g.Path, g.Name
-	a.openPopup(a.mx, a.my-a.px(36), a.px(260), items, current, func(i int) {
-		if i == current {
-			return
+	var items []menuItem
+	for _, f := range a.files {
+		if f.Shell != shell || f.missing {
+			continue
 		}
-		args := []string{"set", "--format", "plain", flag, items[i], path}
-		a.confirm("Change "+name+"'s "+what+"?", "Change", func() {
-			a.runDoszer(strings.ToUpper(what[:1])+what[1:]+": "+name, args, func(err error) {
-				if err == nil {
-					a.rescan()
-				}
-			})
-		}, "Boots "+items[i]+" instead of "+g.Boot+", rewriting "+filepath.Base(path)+" in place.")
-	})
+		if f.Name == g.Boot {
+			items = append(items, menuItem{label: "• " + f.Name})
+			continue
+		}
+		n := f.Name
+		items = append(items, menuItem{label: n, fn: func() {
+			a.confirm("Change "+name+"'s "+what+"?", "Change", func() {
+				a.runDoszer(strings.ToUpper(what[:1])+what[1:]+": "+name, []string{"set", "--format", "plain", flag, n, path}, func(err error) {
+					if err == nil {
+						a.rescan()
+					}
+				})
+			}, "Boots "+n+" instead of "+g.Boot+".")
+		}})
+	}
+	if len(items) == 0 {
+		items = []menuItem{{label: "None in the system folder"}}
+	}
+	return items
 }
 
 // OpenGameMenu opens the n-th shown game's menu, as a right click on it

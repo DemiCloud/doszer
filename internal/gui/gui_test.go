@@ -9,6 +9,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/library"
+	"github.com/DemiCloud/doszer/internal/manifest"
 )
 
 func TestRefilter(t *testing.T) {
@@ -139,5 +140,38 @@ func TestSortFiles(t *testing.T) {
 	}
 	if n := suggestName(g.files[0].text); n != "Game" {
 		t.Errorf("name = %q", n)
+	}
+}
+
+func TestEditForm(t *testing.T) {
+	m, err := manifest.Parse([]byte("format = 1\nname = 'Betrayal in Antara'\n[boot]\nos = 'dosbox_pure/Win98'\n"), "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := &editDialog{name: m.Name, m: m, bat: newTextArea(""), toml: newTextArea(""),
+		files: map[string]bool{"SIERRA/INSTALL.REG": true, "SIERRA/ANTARA/ANTARAR.EXE": true}}
+	e.fromManifest()
+	a := &app{edit: e}
+	if e.model != 2 || e.os != "dosbox_pure/Win98" {
+		t.Fatalf("form %+v", e)
+	}
+	// Choosing the program and 256 colours writes WINDOWS.BAT as start would.
+	e.program, e.colors256 = "SIERRA/ANTARA/ANTARAR.EXE", true
+	a.regenerate()
+	want := "@ECHO OFF\r\nREGEDIT /S D:\\SIERRA\\INSTALL.REG\r\nSTART /W RUNDLL DESKCP16.DLL,QUICKRES_RUNDLLENTRY 640x480x8\r\nD:\r\nCD \\SIERRA\\ANTARA\r\nSTART /W ANTARAR.EXE\r\n"
+	if got := e.bat.text(); got != strings.ReplaceAll(want, "\r", "") && got != want {
+		t.Errorf("WINDOWS.BAT =\n%q", got)
+	}
+	// Read back, the form finds them again.
+	e.program, e.colors256 = "", false
+	e.fromManifest()
+	if e.program != "SIERRA/ANTARA/ANTARAR.EXE" || !e.colors256 {
+		t.Errorf("parsed back: program %q, 256 colours %v", e.program, e.colors256)
+	}
+	// Switching to DOS keeps the manifest valid: one boot setting.
+	e.model, e.exec = 0, `C:\GAME.EXE`
+	e.toManifest()
+	if m.Boot.OS != "" || m.Boot.Exec != `C:\GAME.EXE` {
+		t.Errorf("boot %+v", m.Boot)
 	}
 }

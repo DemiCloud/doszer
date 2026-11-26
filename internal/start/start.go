@@ -100,6 +100,14 @@ func current(source string, m *manifest.Manifest) string {
 	if err != nil {
 		return ""
 	}
+	p, _ := ParseBatch(string(data))
+	return p
+}
+
+// ParseBatch reads a WINDOWS.BAT's program, as a source path, and the
+// display mode it switches to (QuickRes), if any: what Batch wrote, or
+// a hand-written one in the same forms (START /W, WIN).
+func ParseBatch(text string) (program, display string) {
 	unquote := func(s string) string { return strings.Trim(s, `"`) }
 	rel := func(p string) string { // C:\X\Y or D:\X\Y as X/Y
 		if len(p) > 3 && p[1] == ':' && p[2] == '\\' {
@@ -107,28 +115,31 @@ func current(source string, m *manifest.Manifest) string {
 		}
 		return ""
 	}
-	cd, cur := "", ""
-	for _, l := range strings.Split(strings.ReplaceAll(string(data), "\r", ""), "\n") {
+	cd := ""
+	for _, l := range strings.Split(strings.ReplaceAll(text, "\r", ""), "\n") {
 		l = strings.TrimSpace(l)
 		up := strings.ToUpper(l)
 		switch {
+		case strings.Contains(up, "QUICKRES_RUNDLLENTRY"):
+			f := strings.Fields(l)
+			display = f[len(f)-1]
 		case strings.HasPrefix(up, "CD "):
 			cd = strings.Trim(unquote(strings.TrimSpace(l[3:])), `\`)
 		case strings.HasPrefix(up, "START /W "):
 			f := unquote(strings.TrimSpace(l[len("START /W "):]))
 			if r := rel(f); r != "" {
-				cur = r
+				program = r
 			} else if strings.HasSuffix(strings.ToUpper(f), ".EXE") {
-				cur = strings.Trim(path.Join(strings.ReplaceAll(cd, `\`, "/"), f), "/")
+				program = strings.Trim(path.Join(strings.ReplaceAll(cd, `\`, "/"), f), "/")
 			}
 		case strings.HasPrefix(up, "WIN "):
 			f := strings.Fields(l)
 			if r := rel(f[len(f)-1]); r != "" {
-				cur = r
+				program = r
 			}
 		}
 	}
-	return cur
+	return program, display
 }
 
 // Result is what Set changed.
@@ -189,11 +200,63 @@ func Set(source, program string, o Options) (*Result, error) {
 	if _, err := os.Stat(bat); err == nil && !force {
 		return nil, errors.New("WINDOWS.BAT exists: --force replaces it")
 	}
+	// INSTALL.REG: install writes it at the extracted folder's root, the
+	// program's folder or one above it (SIERRA/INSTALL.REG for
+	// SIERRA/ANTARA/ANTARAR.EXE).
+	reg := FindRegistry(program, func(p string) bool {
+		_, err := os.Stat(filepath.Join(source, filepath.FromSlash(p)))
+		return err == nil
+	})
+	batch, err := Batch(m.Model(), program, reg, o.Display)
+	if err != nil {
+		return nil, err
+	}
+	if reg != "" {
+		res.Registy = winPath(reg)
+	}
+	res.Batch = batch
+	if dryRun {
+		return res, nil
+	}
+	return res, os.WriteFile(bat, []byte(res.Batch), 0o644)
+}
+
+// FindRegistry is the INSTALL.REG for program (both source paths): in
+// its folder or one above it, as exists reports; "" if none.
+func FindRegistry(program string, exists func(string) bool) string {
+	for d := path.Dir(program); ; d = path.Dir(d) {
+		reg := strings.TrimPrefix(path.Join(d, "INSTALL.REG"), "./")
+		if exists(reg) {
+			return reg
+		}
+		if d == "." || d == "/" {
+			return ""
+		}
+	}
+}
+
+// winPath is a source path as a D: path, quoted if it needs it.
+func winPath(rel string) string {
+	p := `D:\` + strings.ReplaceAll(rel, "/", `\`)
+	if strings.ContainsAny(p, " +,;=[]") {
+		p = `"` + p + `"`
+	}
+	return p
+}
+
+// Batch is the WINDOWS.BAT that starts program (a source path) under the
+// shell or OS image model: restoring registry (an INSTALL.REG source
+// path, or ""), switching to display first (WxHxBPP, or "").
+func Batch(model manifest.Model, program, registry, display string) (string, error) {
 	dir, file := path.Dir(program), path.Base(program)
 	var b strings.Builder
 	b.WriteString("@ECHO OFF\r\n")
-	switch m.Model() {
+	switch model {
 	case manifest.ModelShell:
+		dos, ok := platform.DOSPath(program)
+		if !ok {
+			return "", fmt.Errorf("%s: not a DOS path (each name at most 8.3 characters, no spaces)", program)
+		}
 		// Run instead of the shell's AUTOEXEC.BAT, so it sets PATH and
 		// TEMP itself; RunExit (a prepared shell) closes Windows, and so
 		// DOSBox Pure, when the game quits.
@@ -204,50 +267,33 @@ func Set(source, program string, o Options) (*Result, error) {
 	case manifest.ModelOS:
 		// The archive is D:; the image shuts Windows down when this ends
 		// (spec §12), so START /W waits for the game.
-		win := func(rel string) string { // a D: path, quoted if it needs it
-			p := `D:\` + strings.ReplaceAll(rel, "/", `\`)
-			if strings.ContainsAny(p, " +,;=[]") {
-				p = `"` + p + `"`
-			}
-			return p
-		}
 		quote := func(s string) string {
 			if strings.ContainsAny(s, " +,;=[]") {
 				return `"` + s + `"`
 			}
 			return s
 		}
-		// install writes INSTALL.REG at the extracted folder's root,
-		// the program's folder or one above it (SIERRA/INSTALL.REG for
-		// SIERRA/ANTARA/ANTARAR.EXE).
-		for d := dir; ; d = path.Dir(d) {
-			reg := path.Join(d, "INSTALL.REG")
-			if _, err := os.Stat(filepath.Join(source, filepath.FromSlash(reg))); err == nil {
-				res.Registy = win(strings.TrimPrefix(reg, "./"))
-				b.WriteString("REGEDIT /S " + res.Registy + "\r\n")
-				break
-			}
-			if d == "." || d == "/" {
-				break
-			}
+		if registry != "" {
+			b.WriteString("REGEDIT /S " + winPath(registry) + "\r\n")
 		}
-		if o.Display != "" {
+		if display != "" {
+			if !displayMode.MatchString(display) {
+				return "", fmt.Errorf("display %s: want WIDTHxHEIGHTxBITS, e.g. 640x480x8", display)
+			}
 			// Windows 98's own mode switch (QuickRes, in DESKCP16.DLL, a
 			// 16-bit DLL: RUNDLL, not RUNDLL32), with no restart prompt:
 			// for a game that wants 256 colours and warns at more.
-			b.WriteString("START /W RUNDLL DESKCP16.DLL,QUICKRES_RUNDLLENTRY " + o.Display + "\r\n")
+			b.WriteString("START /W RUNDLL DESKCP16.DLL,QUICKRES_RUNDLLENTRY " + display + "\r\n")
 		}
 		b.WriteString("D:\r\n")
 		if dir != "." {
 			b.WriteString("CD " + quote(`\`+strings.ReplaceAll(dir, "/", `\`)) + "\r\n")
 		}
 		b.WriteString("START /W " + quote(file) + "\r\n")
+	default:
+		return "", errors.New("WINDOWS.BAT is for the shell and OS image models")
 	}
-	res.Batch = b.String()
-	if dryRun {
-		return res, nil
-	}
-	return res, os.WriteFile(bat, []byte(res.Batch), 0o644)
+	return b.String(), nil
 }
 
 // likeliest is the program the game most likely starts with: platform.Likely's

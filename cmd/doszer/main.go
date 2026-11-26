@@ -76,6 +76,7 @@ func init() {
 		{"start", "list or set the program a source's game starts with", runStart},
 		{"run", "play an archive in DOSBox Pure", runRun},
 		{"repack", "rebuild an archive from its embedded manifest", runRepack},
+		{"manifest", "print an archive's embedded manifest", runManifest},
 		{"set", "change archives' parent, OS image or shell in place", runSet},
 		{"prepare", "make a game-ready copy of a Windows shell or OS image", runPrepare},
 		{"info", "show what an archive or source directory holds", runInfo},
@@ -2300,4 +2301,24 @@ Options:
 	}
 	fmt.Printf("%s WINDOWS.BAT (%s model):\n%s", verb, res.Model, strings.ReplaceAll(res.Batch, "\r\n", "\n"))
 	return nil
+}
+
+// runManifest implements `doszer manifest`.
+func runManifest(args []string) error {
+	fs := newFlags("manifest")
+	const help = `doszer manifest - print an archive's embedded manifest
+
+Usage: doszer manifest FILE.dosz
+
+Options:
+` + flagFormatText + flagHelp
+	if ok, err := parse(fs, args, help, 1, 1); !ok {
+		return err
+	}
+	data, _, err := repack.EmbeddedManifest(fs.Arg(0))
+	if err != nil {
+		return fmt.Errorf("%s: %w", fs.Arg(0), err)
+	}
+	_, err = os.Stdout.Write(data)
+	return err
 }

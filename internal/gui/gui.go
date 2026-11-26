@@ -85,17 +85,21 @@ type app struct {
 	romDirs []config.Dir
 	sysDir  config.Dir
 
-	page   page
-	layer  int
-	hits   []hit
-	clips  []sdl.Rect
-	focus  *field
-	popup  *popup
-	setup  *setupDialog
-	add    *addGame
-	dialog *dialog
-	jobs   []*dialog // dialogs whose command is still running
-	menuAt func()    // the right-click menu of what was clicked last
+	page  page
+	layer int
+	hits  []hit
+	clips []sdl.Rect
+	focus *field
+	popup *popup
+	setup *setupDialog
+	add   *addGame
+	edit  *editDialog
+	// The text area typing goes to (the editor's), and the one under the
+	// mouse (the wheel scrolls it).
+	focusArea, areaUnderMouse *textArea
+	dialog                    *dialog
+	jobs                      []*dialog // dialogs whose command is still running
+	menuAt                    func()    // the right-click menu of what was clicked last
 
 	tsel    textSel
 	selHits []selHit
@@ -348,7 +352,9 @@ func (a *app) event(e *sdl.Event) {
 	case sdl.EventDropFile:
 		a.drop(e.DropFile())
 	case sdl.EventTextInput:
-		if a.focus != nil && a.popup == nil && (a.dialog == nil || a.focus == a.dialog.field) {
+		if a.focusArea != nil && a.popup == nil && a.dialog == nil {
+			a.focusArea.insert(e.Text())
+		} else if a.focus != nil && a.popup == nil && (a.dialog == nil || a.focus == a.dialog.field) {
 			a.focus.insert(e.Text())
 		}
 	case sdl.EventKeyDown:
@@ -363,6 +369,11 @@ func (a *app) event(e *sdl.Event) {
 	case sdl.EventMouseWheel:
 		if a.dialog != nil {
 			a.dialog.scroll = max(0, a.dialog.scroll+int(e.Wheel())*3)
+		} else if t := a.areaUnderMouse; t != nil && a.edit != nil {
+			t.top = max(0, min(len(t.lines)-1, t.top-int(e.Wheel())*3))
+			if t.row < t.top {
+				t.row = t.top
+			}
 		} else if a.add != nil && a.add.page == 2 {
 			a.add.scroll = max(0, a.add.scroll+int(e.Wheel())*3)
 		} else if a.settingsOpen && a.popup == nil {
@@ -412,6 +423,10 @@ func (a *app) key(sc int32, mod uint16) {
 	}
 	if a.setup != nil {
 		a.setupKey(sc)
+		return
+	}
+	if a.edit != nil && a.dialog == nil {
+		a.editKey(sc, ctrl)
 		return
 	}
 	if a.settingsOpen {
@@ -504,6 +519,7 @@ func (a *app) render() {
 	a.dirty = false
 	a.hits = a.hits[:0]
 	a.selHits = a.selHits[:0]
+	a.areaUnderMouse = nil
 	clear(a.selText)
 	a.layer = layerPage
 	c := colBackground
@@ -522,6 +538,7 @@ func (a *app) render() {
 	a.drawToolbar()
 	a.drawStatus()
 	a.drawSettingsDialog()
+	a.drawEditor()
 	a.drawSetup()
 	a.drawAddGame()
 	a.drawDialog()

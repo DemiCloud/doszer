@@ -33,7 +33,7 @@ func (a *app) top() int {
 	switch {
 	case a.popup != nil:
 		return layerPopup
-	case a.setup != nil || a.dialog != nil || a.add != nil || a.settingsOpen:
+	case a.setup != nil || a.dialog != nil || a.add != nil || a.settingsOpen || a.edit != nil:
 		return layerModal
 	}
 	return layerPage
@@ -291,7 +291,7 @@ func (a *app) drawField(f *field, x, y, w int32) {
 		}
 	}
 	a.clipHit(x, y, w, h, func(bool) {
-		a.focus = f
+		a.focus, a.focusArea = f, nil
 		// The caret goes where the click was.
 		rel := a.mx - (x + a.px(12))
 		if focused {
@@ -438,6 +438,7 @@ const (
 	scA         = 4
 	scG         = 10
 	scC         = 6
+	scS         = 22
 	scN         = 17
 	scQ         = 20
 	scO         = 18

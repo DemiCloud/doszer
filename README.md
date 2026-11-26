@@ -52,6 +52,7 @@ doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FIL
 doszer start   SOURCE [PROGRAM] [-f] [-n]
 doszer run     FILE.dosz [--option KEY=VALUE...] [--system-dir DIR] [--save-dir DIR]
 doszer FILE.dosz
+doszer manifest FILE.dosz
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [-n] [--strict] [--ogg-quality N]
 doszer set     FILE.dosz... [--parent [OLD:]NEW | --no-parent] [--os [OLD:]NEW] [--shell [OLD:]NEW] [-n]
 doszer verify  FILE.dosz... | --all [DIR...]
@@ -884,12 +885,24 @@ Tools > Settings (Ctrl+,) is a dialog:
   the config file, keeping its comments; empty fields fall back to the
   defaults, shown greyed in them.
 
-A right click on a game opens its menu: Play, Info, Dependencies,
-Verify, Repack, Change parent, Change OS image or shell, Show in folder.
+A right click on a game opens its menu, submenus cascading: Play, Edit,
+Tools (Info, Dependencies, Verify, Repack), Change (Parent, OS image or
+Shell, each listing its choices), Show in folder.
 Every action is the doszer command that does it, run in its own process
 and shown in a dialog with its command line and live output - the
 command line can do anything the window does. Repack and the changes ask
 first.
+
+Edit opens a game's settings: a form over its embedded manifest (name;
+boots DOS, Windows 3.x or Windows 9x, with the program, shell or OS
+image; for Windows, the program WINDOWS.BAT starts and 256 colours, as
+`doszer start` writes them; parent), and its WINDOWS.BAT and DOSZ.TOML
+as text. Save checks the manifest and runs `doszer repack --manifest`;
+WINDOWS.BAT goes into the manifest as a `[[file]]`, so every later
+build keeps it. AUTOBOOT.DBP, PADMAP.DBP and DOS.YML aren't edited
+directly: they're generated from the manifest's `[boot]` and
+`[[input.pad]]`. `doszer manifest FILE.dosz` prints an archive's
+manifest, for the same edit on the command line.
 
 Help > Keyboard shortcuts lists the keys. Dialog text (messages,
 Credits, About, build output) is selectable a line at a time: drag over

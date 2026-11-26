@@ -31,14 +31,27 @@ func TestScreenshot(t *testing.T) {
 		stats = filepath.Join(t.TempDir(), "playtime.json")
 	}
 	shots := map[string]func(a *App){
-		"list.png":      func(a *App) { a.Select(1) },
-		"grid.png":      func(a *App) { a.Grid(true); a.Select(2) },
-		"search.png":    func(a *App) { a.Search("betrayal") },
-		"none.png":      func(a *App) { a.Search("zzzz") },
-		"systems.png":   func(a *App) { a.Show("systems") },
-		"settings.png":  func(a *App) { a.Show("settings") },
-		"setup.png":     func(a *App) { a.OpenSetup() },
-		"menu.png":      func(a *App) { a.OpenGameMenu(0) },
+		"list.png":     func(a *App) { a.Select(1) },
+		"grid.png":     func(a *App) { a.Grid(true); a.Select(2) },
+		"search.png":   func(a *App) { a.Search("betrayal") },
+		"none.png":     func(a *App) { a.Search("zzzz") },
+		"systems.png":  func(a *App) { a.Show("systems") },
+		"settings.png": func(a *App) { a.Show("settings") },
+		"setup.png":    func(a *App) { a.OpenSetup() },
+		"menu.png":     func(a *App) { a.OpenGameMenu(0) },
+		"edit.png": func(a *App) {
+			if len(a.view) > 0 {
+				a.openEditor(&a.list[a.view[0]])
+			}
+		},
+		"edittoml.png": func(a *App) {
+			if len(a.view) > 0 {
+				a.openEditor(&a.list[a.view[0]])
+				if a.edit != nil {
+					a.switchTab(2)
+				}
+			}
+		},
 		"filter.png":    func(a *App) { a.Filter("Win31 (shell)") },
 		"filemenu.png":  func(a *App) { a.openMenuItems(a.px(8), a.menuH(), a.menus()[0].items) },
 		"add.png":       func(a *App) { a.openAddGame() },

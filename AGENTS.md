@@ -49,7 +49,7 @@ internal/install/    doszer install and run: session content, launching the buil
 internal/chain/      an archive's dependencies as DOSBox Pure resolves them: parent markers, the AUTOBOOT.DBP in effect (the nearest), the shell/OS image in the system directory; reverse (UsedBy); for deps, library, the window
 internal/start/      doszer start: a source's start program candidates; boot.exec or a WINDOWS.BAT per boot model
 internal/library/    the window's game list: .dosz archives under the ROM directory (name, boot, DOSZ.ICO), play time (playtime.json)
-internal/gui/        doszer gui: the SDL-drawn window: Games (list/grid, search, sort; games run as `doszer run` child processes), Systems, the Settings dialog, the first-run dialog, the menu bar (menubar.go: File, View, Build, Tools, Help; drag and drop), Build > Import a disc and Build a folder (addgame.go: dump/dump --from, init, install, start, build as step runs); widgets.go (fields, buttons, dropdowns, layers); os_*.go (Explorer/xdg-open, folder picker); TestScreenshot renders every page to PNGs (also as the Windows test binary through WSL interop)
+internal/gui/        doszer gui: the SDL-drawn window: Games (list/grid, search, sort; games run as `doszer run` child processes), Systems, the Settings dialog, the first-run dialog, the menu bar (menubar.go: File, View, Build, Tools, Help; drag and drop), Edit (editor.go: a form over the manifest, WINDOWS.BAT and DOSZ.TOML in textarea.go, saved by repack --manifest), Build > Import a disc and Build a folder (addgame.go: dump/dump --from, init, install, start, build as step runs); widgets.go (fields, buttons, dropdowns, layers); os_*.go (Explorer/xdg-open, folder picker); TestScreenshot renders every page to PNGs (also as the Windows test binary through WSL interop)
 internal/libretro/   built-in frontend: hosts a libretro core in-process (environment, directory-only VFS, SDL window/input/audio)
 internal/sdl/        the few SDL2 functions internal/libretro uses, loaded at run time through purego
 internal/dl/         dlopen/LoadLibrary without cgo
@@ -298,6 +298,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `start` | Implemented |
 | `run` | Implemented; not yet played live |
 | `repack` | Implemented |
+| `manifest` | Implemented |
 | `set` | Implemented |
 | `verify` | Implemented |
 | `prepare` | Implemented. `shell`: a prepared real Win3.1 shell ran a program through RunExit and closed DOSBox Pure (headless probe). `os`: a prepared real Win98 image booted to Program Manager's generated Tools group (icons re-extracted) and ran a `WINDOWS.BAT` with PRESSKEY (headless probe); its shutdown didn't close the probe session, as with the hand-made reference image (Next steps) |
