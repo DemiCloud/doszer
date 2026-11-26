@@ -419,11 +419,7 @@ func (a *app) drawAddGame() {
 	case 0:
 		place("Next", btnAccent, a.addGameNext)
 	case 1:
-		label := "Build"
-		if g.install {
-			label = "Install"
-		}
-		place(label, btnAccent, a.addGameRun)
+		place("Build", btnAccent, a.addGameRun)
 		place("Back", btnNormal, func() { g.page = 0; a.focus = nil })
 	case 2:
 		if len(g.candidates) > 0 {
@@ -514,14 +510,23 @@ func (a *app) addGameSource(g *addGame, x, y, w int32) int32 {
 			g.useFiles, g.drive = false, idx
 		})
 	}
-	if !g.useFiles && len(g.drives) > 0 {
-		a.text("Discs:", x+a.px(14), y+a.px(7), 13, false, colText)
+	if len(g.drives) > 0 {
+		// Always there, so choosing files doesn't move what's below;
+		// greyed while files are chosen.
+		on := !g.useFiles
+		tc := colText
+		var less, more func()
+		if on {
+			less, more = func() { g.discs = max(1, g.discs-1) }, func() { g.discs = min(9, g.discs+1) }
+		} else {
+			tc = colFaint
+		}
+		a.text("Discs", x+a.px(14), y+a.px(7), 13, false, tc)
 		sx := x + a.px(70)
-		sx += a.button("−", sx, y, btnNormal, func() { g.discs = max(1, g.discs-1) }) + a.px(8)
-		a.text(itoa(g.discs), sx+a.px(6), y+a.px(7), 13, true, colText)
+		sx += a.button("−", sx, y, btnNormal, less) + a.px(8)
+		a.text(itoa(g.discs), sx+a.px(6), y+a.px(7), 13, true, tc)
 		sx += a.px(28)
-		sx += a.button("+", sx, y, btnNormal, func() { g.discs = min(9, g.discs+1) }) + a.px(12)
-		a.text("doszer asks for each disc in turn.", sx, y+a.px(8), 12, false, colFaint)
+		a.button("+", sx, y, btnNormal, more)
 		y += a.px(40)
 	}
 	y += a.px(8)
@@ -708,12 +713,7 @@ func (a *app) addGameOptions(g *addGame, x, y, w int32) int32 {
 		return "□  " + label
 	}
 	a.button(box(g.install, "Install first"), fx, y, btnGhost, func() { g.install = !g.install })
-	y += a.px(34)
-	if g.install {
-		note("Run the game's setup in DOSBox Pure, then close it.", colFaint)
-	} else {
-		y += a.px(6)
-	}
+	y += a.px(44)
 
 	srcs := config.SourcesDirOf(a.cfg)
 	if g.useFolder {

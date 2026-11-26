@@ -189,7 +189,9 @@ README.md            doszer usage, configuration, install workflow
   themselves ("Credits", not "doszer and the programs it embeds:").
   Menu items are short nouns or verbs ("Environment", not "Show doszer's
   environment"); one place per action (no menu item duplicating a
-  toolbar button or another menu's link).
+  toolbar button or another menu's link). Nothing moves when the user
+  clicks or ticks something: no note or row that appears with a
+  checkbox, no button whose label (and so width) changes with state.
 - Every configuration setting is also available as a flag. Precedence:
   flags, `<source>/DOSZ.TOML`, `./doszer.toml`,
   `$XDG_CONFIG_HOME/doszer/config.toml`, defaults.
