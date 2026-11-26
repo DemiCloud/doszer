@@ -704,7 +704,7 @@ func (t *tailBuffer) lastError() string {
 
 // Filters beside a system's label (kindLabel) and a need (needLabel).
 const (
-	filterMissing = "Missing its system"
+	filterMissing = "System not found"
 	filterBroken  = "Broken parent chain"
 	filterIn      = "In " // + a ROM folder
 )

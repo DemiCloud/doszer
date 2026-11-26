@@ -890,11 +890,11 @@ shown last coming back next time:
 
 - **Dashboard** (the first page on a first run): the totals (games,
   parents, systems, size, play time), each opening its page; the
-  problems (unreadable archives, broken parent chains, a missing system,
-  programs needing a newer system than any here, no icon), each with its
-  count, opening the games it applies to; the games played and built
-  most recently, each opening the game; and what the games boot, each
-  opening those games.
+  problems (unreadable, broken parent chain, system not found, Windows
+  too old - its programs need a newer Windows than any shell or image
+  here - and no icon), each with its count, opening the games it applies
+  to; the games played and built most recently, each opening the game;
+  and what the games run on, each opening those games.
 
 - **Games**: every `.dosz` under the ROM directory, at any depth, as a
   list or grid: each archive's icon (`DOSZ.ICO`, else its initial),

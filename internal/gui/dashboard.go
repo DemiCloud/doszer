@@ -14,7 +14,7 @@ import (
 // Problem filters the Dashboard counts, besides filterMissing and
 // filterBroken.
 const (
-	filterUnmet      = "Needs a newer system"
+	filterUnmet      = "Windows too old"
 	filterNoIcon     = "No icon"
 	filterUnreadable = "Unreadable"
 )
@@ -195,9 +195,9 @@ func (a *app) drawDashboard() {
 	recent("Recently built", left, func(g, h *library.Game) bool { return g.Modified.After(h.Modified) },
 		func(g *library.Game) time.Time { return g.Modified })
 
-	// What the games boot, each opening those games.
+	// What the games run on, each opening those games.
 	a.card(right, y, cw, ch, false, false)
-	a.text("Boots", right+a.px(16), y+a.px(14), 15, true, colText)
+	a.text("Runs on", right+a.px(16), y+a.px(14), 15, true, colText)
 	counts, colours := map[string]int{}, map[string]rgba{}
 	for i := range a.list {
 		l, c := kindLabel(&a.list[i])
