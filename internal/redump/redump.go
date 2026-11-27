@@ -46,8 +46,13 @@ type Disc struct {
 	Tracks []Rom
 }
 
+// PCName is the name of Redump's IBM PC datfile, the one doszer uses:
+// what a compact datfile written before names were kept is.
+const PCName = "IBM - PC compatible"
+
 // DB is a loaded datfile.
 type DB struct {
+	Name    string // the datfile's own name (its header's), e.g. IBM - PC compatible
 	Version string // the datfile's date, e.g. 2026-06-15 06-43-57
 	Discs   []Disc
 	bySHA1  map[string][]int
@@ -120,7 +125,7 @@ func parseXML(r io.Reader) (*DB, error) {
 	db := &DB{bySHA1: map[string][]int{}}
 	dec := xml.NewDecoder(r)
 	var cur *Disc
-	var inDate bool
+	var inDate, inHeader, inName bool
 	for {
 		tok, err := dec.Token()
 		if err == io.EOF {
@@ -134,6 +139,10 @@ func parseXML(r io.Reader) (*DB, error) {
 			switch t.Name.Local {
 			case "date":
 				inDate = cur == nil
+			case "header":
+				inHeader = true
+			case "name":
+				inName = inHeader && cur == nil
 			case "game":
 				db.Discs = append(db.Discs, Disc{Name: attr(t, "name")})
 				cur = &db.Discs[len(db.Discs)-1]
@@ -149,10 +158,17 @@ func parseXML(r io.Reader) (*DB, error) {
 			if inDate {
 				db.Version = strings.TrimSpace(string(t))
 			}
+			if inName {
+				db.Name = strings.TrimSpace(string(t))
+			}
 		case xml.EndElement:
 			switch t.Name.Local {
 			case "date":
 				inDate = false
+			case "header":
+				inHeader = false
+			case "name":
+				inName = false
 			case "game":
 				cur = nil
 			}
@@ -176,7 +192,7 @@ func (db *DB) index() (*DB, error) {
 }
 
 // Write writes db in a compact form, about a third of Redump's zip: a
-// gzipped list of "V<tab>version", then per disc "D<tab>name" and per
+// gzipped list of "V<tab>version", "N<tab>name", then per disc "D<tab>name" and per
 // track "<size><tab><sha1>". Track file names aren't kept: a match is by
 // size and SHA-1.
 func (db *DB) Write(w io.Writer) error {
@@ -186,6 +202,9 @@ func (db *DB) Write(w io.Writer) error {
 	}
 	bw := bufio.NewWriter(zw)
 	fmt.Fprintf(bw, "V\t%s\n", db.Version)
+	if db.Name != "" {
+		fmt.Fprintf(bw, "N\t%s\n", db.Name)
+	}
 	for _, d := range db.Discs {
 		fmt.Fprintf(bw, "D\t%s\n", d.Name)
 		for _, r := range d.Tracks {
@@ -211,6 +230,8 @@ func parseCompact(r io.Reader) (*DB, error) {
 		switch {
 		case k == "V":
 			db.Version = v
+		case k == "N" && len(db.Discs) == 0:
+			db.Name = v
 		case k == "D":
 			db.Discs = append(db.Discs, Disc{Name: v})
 		case len(db.Discs) > 0:
@@ -224,6 +245,9 @@ func parseCompact(r io.Reader) (*DB, error) {
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
+	}
+	if db.Name == "" {
+		db.Name = PCName // written by doszer, which only uses Redump's PC datfile
 	}
 	return db.index()
 }

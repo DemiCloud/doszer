@@ -203,11 +203,31 @@ type Dump struct {
 	Log      string      `json:"log,omitempty"` // redumper's, kept in the source
 	Errors   []string    `json:"errors,omitempty"`
 	Tracks   []DumpTrack `json:"tracks,omitempty"`
-	Datfile  string      `json:"datfile,omitempty"`
+	Datfile  *Datfile    `json:"datfile,omitempty"`
 	Redump   string      `json:"redump,omitempty"` // the disc matched, or the closest
 	Verified bool        `json:"verified"`
 	Matching int         `json:"matching,omitempty"` // of the closest disc's tracks
 	Link     string      `json:"link,omitempty"`
+}
+
+// Datfile is the datfile a dump was checked against: who publishes it,
+// its own name (several may one day be read), its date, and where doszer
+// took it from.
+type Datfile struct {
+	Provider string `json:"provider"`       // Redump
+	Name     string `json:"name"`           // the datfile's, e.g. IBM - PC compatible
+	Version  string `json:"version"`        // its date
+	Source   string `json:"source"`         // embedded, cached or external
+	Path     string `json:"path,omitempty"` // an external one's
+}
+
+// String is the datfile as one would name it.
+func (d *Datfile) String() string {
+	s := d.Provider
+	if d.Name != "" {
+		s += " " + d.Name
+	}
+	return s + " datfile, " + d.Version + " (" + d.Source + ")"
 }
 
 // DumpTrack is a dumped track in Redump's layout.

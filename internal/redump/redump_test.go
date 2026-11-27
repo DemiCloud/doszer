@@ -35,7 +35,7 @@ func load(t *testing.T) *DB {
 
 func TestLoad(t *testing.T) {
 	db := load(t)
-	if db.Version != "2026-06-15 06-43-57" || len(db.Discs) != 2 || len(db.Discs[0].Tracks) != 2 {
+	if db.Version != "2026-06-15 06-43-57" || db.Name != "IBM - PC compatible" || len(db.Discs) != 2 || len(db.Discs[0].Tracks) != 2 {
 		t.Fatalf("db %+v", db)
 	}
 	if db.Discs[0].Tracks[1].SHA1 != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" {
@@ -98,7 +98,7 @@ func TestWriteParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Version != db.Version || len(got.Discs) != len(db.Discs) {
+	if got.Version != db.Version || got.Name != db.Name || len(got.Discs) != len(db.Discs) {
 		t.Fatalf("round trip %+v", got)
 	}
 	for i, d := range db.Discs {

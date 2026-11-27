@@ -1077,7 +1077,7 @@ func verifyTracks(hash func() ([]redump.Track, error), dat string, readErrors bo
 	if sel.Note != "" {
 		fmt.Fprintf(stderr, "[WARN] %s\n", sel.Note)
 	}
-	src := fmt.Sprintf("%s datfile %s", sel.Source, sel.DB.Version)
+	src := fmt.Sprintf("%s Redump %s datfile %s", sel.Source, sel.DB.Name, sel.DB.Version)
 	m, err := sel.DB.Match(tracks)
 	if err == nil || errors.Is(err, redump.ErrNoMatch) {
 		recordDump(dumpRecord, tracks, sel, m)

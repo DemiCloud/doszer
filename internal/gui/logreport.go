@@ -228,11 +228,11 @@ func (a *app) drawRunReport(r *runlog.Report, x, y, w int32) int32 {
 			rp.row("Redump", "Verified: "+d.Redump, colDOS)
 		case d.Redump != "":
 			rp.row("Redump", fmt.Sprintf("Not verified: closest %s (%d matching)", d.Redump, d.Matching), colShell)
-		case d.Datfile != "":
+		case d.Datfile != nil:
 			rp.row("Redump", "No match", colShell)
 		}
-		if d.Datfile != "" {
-			rp.row("Datfile", d.Datfile, colMuted)
+		if d.Datfile != nil {
+			rp.row("Datfile", d.Datfile.String(), colMuted)
 		}
 		for _, t := range d.Tracks {
 			rp.row(filepath.Base(t.Path), t.SHA1, colMuted)

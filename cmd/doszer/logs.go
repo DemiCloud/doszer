@@ -222,7 +222,7 @@ func showRun(r *runlog.Report) error {
 			fmt.Fprintf(stdout, ": verified, Redump %q", d.Redump)
 		case d.Redump != "":
 			fmt.Fprintf(stdout, ": not verified, closest Redump %q (%d matching)", d.Redump, d.Matching)
-		case d.Datfile != "":
+		case d.Datfile != nil:
 			fmt.Fprint(stdout, ": no Redump match")
 		}
 		fmt.Fprintln(stdout)

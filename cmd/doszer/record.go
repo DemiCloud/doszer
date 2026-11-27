@@ -213,7 +213,7 @@ func recordDump(d *runlog.Dump, tracks []redump.Track, sel *redump.Selected, m *
 		d.Tracks = append(d.Tracks, runlog.DumpTrack{Path: t.Path, Size: t.Size, SHA1: t.SHA1, Mode2SHA1: t.Mode2SHA1})
 	}
 	if sel != nil {
-		d.Datfile = sel.Source + " " + sel.DB.Version
+		d.Datfile = &runlog.Datfile{Provider: "Redump", Name: sel.DB.Name, Version: sel.DB.Version, Source: sel.Source, Path: sel.Path}
 	}
 	if m != nil && m.Disc != nil {
 		d.Redump, d.Verified, d.Matching, d.Link = m.Disc.Name, m.Verified, m.Matching, m.Link
