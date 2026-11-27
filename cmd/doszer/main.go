@@ -325,6 +325,10 @@ func startRun(fs *pflag.FlagSet, args []string) {
 	// What the command works on - a source directory, or an archive
 	// (repack, set, convert, child) - and the settings in effect for it.
 	if src := fs.Arg(0); src != "" {
+		if fs.Name() == "dump" { // the folder it dumps into may not exist yet
+			abs, _ := filepath.Abs(src)
+			runlog.Update(func(r *runlog.Report) { r.Source = abs })
+		}
 		if fi, err := os.Stat(src); err == nil {
 			abs, _ := filepath.Abs(src)
 			runlog.Update(func(r *runlog.Report) { r.Source = abs })

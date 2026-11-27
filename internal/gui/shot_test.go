@@ -44,20 +44,38 @@ func TestScreenshot(t *testing.T) {
 		"parents.png":   func(a *App) { a.Show("parents") },
 		"dashboard.png": func(a *App) { a.Show("dashboard") },
 		"logs.png":      func(a *App) { a.Show("logs") },
-		"logsbuild.png": func(a *App) { // the newest build, ok or not
+		"logsbuild.png": func(a *App) { // the newest build, its item open
 			a.Show("logs")
-			for i, r := range a.runs {
+			for _, r := range a.runs {
 				if r.Build != nil && r.Build.Archive != nil {
-					a.logSel = i
+					a.selectRun(r.ID)
+					break
+				}
+			}
+		},
+		"logssession.png": func(a *App) { // a session's summary, open
+			a.Show("logs")
+			for _, g := range a.groups {
+				if g.session() {
+					a.logGroup, a.logRun, a.logOpen[g.key] = g.key, "", true
+					break
+				}
+			}
+		},
+		"logssessionrun.png": func(a *App) { // a session's build
+			a.Show("logs")
+			for _, r := range a.runs {
+				if r.Session != "" && r.Build != nil {
+					a.selectRun(r.ID)
 					break
 				}
 			}
 		},
 		"logsscroll.png": func(a *App) {
 			a.Show("logs")
-			for i, r := range a.runs {
+			for _, r := range a.runs {
 				if r.Build != nil && r.Build.Archive != nil {
-					a.logSel = i
+					a.selectRun(r.ID)
 					break
 				}
 			}

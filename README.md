@@ -1018,8 +1018,14 @@ Dashboard, Library - its Games, Parents and Systems views - and Logs.
   the folder hasn't. The selected one can be made the default, or
   prepared: `doszer prepare` makes a game-ready copy beside it, under a
   name you choose, the original untouched.
-- **Logs**: the recorded runs (see [Logs](#logs)), newest first, each
-  with its result and duration; the selected one's report beside them:
+- **Logs**: the recorded runs (see [Logs](#logs)), newest first, one
+  item per session - the commands one flow ran, e.g. Import a disc's
+  dump, init, install, start and build, with its result and the time
+  its commands took - or per run outside one. An item opens into its
+  runs (a click on the selected item, or Enter, Right and Left). A
+  session's summary lists its commands, each opening its report, what
+  was chosen, the warnings and the archive it ended with. A run's
+  report:
   its command line, steps and their timings, the choices doszer made,
   warnings, the discs and their Redump match, what install changed, the
   archive written, the game's history (every linked run, each opening
