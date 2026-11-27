@@ -63,7 +63,7 @@ doszer info    FILE.dosz|SOURCE...
 doszer deps    FILE... [--used-by] [--system-dir DIR]
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
-doszer export  FILE... | --all [DIR...] [--to retrodeck|zip] [--dir DIR] [--systems LIST] [--overwrite] [-n] [--system-dir DIR]
+doszer export  FILE... | --all [DIR...] [--to retrodeck|zip] [--dir DIR] [--systems LIST] [--overwrite] [--flat] [-n] [--system-dir DIR]
 doszer env     [--system-dir DIR] [--save-dir DIR] [--rom-dir DIR]
 doszer env portable [DIR] [--copy] [--from FILE] [-n] [-f]
 doszer gui     [--rom-dir DIR] [--system-dir DIR] [--save-dir DIR]
@@ -1148,7 +1148,12 @@ the export to some of `dos`, `windows3x` and `windows9x`.
 the current folder), `doszer <date>.zip` (numbered if there is one), to
 unpack into a RetroDECK folder: the games and shells stored as they are
 (already compressed), OS images deflated, each file keeping its time.
-It never replaces a file, so it takes no `--overwrite`. ZIP over 7z: 7z
+It never replaces a file, so it takes no `--overwrite`. `--flat` puts
+every game in `roms/` itself, without a folder per system, for a
+frontend other than RetroDECK; RetroDECK needs the folders, so a
+RetroDECK export refuses it. Two games of one file name (from different
+ROM folders, or systems under `--flat`) would land in one place, and the
+export stops. ZIP over 7z: 7z
 would shrink OS images about a third further (a Windows 98 VHD: 84 MB
 deflated, 58 MB with xz) but games barely at all (a `.dosz` is deflated
 already), and it would need an external program; every system opens a
@@ -1157,7 +1162,8 @@ ZIP.
 The window's File > Export all games and a game's Tools > Export open a
 dialog: the type (RetroDECK or ZIP), the RetroDECK root or the ZIP's
 folder (the last one used, else the RetroDECK folder found), the
-systems, and for RetroDECK Overwrite.
+systems, and Overwrite for RetroDECK or Layout (a folder per system, or
+one folder) for a ZIP.
 
 ### Preparing a shell
 

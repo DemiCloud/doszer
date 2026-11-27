@@ -19,6 +19,9 @@ var exportTypes = []struct{ label, flag, folder, pick string }{
 
 const exportZip = 1 // index of ZIP in exportTypes
 
+// exportLayouts are a ZIP's roms layouts: a folder per system, or flat.
+var exportLayouts = []string{"Folder per system", "One folder"}
+
 // exportSystems label export.Systems.
 var exportSystems = []string{"DOS", "Windows 3.x", "Windows 9x"}
 
@@ -30,6 +33,7 @@ type exportDialog struct {
 	folders   []field  // a folder per type
 	systems   []bool   // by export.Systems
 	overwrite bool
+	flat      bool // a ZIP's games all in roms/
 }
 
 // openExport opens Export for files (nil: all games), the folders the
@@ -51,6 +55,7 @@ func (a *app) openExport(title string, files []string) {
 	}
 	e.folders[0].set(dir)
 	e.folders[exportZip].set(a.exportZipDir)
+	e.flat = a.exportFlat
 	a.exp, a.focus, a.popup = e, nil, nil
 }
 
@@ -95,13 +100,16 @@ func (a *app) runExport() {
 	if e.overwrite && e.kind != exportZip {
 		args = append(args, "--overwrite")
 	}
+	if e.flat && e.kind == exportZip {
+		args = append(args, "--flat")
+	}
 	if e.files == nil {
 		args = append(append(args, "--all"), config.DirPaths(a.romDirs)...)
 	} else {
 		args = append(args, e.files...)
 	}
 	if e.kind == exportZip {
-		a.exportZipDir = dir
+		a.exportZipDir, a.exportFlat = dir, e.flat
 	} else {
 		a.exportDir = dir
 	}
@@ -206,7 +214,22 @@ func (a *app) drawExport() {
 	}
 	ry += a.px(44)
 
-	if e.kind != exportZip { // a ZIP is a new file
+	if e.kind == exportZip { // a ZIP is a new file: no Overwrite
+		row("Layout")
+		layout := exportLayouts[0]
+		if e.flat {
+			layout = exportLayouts[1]
+		}
+		layout += " ▼"
+		lx, ly := fx, ry
+		a.button(layout, lx, ly, btnNormal, func() {
+			cur := 0
+			if e.flat {
+				cur = 1
+			}
+			a.openPopup(lx, ly, a.buttonW(layout), exportLayouts, cur, func(i int) { e.flat = i == 1 })
+		})
+	} else {
 		row("Overwrite")
 		a.checkbox(fx, ry, e.overwrite, "", func() { e.overwrite = !e.overwrite })
 	}

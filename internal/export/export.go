@@ -30,6 +30,7 @@ import (
 type Target struct {
 	ROMs, BIOS string
 	From       string // where they came from: "--dir", "RetroDECK", "system directory"
+	Flat       bool   // every game in ROMs itself, no folder per system
 	zip        bool   // into a new ZIP: ROMs and BIOS are its roms and bios
 }
 
@@ -117,13 +118,17 @@ type Step struct {
 // changed by playing, and is the frontend's).
 func Plan(archives []string, systemDir string, t Target, overwrite bool) ([]Step, error) {
 	var steps []Step
-	seen := map[string]bool{}
+	var clash error
+	seen := map[string]string{} // destination, lowercased: its source
 	add := func(what, from, to string, replaceable bool) {
 		key := strings.ToLower(to)
-		if seen[key] {
+		if prev, ok := seen[key]; ok {
+			if prev != from && clash == nil {
+				clash = fmt.Errorf("%s and %s both go to %s", prev, from, filepath.ToSlash(to))
+			}
 			return
 		}
-		seen[key] = true
+		seen[key] = from
 		s := Step{What: what, From: from, To: to, Action: Copy}
 		src, err := os.Stat(from)
 		dst, derr := os.Stat(to)
@@ -145,7 +150,10 @@ func Plan(archives []string, systemDir string, t Target, overwrite bool) ([]Step
 	}
 	for _, a := range archives {
 		c := chain.Resolve(a)
-		dir := filepath.Join(t.ROMs, System(c))
+		dir := t.ROMs
+		if !t.Flat {
+			dir = filepath.Join(dir, System(c))
+		}
 		for i, l := range c.Links {
 			what := "game"
 			if i > 0 || strings.EqualFold(filepath.Ext(l.Path), ".dosp") {
@@ -158,8 +166,8 @@ func Plan(archives []string, systemDir string, t Target, overwrite bool) ([]Step
 			if c.System == "" {
 				if there := *c; !t.zip { // not here, but there already?
 					if there.Locate(t.BIOS); there.System != "" {
-						if !seen[strings.ToLower(there.System)] {
-							seen[strings.ToLower(there.System)] = true
+						if _, ok := seen[strings.ToLower(there.System)]; !ok {
+							seen[strings.ToLower(there.System)] = there.System
 							steps = append(steps, Step{What: "system", From: there.System, To: there.System, Action: Same})
 						}
 						continue
@@ -175,7 +183,7 @@ func Plan(archives []string, systemDir string, t Target, overwrite bool) ([]Step
 			add("system", c.System, filepath.Join(t.BIOS, rel), false)
 		}
 	}
-	return steps, nil
+	return steps, clash
 }
 
 // Apply copies the steps that copy or replace, keeping each file's
@@ -197,9 +205,10 @@ func Apply(steps []Step, progress func(Step)) error {
 }
 
 // PlanZip is Plan into a new ZIP: each step's To is its path in the
-// archive, roms/<system>/... and bios/..., RetroDECK's layout.
-func PlanZip(archives []string, systemDir string) ([]Step, error) {
-	return Plan(archives, systemDir, Target{ROMs: "roms", BIOS: "bios", zip: true}, false)
+// archive, roms/<system>/... and bios/..., RetroDECK's layout; flat,
+// every game in roms/ itself.
+func PlanZip(archives []string, systemDir string, flat bool) ([]Step, error) {
+	return Plan(archives, systemDir, Target{ROMs: "roms", BIOS: "bios", Flat: flat, zip: true}, false)
 }
 
 // ZipName is the ZIP an export into dir writes: doszer <date>.zip, or

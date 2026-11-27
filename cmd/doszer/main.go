@@ -2522,6 +2522,7 @@ func runExport(args []string) error {
 	dir := fs.String("dir", "", "")
 	systemDir := fs.String("system-dir", "", "")
 	overwrite := fs.Bool("overwrite", false, "")
+	flat := fs.Bool("flat", false, "")
 	systems := fs.StringSlice("systems", export.Systems, "")
 	dryRun := fs.BoolP("dry-run", "n", false, "")
 	const help = `doszer export - copy archives into RetroDECK's folders or a ZIP, with what they need
@@ -2535,6 +2536,7 @@ Options:
       --dir DIR           RetroDECK root, or the ZIP's folder (default: RetroDECK's settings, or .)
       --systems LIST      dos, windows3x, windows9x (default: all)
       --overwrite         replace archives that differ (never a shell or OS image; not for zip)
+      --flat              every game in roms, no folder per system (zip only)
   -n, --dry-run           show the copies without making them
 ` + flagSystemDir + flagFormatData + flagHelp
 	if ok, err := parse(fs, args, help, 0, 1<<20); !ok {
@@ -2582,8 +2584,11 @@ Options:
 		if *overwrite {
 			return errors.New("--overwrite: a ZIP export writes a new file")
 		}
-		return exportZip(paths, sys, *dir, *dryRun)
+		return exportZip(paths, sys, *dir, *flat, *dryRun)
 	case "retrodeck":
+		if *flat {
+			return errors.New("--flat: RetroDECK needs a folder per system")
+		}
 	default:
 		return fmt.Errorf("--to %s: want retrodeck or zip", *to)
 	}
@@ -2640,15 +2645,15 @@ Options:
 }
 
 // exportZip writes the archives, their parents and images into a new
-// ZIP in dir.
-func exportZip(paths []string, sys, dir string, dryRun bool) error {
+// ZIP in dir: games under roms/<system>/, or under roms/ when flat.
+func exportZip(paths []string, sys, dir string, flat, dryRun bool) error {
 	if dir == "" {
 		dir = "."
 	}
 	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
 		return fmt.Errorf("%s: not a folder", dir)
 	}
-	steps, err := export.PlanZip(paths, sys)
+	steps, err := export.PlanZip(paths, sys, flat)
 	if err != nil {
 		return err
 	}

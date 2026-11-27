@@ -65,7 +65,7 @@ type games struct {
 func (a *app) initGames(st guiState) {
 	a.scanCh = make(chan scanResult, 1)
 	a.sel = -1
-	a.grid, a.exportDir, a.exportZipDir = st.Grid, st.Export, st.ExportZip
+	a.grid, a.exportDir, a.exportZipDir, a.exportFlat = st.Grid, st.Export, st.ExportZip, st.ExportFlat
 	for m := sortName; m < sortModes; m++ {
 		if m.String() == st.Sort {
 			a.sort = m

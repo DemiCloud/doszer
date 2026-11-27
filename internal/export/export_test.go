@@ -128,7 +128,40 @@ func TestZip(t *testing.T) {
 		}
 	}
 
-	steps, err := PlanZip(all, sys)
+	for _, tt := range []struct {
+		flat bool
+		want []string
+	}{
+		{true, []string{
+			"copy roms/Game.dosz",
+			"copy roms/Base.dosp",
+			"copy bios/dosbox_pure/Windows 98.vhd",
+			"copy roms/Old.dosz",
+			"missing bios/Win31",
+			"copy roms/Plain.dosz",
+		}},
+	} {
+		steps, err := PlanZip(all, sys, tt.flat)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var plan []string
+		for _, s := range steps {
+			plan = append(plan, s.Action+" "+s.To)
+		}
+		if !reflect.DeepEqual(plan, tt.want) {
+			t.Errorf("flat %v:\n got %q\nwant %q", tt.flat, plan, tt.want)
+		}
+	}
+
+	// Two games of one name, from different folders: one place for both.
+	other := t.TempDir()
+	writeZip(t, filepath.Join(other, "Plain.dosz"), map[string]string{"AUTOBOOT.DBP": "C:\\GAME.EXE\n"})
+	if _, err := PlanZip(append(all, filepath.Join(other, "Plain.dosz")), sys, true); err == nil {
+		t.Error("PlanZip put two files in one place")
+	}
+
+	steps, err := PlanZip(all, sys, false)
 	if err != nil {
 		t.Fatal(err)
 	}
