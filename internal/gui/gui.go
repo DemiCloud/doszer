@@ -35,6 +35,7 @@ import (
 // line's (--rom-dir, --system-dir, --save-dir): they win over the
 // configuration, as for every command.
 type Options struct {
+	Open                       []string // files and folders to open as if dropped on the window
 	ROMDir, SystemDir, SaveDir string
 	SDL                        []string // SDL2 libraries (builtin.Extract); nil for the system's
 	Version                    string   // for the status bar
@@ -224,6 +225,9 @@ func Run(o Options) error {
 	a.reload()
 	if !config.Configured() && o.Screenshot == "" {
 		a.openSetup()
+	}
+	for _, p := range o.Open {
+		a.drop(p)
 	}
 	a.draw()
 	if o.Screenshot == "" {
@@ -754,8 +758,18 @@ func (a *app) drawStatus() {
 			right += " (not set up: nothing is saved)"
 		}
 	}
+	full := right
 	right = a.ellipsize(right, a.w-x-3*p, 12, false)
 	a.textRight(right, a.w-p, ty, 12, false, rc)
+	if right != full && a.message != "" && full == a.message {
+		// Cut short: a click shows it whole.
+		rw := a.textWidth(right, 12, false)
+		title := "Message"
+		if a.msgErr {
+			title = "Error"
+		}
+		a.onClick(a.w-p-rw, y, rw, sh, func(bool) { a.alert(title, a.wrap(full, a.px(520), 13)...) })
+	}
 }
 
 // emptyMessage draws a centred title and lines in the page area.

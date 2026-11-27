@@ -92,7 +92,7 @@ func pickFile(title string, kind int) (string, bool) {
 func pickFiles(title string, kind int) []string { return pickFilesMulti(title, kind, true) }
 
 func pickFilesMulti(title string, kind int, multi bool) []string {
-	pat, name := "*.cue *.CUE *.zip *.ZIP *.img *.IMG *.ima *.IMA *.vfd *.VFD", "Disc and disk images"
+	pat, name := "*.cue *.CUE *.iso *.ISO *.zip *.ZIP *.dosz *.DOSZ *.img *.IMG *.ima *.IMA *.vfd *.VFD", "Disc images and game archives"
 	switch kind {
 	case fileArchive:
 		pat, name = "*.dosz *.DOSZ *.dosp *.DOSP", "DOSBox Pure archives"

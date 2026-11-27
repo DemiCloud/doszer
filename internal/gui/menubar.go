@@ -156,21 +156,57 @@ func (a *app) drop(p string) {
 		if a.add != nil {
 			a.add.folder.set(p)
 		}
-	case ext == ".dosz":
-		a.playFile(p)
-	case ext == ".dosp":
-		a.showDeps(p, strings.TrimSuffix(filepath.Base(p), ext))
-	case ext == ".cue" || ext == ".zip" || dump.IsDiskImage(p):
-		if a.add == nil {
-			a.openAddGame()
+	case dump.IsArchive(p):
+		kind, err := dump.ArchiveKind(p)
+		switch {
+		case err != nil:
+			a.alert("Can't open "+filepath.Base(p), err.Error())
+		case kind == dump.ArchiveDoszer && ext == ".dosz":
+			a.playFile(p)
+		case kind == dump.ArchiveDoszer && ext == ".dosp":
+			a.showDeps(p, strings.TrimSuffix(filepath.Base(p), ext))
+		case kind == dump.ArchiveDoszer:
+			a.repackInto(p)
+		default:
+			// A disc image in a zip, a game's files, or an archive made
+			// without doszer: imported, then built as doszer builds.
+			a.importFile(p)
 		}
-		if a.add != nil && a.add.page == 0 && !a.add.useFolder {
-			a.add.useFiles = true
-			a.add.addFile(p)
-		}
+	case ext == ".cue" || ext == ".iso" || dump.IsDiskImage(p):
+		a.importFile(p)
 	default:
-		a.say(filepath.Base(p)+": drop an archive (.dosz), a disc image (.cue, .zip), a disk image (.img, .ima, .vfd) or a game's folder", true)
+		a.alert("Can't open "+filepath.Base(p), "Open a game's archive (.dosz, .zip), a disc image (.cue, .iso), a floppy image (.img, .ima, .vfd) or a game's folder.")
 	}
+}
+
+// importFile opens Import with p among its files.
+func (a *app) importFile(p string) {
+	if a.add == nil {
+		a.openAddGame()
+	}
+	if a.add != nil && a.add.page == 0 && !a.add.useFolder {
+		a.add.useFiles = true
+		a.add.addFile(p)
+	}
+}
+
+// repackInto repacks a doszer archive not named as one (a .zip with a
+// DOSZ.TOML) into the ROM folder as a .dosz.
+func (a *app) repackInto(p string) {
+	if len(a.romDirs) == 0 {
+		a.alert("No ROM folder", "Choose where games go first: Tools, Settings.")
+		return
+	}
+	name := strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))
+	out := filepath.Join(a.romDirs[0].Path, name+".dosz")
+	a.confirm("Repack "+filepath.Base(p)+"?", "Repack", func() {
+		a.runDoszer("Repack: "+name, []string{"repack", p, out}, func(err error) {
+			if err == nil {
+				a.selectAfterScan = out
+				a.rescan()
+			}
+		})
+	}, "A doszer archive: rebuilt from its manifest into "+a.romDirs[0].Path+".")
 }
 
 // repackFile asks for an archive and repacks it in place.

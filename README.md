@@ -43,7 +43,7 @@ make help    # every target
 ## Commands
 
 ```
-doszer dump    DIR [--drive DRIVE] [--dat FILE]
+doszer dump    DIR [--drive DRIVE | --from FILE [--offset SAMPLES]] [--dat FILE]
 doszer redump  [SHA1|FILE|IMAGE|FILE.dosz...] [--update] [--dat FILE] [--offset SAMPLES]
 doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH | --boot MODEL] [--audio FMT] [--name NAME] [--no-media] [--no-icon] [--system-dir DIR] [-f]
 doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [--flatten] [-n] [--strict] [--ogg-quality N]
@@ -51,7 +51,7 @@ doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FIL
                [--os PATH] [--drive c|d] [--system-dir DIR] [--save-dir DIR]
 doszer start   SOURCE [PROGRAM] [-f] [-n]
 doszer run     FILE.dosz [--option KEY=VALUE...] [--system-dir DIR] [--save-dir DIR]
-doszer FILE.dosz
+doszer FILE.dosz | FILE | DIR
 doszer manifest FILE.dosz
 doszer convert FILE [--to dosp|dosz] [-n]
 doszer child   PARENT [PROGRAM [OUTPUT.dosz]] [--name NAME] [-n] [-f]
@@ -322,8 +322,9 @@ archive (its discs rebuilt as Redump has them) it looks them up.
 ### From an existing image
 
 `dump --from FILE` takes a disc image you already have instead of a
-drive: a CUE sheet with its BIN (or WAV) files in any layout, or a zip
-holding them, as Redump-style downloads come. It writes the same
+drive: a CUE sheet with its BIN (or WAV) files in any layout, a bare ISO
+(one Mode 1 data track), or a zip holding them, as Redump-style downloads
+come. It writes the same
 `disc<N>.cue` and track files a dump of the disc would - one raw file per
 track, each from its pregap to the next track's, `PREGAP` silence filled
 in as zeros - and checks them against Redump the same way. The image
@@ -335,6 +336,13 @@ image's files by the disc's own volume creation date, not the dump's).
 A floppy image (`.img`, `.ima`, `.vfd`; a FAT disk of a size DOSBox Pure
 mounts) is copied into the source as it is: DOSBox Pure mounts the first
 floppy image in the content as A:, so an installer runs from there.
+
+A game's archive - a `.zip` of its installed files, as DOSBox game packs
+come, or a `.dosz` made without doszer (no `DOSZ.TOML`) - is extracted
+into the source, each file with the date the archive records for it;
+`init` and `build` then make it a doszer archive. A zip holding exactly
+one CUE sheet is a disc image instead; an archive with a `DOSZ.TOML` is
+refused: `repack` rebuilds it as it is.
 
 Rippers other than redumper (ImgBurn, for one) don't correct the drive's
 read offset, so every audio sample sits that many samples off and audio
@@ -842,7 +850,9 @@ is optional; keys are in DOSBox Pure's `core_options.h`). Specification
 §12's options can't be changed.
 
 `doszer FILE.dosz`, with no command, does the same, so doszer can be the
-program that opens `.dosz` files (`doszer "%1"` on Windows). Opened from
+program that opens `.dosz` files (`doszer "%1"` on Windows). Any other
+file or a folder (`doszer FILE`, `doszer gui FILE...`) opens in the
+window, as if dropped on it. Opened from
 Explorer, it closes the console Windows gives it, and shows an error in a
 message box instead.
 
@@ -995,8 +1005,12 @@ The game folders, the system directory and the logs are read again
 when the window regains focus and when a tab is clicked, as well as by
 View > Refresh.
 
-A file dropped on the window plays (`.dosz`), starts an import (`.cue`,
-`.zip`) or a build (a folder). Below the menu bar, three tabs
+A file dropped on the window plays (a doszer `.dosz`), starts an import
+(a disc image: `.cue`, `.iso`, a `.zip` of one; a floppy image; a game's
+`.zip`, or a `.dosz` made without doszer, which comes out a doszer
+archive) or a build (a folder); a `.zip` holding a `DOSZ.TOML` is
+repacked into the ROM folder. A message cut short in the status bar
+shows whole when clicked. Below the menu bar, three tabs
 (Ctrl+1 to Ctrl+3), the page shown last coming back next time:
 Dashboard, Library - its Games, Parents and Systems views - and Logs.
 

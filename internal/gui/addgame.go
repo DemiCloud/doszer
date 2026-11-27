@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/DemiCloud/doszer/internal/config"
+	"github.com/DemiCloud/doszer/internal/dump"
 	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/platform"
@@ -95,7 +96,7 @@ func (a *app) openAddGame() {
 			break
 		}
 	}
-	g.files = []*field{{placeholder: "A .cue, a .zip holding one, or a disk image"}}
+	g.files = []*field{{placeholder: "A disc image, a floppy image or a game's archive"}}
 	g.name.placeholder = "The game's name"
 	g.name.onChange = func() { g.named = true }
 	// Where it can go: each ROM folder, and its system subfolders or any
@@ -210,6 +211,14 @@ func (a *app) addGameNext() {
 		g.files = files
 		if !g.named {
 			g.name.set(suggestName(strings.TrimSpace(files[0].text)))
+		}
+		// A game's archive holds it installed: no setup to run.
+		for _, f := range files {
+			if p := strings.TrimSpace(f.text); dump.IsArchive(p) {
+				if k, err := dump.ArchiveKind(p); err == nil && k == dump.ArchiveFiles {
+					g.install = false
+				}
+			}
 		}
 	} else {
 		if len(g.drives) == 0 {
@@ -627,7 +636,7 @@ func (a *app) addGameSource(g *addGame, x, y, w int32) int32 {
 	}
 	y += a.px(8)
 	y = a.heading("From disc image files", x, y)
-	y = a.option(x, y, w, g.useFiles, "Image files", "A disc's .cue (with its .bin files) or a .zip holding one, or a floppy or disk image; one per disc", func() {
+	y = a.option(x, y, w, g.useFiles, "Image files", "A disc's .cue (with its .bin files), .iso or a .zip holding one, a floppy image, or a game's .zip; one per disc", func() {
 		g.useFiles = true
 	})
 	if !g.useFiles {

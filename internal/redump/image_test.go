@@ -239,3 +239,40 @@ func TestTrackFileName(t *testing.T) {
 		}
 	}
 }
+
+// A bare ISO opens as the CUE sheet naming it as a MODE1/2048 track
+// would, and the sheet written for its import names raw sectors.
+func TestOpenISO(t *testing.T) {
+	dir := t.TempDir()
+	iso := make([]byte, 3*2048)
+	for i := range iso {
+		iso[i] = byte(i * 7)
+	}
+	os.WriteFile(filepath.Join(dir, "disc.iso"), iso, 0o644)
+	os.WriteFile(filepath.Join(dir, "disc.cue"), []byte("FILE \"disc.iso\" BINARY\n  TRACK 01 MODE1/2048\n    INDEX 01 00:00:00\n"), 0o644)
+	a, err := OpenImage(filepath.Join(dir, "disc.iso"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := OpenImage(filepath.Join(dir, "disc.cue"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ha, err := a.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hb, err := b.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ha) != 1 || ha[0].SHA1 != hb[0].SHA1 || ha[0].Size != 3*2352 {
+		t.Errorf("iso %+v, cue %+v", ha, hb)
+	}
+	if got := string(FormatImage("disc", a.Tracks)); !strings.Contains(got, "MODE1/2352") || strings.Contains(got, "2048") {
+		t.Errorf("sheet:\n%s", got)
+	}
+	if _, err := OpenImage(filepath.Join(dir, "disc.iso"), 6); err == nil {
+		t.Error("offset accepted for 2048-byte sectors")
+	}
+}

@@ -154,12 +154,17 @@ func run(args []string) error {
 			return c.run(args[1:])
 		}
 	}
-	// A file instead of a command is run, so doszer can be the program
-	// that opens .dosz files (doszer FILE): from Explorer, without a
-	// console window for the game's length.
-	if fi, err := os.Stat(args[0]); err == nil && !fi.IsDir() {
+	// A file instead of a command: a .dosz is played, so doszer can be
+	// the program that opens .dosz files (doszer FILE) - from Explorer,
+	// without a console window for the game's length; anything else (a
+	// disc image, a game's archive or folder) opens in the window, as if
+	// dropped on it.
+	if fi, err := os.Stat(args[0]); err == nil {
 		fromTerminal()
-		return runRun(args)
+		if !fi.IsDir() && strings.EqualFold(filepath.Ext(args[0]), ".dosz") && len(args) == 1 {
+			return runRun(args)
+		}
+		return runGUI(args)
 	}
 	if strings.ContainsAny(args[0], `/\.`) {
 		return fmt.Errorf("%s: no such file", args[0])
@@ -962,7 +967,7 @@ Usage: doszer dump [options] DIR
 Options:
       --dat FILE          datfile to verify against (default: build.redump_dat, else Redump's)
       --drive DRIVE       drive to read, e.g. E: or /dev/sg1 (default: first drive with a disc)
-      --from FILE         import a BIN/CUE image (.cue, or a .zip of one) or a floppy image (.img, .ima, .vfd)
+      --from FILE         import a disc image (.cue, .iso, or a .zip of one), a floppy image (.img, .ima, .vfd) or a game's archive (.zip, .dosz)
       --offset SAMPLES    --from: drive read offset the image's audio wasn't corrected for
 ` + flagNoLog + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
@@ -976,6 +981,26 @@ Options:
 	if *from != "" {
 		if *drive != "" {
 			return errors.New("--from and --drive exclude each other")
+		}
+		if dump.IsArchive(*from) {
+			kind, err := dump.ArchiveKind(*from)
+			if err != nil {
+				return err
+			}
+			switch kind {
+			case dump.ArchiveDoszer:
+				return fmt.Errorf("%s: %w (doszer repack)", *from, dump.ErrDoszerArchive)
+			case dump.ArchiveFiles:
+				status.Step("Extracting the game's files")
+				n, err := dump.ImportArchive(*from, fs.Arg(0))
+				endSteps(err)
+				if err != nil {
+					return err
+				}
+				runlog.Update(func(r *runlog.Report) { r.Dump = &runlog.Dump{From: *from} })
+				fmt.Fprintf(stdout, "Extracted %s from %s\n", plural(n, "file"), filepath.Base(*from))
+				return nil
+			}
 		}
 		status.Step("Copying the image's tracks")
 		if dump.IsDiskImage(*from) {
@@ -2305,11 +2330,11 @@ func runGUI(args []string) error {
 	romDir := fs.String("rom-dir", "", "")
 	const help = `doszer gui - open the window listing the archives in the ROM directory
 
-Usage: doszer gui [options]
+Usage: doszer gui [options] [FILE|DIR...]
 
 Options:
 ` + flagROMDir + flagSystemDir + flagSaveDir + flagHelp
-	if ok, err := parse(fs, args, help, 0, 0); !ok {
+	if ok, err := parse(fs, args, help, 0, 1<<20); !ok {
 		return err
 	}
 	_, sdlLibs, err := builtin.Extract()
@@ -2317,6 +2342,7 @@ Options:
 		return err
 	}
 	return gui.Run(gui.Options{
+		Open:      fs.Args(),
 		ROMDir:    *romDir,
 		SystemDir: *systemDir,
 		SaveDir:   *saveDir,

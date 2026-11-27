@@ -200,8 +200,8 @@ func (r readCloser) Close() error {
 	return nil
 }
 
-// OpenImage opens a disc image: a CUE sheet, or a zip holding one (and its
-// files). Its tracks are in Redump's layout: each runs from its INDEX 00
+// OpenImage opens a disc image: a CUE sheet, a zip holding one (and its
+// files), or a bare ISO (a disc of one Mode 1 data track). Its tracks are in Redump's layout: each runs from its INDEX 00
 // (INDEX 01 if it has none) to the next track's, plus the silence a PREGAP
 // command declares, as zeros; the first track starts at INDEX 01, as on
 // the disc. Tracks must be raw sectors: BINARY files of 2352-byte frames,
@@ -218,6 +218,25 @@ func (r readCloser) Close() error {
 // sectors are addressed by their headers, not by position. Silence a
 // PREGAP command declares isn't in the files, so it doesn't move either.
 func OpenImage(path string, offset int) (*Image, error) {
+	if strings.EqualFold(filepath.Ext(path), ".iso") {
+		// A disc of one Mode 1 data track, kept as 2048-byte sectors.
+		if offset != 0 {
+			return nil, fmt.Errorf("%s: 2048-byte sectors: read offset correction needs raw sectors", path)
+		}
+		fi, err := os.Stat(path)
+		if err != nil {
+			return nil, err
+		}
+		frames := fi.Size() / 2048
+		if frames == 0 || fi.Size()%2048 != 0 {
+			return nil, fmt.Errorf("%s: %d bytes is no whole number of 2048-byte sectors", path, fi.Size())
+		}
+		name := filepath.Base(path)
+		return &Image{Cue: path, Tracks: []ImageTrack{{
+			Number: 1, Mode: "MODE1/2048", Size: frames * 2352, fsys: os.DirFS(filepath.Dir(path)),
+			parts: []part{{name: name, size: frames * 2048, mode1: true}},
+		}}}, nil
+	}
 	if !strings.EqualFold(filepath.Ext(path), ".zip") {
 		img, err := readImage(os.DirFS(filepath.Dir(path)), filepath.Base(path), offset)
 		if err != nil {
@@ -402,7 +421,13 @@ func TrackFileName(base string, n, count int) string {
 func FormatImage(base string, tracks []ImageTrack) []byte {
 	var s cue.Sheet
 	for _, t := range tracks {
-		ct := cue.Track{Number: t.Number, Mode: strings.ToUpper(t.Mode)}
+		// A track read from 2048-byte sectors opens rebuilt as raw Mode 1
+		// sectors (ImageTrack.Open): what the file written holds.
+		mode := strings.ToUpper(t.Mode)
+		if strings.HasSuffix(mode, "/2048") {
+			mode = "MODE1/2352"
+		}
+		ct := cue.Track{Number: t.Number, Mode: mode}
 		if t.Pregap > 0 {
 			ct.Indexes = append(ct.Indexes, cue.Index{Number: 0})
 		}
