@@ -75,7 +75,7 @@ func TestPickDir(t *testing.T) {
 		for _, x := range tt.files {
 			cs = append(cs, Change{Path: x.path, Kind: Added, Size: x.size})
 		}
-		got, err := pickDir(cs, "Hocus Pocus: Descent")
+		got, _, err := pickDir(cs, "Hocus Pocus: Descent")
 		var dc *DirChoiceError
 		switch {
 		case tt.folders == nil && (err != nil || got != tt.want):

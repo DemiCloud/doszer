@@ -911,9 +911,23 @@ doszer's state directory (see [First run](#first-run)):
   where it came from, each step with its timing, the choices doszer made
   itself and why, warnings, and the result (`ok`, `failed` with the
   error, or `interrupted`).
+  Per command, what it did:
+  - build, repack (and the archive set, convert or child wrote): the
+    files collected, what trim, flatten and rewrite changed, disc images
+    converted, each declared disc with its Redump name, track hashes and
+    the image that matched, and the archive written - its size, SHA-1 and
+    CRC-32, and every entry's size, compressed size and method;
+  - install: every file the installer added, changed or deleted, what
+    was extracted, and the folder chosen and why;
+  - dump: the tracks' hashes in Redump's layout, the Redump disc they
+    match (or the closest) and the datfile used.
 - `transcript.log`: everything the command printed, a timestamped line
   each (`out`, `err`), with its steps (`step`), choices (`why`) and
   detail the terminal doesn't show (`log`).
+- Files as the run found them and left them: the source's `DOSZ.TOML`
+  and `WINDOWS.BAT` (`.before`, and `.after` if the run changed them),
+  the manifest embedded in the archive written (`DOSZ.TOML.archive`),
+  and redumper's log (`redumper.log`).
 
 A dry run (`-n`) isn't recorded; `--no-log` skips one run. The window's
 commands are recorded the same way, as the command lines they run; one

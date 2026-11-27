@@ -300,7 +300,8 @@ type fileSet struct {
 	files map[string]*fileEntry // canonical-case path -> entry
 	index map[string]string     // lower-case path -> canonical-case path
 
-	mediaIcon []byte // DOSZ.ICO from [icon] media, made by collect (§6.8.4)
+	mediaIcon []byte            // DOSZ.ICO from [icon] media, made by collect (§6.8.4)
+	media     map[string]string // declared media ID -> the image that matched it, by locateMedia
 }
 
 func newFileSet() *fileSet {

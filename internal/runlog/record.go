@@ -310,3 +310,16 @@ func reset() {
 	mu.Unlock()
 	status.SetHook(nil)
 }
+
+// Discard drops the run being recorded, folder and all: a command that
+// turned out to change nothing (set with no change only shows).
+func Discard() {
+	mu.Lock()
+	defer mu.Unlock()
+	if rec == nil || rec.done {
+		return
+	}
+	rec.transcript.Close()
+	os.RemoveAll(rec.r.dir)
+	rec.done = true
+}

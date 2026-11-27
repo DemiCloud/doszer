@@ -229,8 +229,8 @@ func sizeText(n int64) string {
 //   - with no folder, the root ("": an installer that only writes its
 //     configuration beside the game it came with).
 //
-// Otherwise a *DirChoiceError lists them.
-func pickDir(changes []Change, name string) (string, error) {
+// Otherwise a *DirChoiceError lists them. why says which rule chose.
+func pickDir(changes []Change, name string) (dir, why string, err error) {
 	byName := map[string]*Folder{}
 	root := false
 	for _, c := range changes {
@@ -264,11 +264,11 @@ func pickDir(changes []Change, name string) (string, error) {
 	})
 	switch {
 	case len(folders) == 0 && root:
-		return "", nil
+		return "", "only files in the root changed", nil
 	case len(folders) == 0:
-		return "", errors.New("the installer changed no files")
+		return "", "", errors.New("the installer changed no files")
 	case len(folders) == 1:
-		return folders[0].Name, nil
+		return folders[0].Name, "the only folder with changes", nil
 	}
 	named := -1
 	for i, f := range folders {
@@ -281,12 +281,12 @@ func pickDir(changes []Change, name string) (string, error) {
 		}
 	}
 	if named >= 0 {
-		return folders[named].Name, nil
+		return folders[named].Name, fmt.Sprintf("of %d folders with changes, the only one named like the game", len(folders)), nil
 	}
 	if folders[0].Bytes*5 >= total*4 {
-		return folders[0].Name, nil
+		return folders[0].Name, fmt.Sprintf("of %d folders with changes, it holds %d%% of their bytes", len(folders), folders[0].Bytes*100/max(total, 1)), nil
 	}
-	return "", &DirChoiceError{folders}
+	return "", "", &DirChoiceError{folders}
 }
 
 // gameNamed reports whether a folder is named like the game, by letters

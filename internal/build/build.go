@@ -71,6 +71,9 @@ type Result struct {
 	Manifest      *manifest.Manifest
 	EffectiveName string
 
+	Collected []CollectedFile   // Files collected (§6.1), before layout.trim, sorted.
+	Media     map[string]string // Declared media ID -> the disc image that matched it (§7.3), as collected.
+
 	Trimmed      []string // Paths removed by layout.trim.
 	TrimWarnings []string // layout.trim patterns that matched nothing.
 
@@ -91,6 +94,13 @@ type Result struct {
 	OutputPath string // Where the archive was (or would be) written.
 
 	fs *fileSet
+}
+
+// CollectedFile is one file collect (§6.1) gathered.
+type CollectedFile struct {
+	Path     string
+	Size     int64
+	Modified time.Time
 }
 
 // Move is one path renamed by flatten.
@@ -213,7 +223,12 @@ func runPipeline(fs *fileSet, m *manifest.Manifest, opts Options, pathWarnings, 
 		outputPath = effectiveName + ".dosz"
 	}
 
-	res := &Result{Manifest: m, EffectiveName: effectiveName, OutputPath: outputPath, PathWarnings: pathWarnings, fs: fs}
+	res := &Result{Manifest: m, EffectiveName: effectiveName, OutputPath: outputPath, PathWarnings: pathWarnings, Media: fs.media, fs: fs}
+	for _, p := range sortedKeys(fs.files) {
+		e := fs.files[p]
+		n, _ := e.size()
+		res.Collected = append(res.Collected, CollectedFile{Path: p, Size: n, Modified: e.modified})
+	}
 
 	status.Step("Applying the manifest")
 	res.Trimmed, res.TrimWarnings = trim(fs, m.Layout.Trim)

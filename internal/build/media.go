@@ -147,6 +147,10 @@ func locateMedia(fs *fileSet, declared []manifest.Media, extracts []manifest.Ext
 		}
 		if img != nil {
 			resolved[media.ID] = resolvedMedia{Image: img.path, Tracks: img.tracks, fs: fs, isoFile: img.isoFile}
+			if fs.media == nil {
+				fs.media = map[string]string{}
+			}
+			fs.media[media.ID] = img.path
 			if unverified > 0 {
 				warnings = append(warnings, fmt.Sprintf("source.media %q: %s: %d track(s) in lossy audio files not verified", media.ID, img.path, unverified))
 			}

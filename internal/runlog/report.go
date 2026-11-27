@@ -52,7 +52,7 @@ type Report struct {
 	Result   string            `json:"result"`
 	Error    string            `json:"error,omitempty"`
 	Name     string            `json:"name,omitempty"`    // the game's
-	Source   string            `json:"source,omitempty"`  // source directory, absolute
+	Source   string            `json:"source,omitempty"`  // source directory or input archive, absolute
 	Archive  string            `json:"archive,omitempty"` // the archive written or read, absolute
 	Versions map[string]string `json:"versions,omitempty"`
 	OS       string            `json:"os,omitempty"` // GOOS/GOARCH
@@ -172,22 +172,50 @@ func (a *Archive) Ratio() float64 {
 
 // Install is what install found and extracted.
 type Install struct {
-	From    string   `json:"from,omitempty"` // the save or image it read
-	Into    string   `json:"into,omitempty"`
-	Added   []string `json:"added,omitempty"`
-	Changed []string `json:"changed,omitempty"`
-	Deleted []string `json:"deleted,omitempty"`
-	Skipped []string `json:"skipped,omitempty"`
-	Notes   []string `json:"notes,omitempty"`
+	From      string   `json:"from,omitempty"`  // the save or image read instead of a session
+	Drive     string   `json:"drive,omitempty"` // C: or D:
+	Dir       string   `json:"dir,omitempty"`   // the folder extracted
+	Changes   []Change `json:"changes,omitempty"`
+	Other     []Change `json:"other,omitempty"` // on the OS image's C:, not extracted
+	Extracted []string `json:"extracted,omitempty"`
+	Unchanged []string `json:"unchanged,omitempty"` // already identical in the source
+	Skipped   []string `json:"skipped,omitempty"`   // source files left out of the session
+	Kept      []string `json:"kept,omitempty"`      // save files kept
+	Programs  []string `json:"programs,omitempty"`
+	Registry  string   `json:"registry,omitempty"`
+	DLLs      []Move   `json:"dlls,omitempty"`
+	Folders   []string `json:"folders,omitempty"` // to choose from, when none stood out
 }
 
-// Dump is what dump made.
+// Change is a file an installer added, modified or deleted.
+type Change struct {
+	Path     string    `json:"path"`
+	Kind     string    `json:"kind"`
+	Size     int64     `json:"size"`
+	Modified time.Time `json:"modified"`
+}
+
+// Dump is what dump made, and how it compared with Redump.
 type Dump struct {
-	Drive  string   `json:"drive,omitempty"`
-	From   string   `json:"from,omitempty"` // dump --from's image
-	Cue    string   `json:"cue,omitempty"`
-	Log    string   `json:"log,omitempty"` // redumper's, kept in the source
-	Errors []string `json:"errors,omitempty"`
+	Drive    string      `json:"drive,omitempty"`
+	From     string      `json:"from,omitempty"` // dump --from's image
+	Cue      string      `json:"cue,omitempty"`
+	Log      string      `json:"log,omitempty"` // redumper's, kept in the source
+	Errors   []string    `json:"errors,omitempty"`
+	Tracks   []DumpTrack `json:"tracks,omitempty"`
+	Datfile  string      `json:"datfile,omitempty"`
+	Redump   string      `json:"redump,omitempty"` // the disc matched, or the closest
+	Verified bool        `json:"verified"`
+	Matching int         `json:"matching,omitempty"` // of the closest disc's tracks
+	Link     string      `json:"link,omitempty"`
+}
+
+// DumpTrack is a dumped track in Redump's layout.
+type DumpTrack struct {
+	Path      string `json:"path"`
+	Size      int64  `json:"size"`
+	SHA1      string `json:"sha1"`
+	Mode2SHA1 string `json:"mode2_sha1,omitempty"`
 }
 
 // Folder returns the run's folder.

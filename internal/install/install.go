@@ -89,7 +89,7 @@ func checkDiffSafe(systemDir, osPath string) error {
 // osDriveDir picks the folder to extract from an OS image's C: changes:
 // Windows changes its own files during any session, so WINDOWS/ and files
 // in the root don't count.
-func osDriveDir(changes []Change, name string) (string, error) {
+func osDriveDir(changes []Change, name string) (dir, why string, err error) {
 	var own []Change
 	for _, c := range changes {
 		top, _, nested := strings.Cut(c.Path, "/")
@@ -105,6 +105,7 @@ type Report struct {
 	Drive     string   // the drive extracted from, as the guest saw it ("C:" or "D:")
 	Detected  bool     // Drive was chosen by what changed: C:, as D: didn't
 	Dir       string   // folder extracted
+	DirWhy    string   // why Dir was chosen, when install chose it
 	Changes   []Change // changes on that drive
 	Extracted *Extracted
 	Other     []Change // changes on another drive (C: in the OS image model), reported only
@@ -473,7 +474,7 @@ func extract(rep *Report, src fs.FS, opts Options) error {
 	rep.Dir = strings.Trim(filepath.ToSlash(opts.Dir), "/.")
 	if opts.Dir == "" { // "/" asks for the root
 		var err error
-		if rep.Dir, err = pickDir(rep.Changes, opts.name); err != nil {
+		if rep.Dir, rep.DirWhy, err = pickDir(rep.Changes, opts.name); err != nil {
 			return err
 		}
 	}
@@ -605,7 +606,7 @@ func extractOverlay(rep *Report, image, sav string, opts Options) error {
 		return err
 	}
 	if opts.Dir == "" {
-		if opts.Dir, err = osDriveDir(rep.Changes, opts.name); err != nil {
+		if opts.Dir, rep.DirWhy, err = osDriveDir(rep.Changes, opts.name); err != nil {
 			return err
 		}
 	}

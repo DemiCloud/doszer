@@ -116,10 +116,17 @@ func main() {
 				showError(err) // no console to read it in
 			}
 		}
-		runlog.Finish(err)
+		endRun(err)
 		os.Exit(1)
 	}
-	runlog.Finish(nil)
+	endRun(nil)
+}
+
+// endRun ends the run being recorded, if any: the source files it
+// changed attached, then its result.
+func endRun(err error) {
+	recordSourceAfter()
+	runlog.Finish(err)
 }
 
 func run(args []string) error {
@@ -314,13 +321,17 @@ func startRun(fs *pflag.FlagSet, args []string) {
 		fmt.Fprintf(stderr, "[WARN] log not kept: %v\n", err)
 		return
 	}
-	// The settings in effect for the source the command works on.
+	// What the command works on - a source directory, or an archive
+	// (repack, set, convert, child) - and the settings in effect for it.
 	if src := fs.Arg(0); src != "" {
-		if fi, err := os.Stat(src); err == nil && fi.IsDir() {
+		if fi, err := os.Stat(src); err == nil {
 			abs, _ := filepath.Abs(src)
 			runlog.Update(func(r *runlog.Report) { r.Source = abs })
-			runlog.SettingsFor(src)
-			return
+			if fi.IsDir() {
+				runlog.SettingsFor(src)
+				recordSourceBefore(src)
+				return
+			}
 		}
 	}
 	runlog.SettingsFor("")
@@ -410,6 +421,7 @@ Options:
 			return err
 		}
 		o.Name = filepath.Base(abs)
+		runlog.Decide("name", o.Name, "the source folder's name")
 	}
 
 	if !*noMedia {
@@ -541,6 +553,7 @@ func chooseIcon(o *manifest.TemplateOptions, source string) {
 		where = c.Disc + ":" + c.Path
 	}
 	fmt.Fprintf(stdout, "Icon: %s (%s)\n", where, c.From)
+	runlog.Decide("icon", where, c.From)
 }
 
 // runBuild implements `doszer build <source> [<output.dosz>]`.
@@ -586,6 +599,7 @@ Options:
 	endSteps(err)
 	if res != nil {
 		printBuildPlan(res, opts.DryRun)
+		recordBuild(res)
 	}
 	if err != nil {
 		return err
@@ -964,6 +978,7 @@ Options:
 			if err != nil {
 				return err
 			}
+			runlog.Update(func(r *runlog.Report) { r.Dump = &runlog.Dump{From: *from, Cue: p} })
 			fmt.Fprintf(stdout, "Imported %s\n", p)
 			return nil
 		}
@@ -972,6 +987,7 @@ Options:
 		if err != nil {
 			return err
 		}
+		dumpRecord = &runlog.Dump{From: *from, Cue: res.Cue}
 		fmt.Fprintf(stdout, "Imported %s (%d track file(s))\n", res.Cue, len(res.Tracks))
 		return verifyImage(res.Cue, 0, dat2, false)
 	}
@@ -979,8 +995,13 @@ Options:
 		return errors.New("--offset needs --from")
 	}
 	res, err := dump.Run(dump.Options{Dir: fs.Arg(0), Drive: *drive})
-	if res != nil && res.Log != "" {
-		fmt.Fprintf(stderr, "redumper log: %s\n", res.Log)
+	if res != nil {
+		dumpRecord = &runlog.Dump{Drive: *drive, Cue: res.Cue, Log: res.Log, Errors: res.Errors}
+		runlog.Update(func(r *runlog.Report) { r.Dump = dumpRecord })
+		if res.Log != "" {
+			fmt.Fprintf(stderr, "redumper log: %s\n", res.Log)
+			runlog.AttachFile("redumper.log", res.Log)
+		}
 	}
 	if err != nil {
 		return err
@@ -991,6 +1012,10 @@ Options:
 	}
 	return verifyImage(res.Cue, 0, dat2, len(res.Errors) > 0)
 }
+
+// dumpRecord is the dump being recorded, which verifyTracks completes
+// with the Redump comparison; nil outside dump.
+var dumpRecord *runlog.Dump
 
 // verifyImage reports whether a disc image's tracks, in Redump's layout
 // (redump.OpenImage, correcting offset), match a Redump disc.
@@ -1049,6 +1074,9 @@ func verifyTracks(hash func() ([]redump.Track, error), dat string, readErrors bo
 	}
 	src := fmt.Sprintf("%s datfile %s", sel.Source, sel.DB.Version)
 	m, err := sel.DB.Match(tracks)
+	if err == nil || errors.Is(err, redump.ErrNoMatch) {
+		recordDump(dumpRecord, tracks, sel, m)
+	}
 	switch {
 	case errors.Is(err, redump.ErrNoMatch):
 		fmt.Fprintf(stdout, "Not verified: no track matches a Redump disc (%s): a bad dump, or a disc not in Redump yet\n", src)
@@ -1256,6 +1284,7 @@ Options:
 	endSteps(err)
 	if rep != nil {
 		printInstallReport(rep, opts.DryRun)
+		recordInstall(rep, opts)
 		if r := rep.Retry; r != nil {
 			cmd := "doszer install --from " + shellQuote(r.From)
 			if r.Content != "" {
@@ -1538,6 +1567,7 @@ Options:
 	endSteps(err)
 	if res != nil {
 		printBuildPlan(res, opts.DryRun)
+		recordBuild(res)
 	}
 	if err != nil {
 		return err
@@ -1597,6 +1627,9 @@ Options:
 	endSteps(err)
 	if err != nil {
 		return err
+	}
+	if abs, err := filepath.Abs(rep.Output); err == nil {
+		runlog.Update(func(r *runlog.Report) { r.Archive = abs })
 	}
 	for _, c := range rep.Changes {
 		fmt.Fprintf(stdout, "  %-8s  %s (%s)\n", c.Action, strings.ReplaceAll(c.Path, "/", `\`), c.Why)
@@ -1775,6 +1808,9 @@ Options:
 		*f.dst = &c
 	}
 	show := opts.Parent == nil && opts.OS == nil && opts.Shell == nil
+	if show {
+		runlog.Discard() // only shows: nothing to record
+	}
 	var err error
 	if opts.Provenance, err = provenance(); err != nil {
 		return err
@@ -1803,6 +1839,9 @@ Options:
 			o.DryRun = true
 		}
 		res, err := repack.Set(o)
+		if err == nil && res.Changed() && !show && fs.NArg() == 1 {
+			recordArchive(p)
+		}
 		if err == nil && res.Changed() && !show && !format.Structured() {
 			k := res.After.Shell + "\x00" + res.After.OS
 			if !warned[k] {
@@ -1998,6 +2037,17 @@ func chooseBoot(o *manifest.TemplateOptions, source, systemDir, boot string, cfg
 		o.OS, msg = pick("os", cfg.Defaults.OS, false, names)
 	}
 	fmt.Fprintf(stdout, "%s: %s\n", why, msg)
+	if boot == "" {
+		runlog.Decide("boot model", model, why)
+	}
+	switch {
+	case o.Exec != "":
+		runlog.Decide("boot.exec", o.Exec, msg)
+	case o.Shell != "":
+		runlog.Decide("boot.shell", o.Shell, msg)
+	case o.OS != "":
+		runlog.Decide("boot.os", o.OS, msg)
+	}
 	if winME := (platform.Target{Platform: platform.Win32, Major: 4, Minor: 90}); model == "os" && game.Platform == platform.Win32 && winME.Less(game) {
 		fmt.Fprintf(stderr, "[WARN] %s programs may not run under Windows 9x\n", game)
 	}
@@ -2573,6 +2623,9 @@ Options:
 		return err
 	}
 	res, err := repack.Convert(fs.Arg(0), "."+strings.TrimPrefix(strings.ToLower(*to), "."), *dryRun, prov)
+	if res != nil && err == nil {
+		recordArchive(res.To)
+	}
 	if res != nil {
 		verb := "Renamed"
 		if *dryRun {
@@ -2828,6 +2881,9 @@ Options:
 	res, err := start.Child(parent, fs.Arg(1), start.ChildOptions{Name: *name, Output: fs.Arg(2), Force: *force, DryRun: *dryRun, Provenance: prov})
 	if err != nil {
 		return err
+	}
+	if !*dryRun {
+		recordArchive(res.Output)
 	}
 	if format.Structured() {
 		return output.Encode(stdout, format, struct {
