@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -38,7 +39,7 @@ func TestArchiveKind(t *testing.T) {
 		{"game.zip", map[string]string{"GODDESS.EXE": "MZ", "GODDESS.LBR": "x"}, ArchiveFiles},
 		{"disc.zip", map[string]string{"Disc.cue": "FILE", "Disc.bin": "x"}, ArchiveDisc},
 		{"two.zip", map[string]string{"a.cue": "", "b.cue": ""}, ArchiveFiles},
-		{"made.dosz", map[string]string{"DOSZ.TOML": "name = 'x'", "GAME.EXE": "MZ"}, ArchiveDoszer},
+		{"made.dosz", map[string]string{"DOSZ.TOML": "format = 1\nname = 'x'\n\n[boot]\nexec = 'C:\\GAME.EXE'\n", "GAME.EXE": "MZ"}, ArchiveDoszer},
 	}
 	for _, tt := range tests {
 		p := filepath.Join(dir, tt.name)
@@ -78,5 +79,34 @@ func TestImportArchive(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "evil.txt")); err == nil {
 		t.Error("wrote outside the folder")
+	}
+}
+
+func TestInspectProblems(t *testing.T) {
+	dir := t.TempDir()
+	valid := "format = 1\nname = 'Game'\n\n[boot]\nexec = 'C:\\GAME.EXE'\n"
+	tests := []struct {
+		name, manifest, kind, problem string
+	}{
+		{"none", "", ArchiveFiles, "no manifest"},
+		{"valid", valid, ArchiveDoszer, ""},
+		{"newer", "format = 9\nname = 'Game'\n", ArchiveFiles, "a newer manifest (format 9; this doszer reads format 1)"},
+		{"no format", "name = 'Game'\n", ArchiveFiles, "a manifest that isn't valid: "},
+		{"broken", "name = [", ArchiveFiles, "a manifest that isn't valid: "},
+	}
+	for _, tt := range tests {
+		files := map[string]string{"GAME.EXE": "MZ"}
+		if tt.manifest != "" {
+			files["DOSZ.TOML"] = tt.manifest
+		}
+		p := filepath.Join(dir, tt.name+".dosz")
+		writeZip(t, p, files)
+		st, err := Inspect(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.Kind != tt.kind || !strings.HasPrefix(st.Problem, tt.problem) || (tt.problem == "" && st.Problem != "") {
+			t.Errorf("%s: %+v, want %s %q", tt.name, st, tt.kind, tt.problem)
+		}
 	}
 }

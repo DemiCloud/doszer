@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"archive/zip"
 	"github.com/DemiCloud/doszer/internal/install"
 	"os"
 	"path/filepath"
@@ -94,6 +95,12 @@ func TestScreenshot(t *testing.T) {
 			a.click(false) // select it
 			a.render()
 			a.rightClick()
+		},
+		"menuhover.png": func(a *App) { // File open, the mouse moved onto View: View opens
+			m := a.menus()
+			a.openBarMenu(0, a.px(8), m[0].items)
+			a.mx = a.px(8) + a.textWidth(m[0].title, 13, false) + a.px(20) + a.px(10)
+			a.my = a.menuH() / 2
 		},
 		"logsscroll.png": func(a *App) {
 			a.Show("logs")
@@ -213,6 +220,16 @@ func TestScreenshot(t *testing.T) {
 			}
 		}
 	}
+	// An archive made without a manifest, dropped on the window.
+	legacy := filepath.Join(t.TempDir(), "Old Game.dosz")
+	if f, err := os.Create(legacy); err == nil {
+		zw := zip.NewWriter(f)
+		w, _ := zw.Create("GAME.EXE")
+		w.Write([]byte("MZ"))
+		zw.Close()
+		f.Close()
+	}
+	shots["droplegacy.png"] = func(a *App) { a.drop(legacy) }
 	// A source as install leaves one, for the program choice.
 	src := filepath.Join(t.TempDir(), "Some Game")
 	for p, data := range map[string]string{

@@ -330,6 +330,7 @@ type popup struct {
 	child   *popup             // the submenu open
 	childOf int
 	parentX int32 // a submenu's parent's left edge: it opens on that side when the right has no room
+	bar     int   // a menu bar menu's index + 1; 0 for any other popup
 }
 
 // openPopup opens a dropdown under a button at x, y.

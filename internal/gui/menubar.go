@@ -88,16 +88,41 @@ func (a *app) drawMenuBar() {
 	a.fill(0, 0, a.w, mh, colMenuBar)
 	x := a.px(8)
 	lh := a.lineHeight(13, false)
-	for _, m := range a.menus() {
+	// With one of its menus open, the bar follows the mouse: another
+	// title hovered opens its menu instead, as in any desktop program.
+	menus := a.menus()
+	open := 0
+	if a.popup != nil {
+		open = a.popup.bar
+	}
+	if open > 0 && a.my >= 0 && a.my < mh {
+		tx := x
+		for i, m := range menus {
+			w := a.textWidth(m.title, 13, false) + a.px(20)
+			if a.mx >= tx && a.mx < tx+w && open != i+1 {
+				a.openBarMenu(i, tx, m.items)
+				open = i + 1
+			}
+			tx += w
+		}
+	}
+	for i, m := range menus {
 		w := a.textWidth(m.title, 13, false) + a.px(20)
-		if a.hovered(x, 0, w, mh) {
+		if open == i+1 || a.hovered(x, 0, w, mh) {
 			a.round(x, a.px(3), w, mh-a.px(6), a.px(5), colCardHover)
 		}
 		a.text(m.title, x+a.px(10), (mh-lh)/2, 13, false, colText)
-		items, mx := m.items, x
-		a.onClick(x, 0, w, mh, func(bool) { a.openMenuItems(mx, mh, items) })
+		items, mx, idx := m.items, x, i
+		a.onClick(x, 0, w, mh, func(bool) { a.openBarMenu(idx, mx, items) })
 		x += w
 	}
+}
+
+// openBarMenu opens the menu bar's menu i, whose title is at x.
+func (a *app) openBarMenu(i int, x int32, items []menuItem) {
+	a.openMenuItems(x, a.menuH(), items)
+	a.popup.bar = i + 1
+	a.dirty = true
 }
 
 // openMenuItems opens a menu's items at x, y; a submenu opens beside its
@@ -157,19 +182,21 @@ func (a *app) drop(p string) {
 			a.add.folder.set(p)
 		}
 	case dump.IsArchive(p):
-		kind, err := dump.ArchiveKind(p)
+		st, err := dump.Inspect(p)
 		switch {
 		case err != nil:
 			a.alert("Can't open "+filepath.Base(p), err.Error())
-		case kind == dump.ArchiveDoszer && ext == ".dosz":
+		case st.Kind == dump.ArchiveDoszer && ext == ".dosz":
 			a.playFile(p)
-		case kind == dump.ArchiveDoszer && ext == ".dosp":
+		case st.Kind == dump.ArchiveDoszer && ext == ".dosp":
 			a.showDeps(p, strings.TrimSuffix(filepath.Base(p), ext))
-		case kind == dump.ArchiveDoszer:
+		case st.Kind == dump.ArchiveDoszer:
 			a.repackInto(p)
+		case ext == ".dosz" || ext == ".dosp":
+			a.offerImport(p, st.Problem)
 		default:
-			// A disc image in a zip, a game's files, or an archive made
-			// without doszer: imported, then built as doszer builds.
+			// A disc image in a zip, or a game's files: imported, then
+			// built with a manifest.
 			a.importFile(p)
 		}
 	case ext == ".cue" || ext == ".iso" || dump.IsDiskImage(p):
@@ -177,6 +204,18 @@ func (a *app) drop(p string) {
 	default:
 		a.alert("Can't open "+filepath.Base(p), "Open a game's archive (.dosz, .zip), a disc image (.cue, .iso), a floppy image (.img, .ima, .vfd) or a game's folder.")
 	}
+}
+
+// offerImport says why an archive isn't a doszer archive (no manifest,
+// one that isn't valid, an old one) and offers to make it one: imported,
+// then built with a valid manifest. It can still be played as it is.
+func (a *app) offerImport(p, problem string) {
+	name := filepath.Base(p)
+	a.dialog = &dialog{title: name + " has " + problem, lines: []string{"Import it and build it with a valid manifest?"}, buttons: []dialogButton{
+		{label: "Cancel"},
+		{label: "Play as it is", fn: func() { a.playFile(p) }},
+		{label: "Import", style: btnAccent, fn: func() { a.importFile(p) }},
+	}}
 }
 
 // importFile opens Import with p among its files.

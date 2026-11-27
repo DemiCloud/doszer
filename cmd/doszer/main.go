@@ -968,7 +968,7 @@ Usage: doszer dump [options] DIR
 Options:
       --dat FILE          datfile to verify against (default: build.redump_dat, else Redump's)
       --drive DRIVE       drive to read, e.g. E: or /dev/sg1 (default: first drive with a disc)
-      --from FILE         import a disc image (.cue, .iso, or a .zip of one), a floppy image (.img, .ima, .vfd) or a game's archive (.zip, .dosz)
+      --from FILE         import a disc image (.cue, .iso, or a .zip of one), a floppy image (.img, .ima, .vfd) or a game's archive (.zip, or a .dosz without a valid manifest)
       --offset SAMPLES    --from: drive read offset the image's audio wasn't corrected for
 ` + flagNoLog + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
