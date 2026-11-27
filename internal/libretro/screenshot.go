@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/DemiCloud/doszer/internal/runlog"
 	"github.com/DemiCloud/doszer/internal/status"
 )
 
@@ -21,17 +22,17 @@ func (h *host) saveScreenshot(pix []byte, width, height, pitch int) {
 		if dir == "" {
 			home, err := os.UserHomeDir()
 			if err != nil {
-				status.Printf(os.Stderr, "[WARN] screenshot: %v\n", err)
+				status.Printf(runlog.Stderr, "[WARN] screenshot: %v\n", err)
 				return
 			}
 			dir = filepath.Join(home, "Pictures", "doszer")
 		}
 		p := filepath.Join(dir, name)
 		if err := writePNG(p, img); err != nil {
-			status.Printf(os.Stderr, "[WARN] screenshot: %v\n", err)
+			status.Printf(runlog.Stderr, "[WARN] screenshot: %v\n", err)
 			return
 		}
-		status.Printf(os.Stderr, "Screenshot: %s\n", p)
+		status.Printf(runlog.Stderr, "Screenshot: %s\n", p)
 	}()
 }
 

@@ -12,10 +12,20 @@ import (
 )
 
 var (
-	mu    sync.Mutex
-	next  int
-	paths = map[int]string{}
+	mu     sync.Mutex
+	next   int
+	paths  = map[int]string{}
+	onExit []func()
 )
+
+// OnExit registers f to run when the process is interrupted, after the
+// registered paths are removed and before it exits (a run log's last
+// write).
+func OnExit(f func()) {
+	mu.Lock()
+	onExit = append(onExit, f)
+	mu.Unlock()
+}
 
 // Remove registers path for removal (with everything under it) if the
 // process is interrupted. The returned func unregisters it, for once the
@@ -45,6 +55,11 @@ func Handle() {
 			if err := os.RemoveAll(p); err != nil {
 				fmt.Fprintf(os.Stderr, "interrupted: could not remove %s: %v\n", p, err)
 			}
+		}
+		fs := onExit
+		mu.Unlock()
+		for _, f := range fs {
+			f()
 		}
 		os.Exit(130)
 	}()

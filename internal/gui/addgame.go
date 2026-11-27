@@ -64,6 +64,7 @@ type addPlan struct {
 	folder         bool     // Build a folder, not Import a disc
 	result         string   // the install step's install.ResultEnv file
 	flatten        bool     // build --flatten
+	session        string   // its runs' runlog session, across dialogs
 }
 
 var bootChoices = []struct{ label, flag string }{
@@ -288,7 +289,7 @@ func (a *app) addGameRun() {
 				a.chooseStart(plan)
 				return
 			}
-			a.runSteps("Build "+plan.name, steps, func(err error) {
+			a.runPlan(plan, steps, func(err error) {
 				if err == nil {
 					a.chooseStart(plan)
 				}
@@ -296,7 +297,7 @@ func (a *app) addGameRun() {
 			return
 		}
 		a.add = nil
-		a.runSteps("Build "+plan.name, append(steps, buildStep(plan)), a.added(plan))
+		a.runPlan(plan, append(steps, buildStep(plan)), a.added(plan))
 		return
 	}
 	installArgs := []string{"install", "--format", "plain"}
@@ -313,7 +314,7 @@ func (a *app) addGameRun() {
 	)
 	plan.install = steps[len(steps)-2:]
 	a.add = nil
-	a.runSteps("Build "+plan.name, steps, a.installed(plan))
+	a.runPlan(plan, steps, a.installed(plan))
 }
 
 // installed ends an install run: its output stays up, read before Next
@@ -356,7 +357,7 @@ func (a *app) addGameExtract() {
 	os.Remove(p.result) // a failure now is the extraction's, not the folder's
 	a.add = nil
 	next := a.installed(p)
-	a.runSteps("Build "+p.name, []step{{args: args}}, func(err error) {
+	a.runPlan(p, []step{{args: args}}, func(err error) {
 		if err == nil {
 			os.Remove(r.From)
 			if r.Content != "" {
@@ -365,6 +366,14 @@ func (a *app) addGameExtract() {
 		}
 		next(err)
 	})
+}
+
+// runPlan runs a step of p's flow: its runs logged as one session.
+func (a *app) runPlan(p *addPlan, steps []step, after func(err error)) {
+	if p.session == "" {
+		p.session = newSession()
+	}
+	a.runSession("Build "+p.name, p.session, steps, after)
 }
 
 // buildStep builds plan's archive.
@@ -436,7 +445,7 @@ func (a *app) addGameFinish(set bool) {
 	}
 	steps = append(steps, buildStep(p))
 	a.add = nil
-	a.runSteps("Build "+p.name, steps, a.added(p))
+	a.runPlan(p, steps, a.added(p))
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
@@ -511,7 +520,7 @@ func (a *app) drawAddGame() {
 			p := g.plan
 			place("Install again", btnAccent, func() {
 				a.add = nil
-				a.runSteps("Build "+p.name, p.install, a.installed(p))
+				a.runPlan(p, p.install, a.installed(p))
 			})
 			place("Build anyway", btnNormal, func() { a.addGameFinish(false) })
 		}

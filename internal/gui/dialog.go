@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/DemiCloud/doszer/internal/runlog"
 )
 
 // dialog is a modal message, question, or a doszer command's live
@@ -53,6 +57,7 @@ type job struct {
 	after   func(err error) // on the window's thread, once done
 	notify  chan error
 	stopped bool
+	session string // runlog.SessionEnv for every step: one flow's runs, listed together
 }
 
 // step is a doszer command (args), or, with prompt set, a pause asking
@@ -110,7 +115,13 @@ func (a *app) runDoszer(title string, args []string, after func(err error)) {
 
 // runSteps runs steps in one dialog, stopping at the first that fails.
 func (a *app) runSteps(title string, steps []step, after func(err error)) {
-	j := &job{steps: steps, after: after, notify: make(chan error, 1)}
+	a.runSession(title, newSession(), steps, after)
+}
+
+// runSession is runSteps with the steps' runs logged as session, one
+// already begun by an earlier dialog of the same flow.
+func (a *app) runSession(title, session string, steps []step, after func(err error)) {
+	j := &job{steps: steps, after: after, notify: make(chan error, 1), session: session}
 	d := &dialog{title: title, job: j}
 	a.dialog = d
 	a.jobs = append(a.jobs, d)
@@ -158,9 +169,7 @@ func (a *app) startStep(d *dialog) {
 		j.Write([]byte("\n$ " + line + "\n"))
 	}
 	cmd := exec.Command(exe, st.args...)
-	if len(st.env) > 0 {
-		cmd.Env = append(os.Environ(), st.env...)
-	}
+	cmd.Env = append(append(os.Environ(), runlog.SessionEnv+"="+j.session), st.env...)
 	hideConsole(cmd)
 	cmd.Stdout, cmd.Stderr = j, j
 	j.cmd = cmd
@@ -211,6 +220,11 @@ func (a *app) jobDone(d *dialog) {
 		j.after(j.err)
 	}
 	a.dirty = true
+}
+
+// newSession names a new flow's runs: when it started, and this window.
+func newSession() string {
+	return time.Now().Format("20060102-150405.000") + "-" + strconv.Itoa(os.Getpid())
 }
 
 // commandLine is args as one would type them.

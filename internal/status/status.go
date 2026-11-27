@@ -23,6 +23,7 @@ var (
 	frame    int
 	ticker   *time.Ticker
 	stop     chan struct{}
+	hook     func(step string, started time.Time, d time.Duration, ok bool)
 )
 
 var frames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
@@ -55,15 +56,27 @@ func Disable() {
 	mu.Unlock()
 }
 
+// SetHook calls f with every step once it has finished, shown or not
+// (a run log's step timings). f runs under the package's lock: it must
+// not call back into status.
+func SetHook(f func(step string, started time.Time, d time.Duration, ok bool)) {
+	mu.Lock()
+	hook = f
+	mu.Unlock()
+}
+
 // Step finishes the current step, if any, and starts a new one.
 func Step(format string, args ...any) {
 	mu.Lock()
 	defer mu.Unlock()
-	if out == nil {
+	if out == nil && hook == nil {
 		return
 	}
 	finish(true)
 	step, started, n, total = fmt.Sprintf(format, args...), time.Now(), 0, 0
+	if out == nil {
+		return
+	}
 	draw()
 	if ticker == nil {
 		ticker, stop = time.NewTicker(100*time.Millisecond), make(chan struct{})
@@ -75,7 +88,7 @@ func Step(format string, args ...any) {
 func Count(done, all int) {
 	mu.Lock()
 	defer mu.Unlock()
-	if out == nil || step == "" {
+	if step == "" {
 		return
 	}
 	n, total = done, all
@@ -105,9 +118,6 @@ func Printf(w io.Writer, format string, args ...any) {
 func end(ok bool) {
 	mu.Lock()
 	defer mu.Unlock()
-	if out == nil {
-		return
-	}
 	finish(ok)
 	if ticker != nil {
 		ticker.Stop()
@@ -121,22 +131,31 @@ func finish(ok bool) {
 	if step == "" {
 		return
 	}
-	fmt.Fprint(out, "\r\033[K")
-	mark := "✓ "
-	if !ok {
-		mark = "✗ "
+	d := time.Since(started)
+	if hook != nil {
+		hook(step, started, d, ok)
 	}
-	line := mark + step
-	if d := time.Since(started); d >= time.Second {
-		line += fmt.Sprintf(" (%s)", d.Round(100*time.Millisecond))
+	if out != nil {
+		fmt.Fprint(out, "\r\033[K")
+		mark := "✓ "
+		if !ok {
+			mark = "✗ "
+		}
+		line := mark + step
+		if d >= time.Second {
+			line += fmt.Sprintf(" (%s)", d.Round(100*time.Millisecond))
+		}
+		fmt.Fprintln(out, line)
 	}
-	fmt.Fprintln(out, line)
 	step = ""
 }
 
 // draw redraws the spinner line, cut to the terminal's width: a line that
 // wrapped would be redrawn on a new line every tick.
 func draw() {
+	if out == nil {
+		return
+	}
 	var suffix string
 	if total > 0 {
 		suffix += fmt.Sprintf(" (%d/%d)", n, total)

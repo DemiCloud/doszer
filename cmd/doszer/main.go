@@ -39,6 +39,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/prepare"
 	"github.com/DemiCloud/doszer/internal/redump"
 	"github.com/DemiCloud/doszer/internal/repack"
+	"github.com/DemiCloud/doszer/internal/runlog"
 	"github.com/DemiCloud/doszer/internal/start"
 	"github.com/DemiCloud/doszer/internal/status"
 	"github.com/DemiCloud/doszer/internal/verify"
@@ -50,6 +51,10 @@ var errUsage = errors.New("usage")
 // errQuiet signals that the errors were already reported: exit 1 with
 // nothing more to say.
 var errQuiet = errors.New("failed")
+
+// stdout and stderr are what doszer prints through: the process's own,
+// and a recorded run's transcript (runlog).
+var stdout, stderr = runlog.Stdout, runlog.Stderr
 
 // version is set via -ldflags "-X main.version=..." (see Makefile).
 var version = "dev"
@@ -111,13 +116,15 @@ func main() {
 				showError(err) // no console to read it in
 			}
 		}
+		runlog.Finish(err)
 		os.Exit(1)
 	}
+	runlog.Finish(nil)
 }
 
 func run(args []string) error {
 	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
-		usage(os.Stdout)
+		usage(stdout)
 		return nil
 	}
 	if len(args) == 0 {
@@ -126,11 +133,11 @@ func run(args []string) error {
 		if !fromTerminal() {
 			return runGUI(nil)
 		}
-		usage(os.Stderr)
+		usage(stderr)
 		return errUsage
 	}
 	if args[0] == "-V" || args[0] == "--version" {
-		fmt.Println("doszer", version)
+		fmt.Fprintln(stdout, "doszer", version)
 		return nil
 	}
 
@@ -150,7 +157,7 @@ func run(args []string) error {
 		return fmt.Errorf("%s: no such file", args[0])
 	}
 
-	usage(os.Stderr)
+	usage(stderr)
 	return fmt.Errorf("unknown command %q", args[0])
 }
 
@@ -207,6 +214,7 @@ const (
 	flagFormatText = "      --format FMT        output: fancy, plain (default: fancy on a terminal)\n"
 	flagFormatData = "      --format FMT        output: fancy, plain, json, yaml, toml, csv (default: fancy on a terminal)\n"
 	flagVersion    = "  -V, --version           show version\n"
+	flagNoLog      = "      --no-log            don't record this run in the logs\n"
 	flagOggQuality = "      --ogg-quality N     Ogg Vorbis quality, -1 to 10 (default: build.ogg_quality, else 6)\n"
 	flagStrict     = "      --strict            fail on any warning\n"
 	flagFlatten    = "      --flatten           collapse single-folder chains, recording it in the manifest\n"
@@ -222,6 +230,9 @@ func newFlags(name string) *pflag.FlagSet {
 	fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.String("format", "", "")
+	if _, ok := recorded[name]; ok {
+		fs.Bool("no-log", false, "")
+	}
 	return fs
 }
 
@@ -257,7 +268,7 @@ func setFormat(fs *pflag.FlagSet) error {
 func parse(fs *pflag.FlagSet, args []string, help string, min, max int) (ok bool, err error) {
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, pflag.ErrHelp) {
-			fmt.Print(help)
+			fmt.Fprint(stdout, help)
 			return false, nil
 		}
 		return false, err
@@ -266,10 +277,74 @@ func parse(fs *pflag.FlagSet, args []string, help string, min, max int) (ok bool
 		return false, err
 	}
 	if fs.NArg() < min || fs.NArg() > max {
-		fmt.Fprint(os.Stderr, help)
+		fmt.Fprint(stderr, help)
 		return false, errUsage
 	}
+	startRun(fs, args)
 	return true, nil
+}
+
+// recorded are the commands whose runs are logged (runlog), each with
+// the fewest arguments that make it change something: start and child
+// with one only list.
+var recorded = map[string]int{
+	"dump": 1, "init": 1, "build": 1, "install": 1, "start": 2, "repack": 1,
+	"convert": 1, "child": 2, "set": 1, "prepare": 1, "export": 1,
+}
+
+// startRun starts recording fs's command, once doszer is set up (until
+// then it writes nothing of its own), unless --no-log or a dry run. A
+// log that can't be started is a warning, never a failure.
+func startRun(fs *pflag.FlagSet, args []string) {
+	n, ok := recorded[fs.Name()]
+	if !ok || fs.NArg() < n || !config.Configured() {
+		return
+	}
+	if v, _ := fs.GetBool("no-log"); v {
+		return
+	}
+	if v, _ := fs.GetBool("dry-run"); v {
+		return
+	}
+	dir, err := config.LogsDir()
+	if err == nil {
+		err = runlog.Start(dir, fs.Name(), recordedArgs(args), versions())
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "[WARN] log not kept: %v\n", err)
+		return
+	}
+	// The settings in effect for the source the command works on.
+	if src := fs.Arg(0); src != "" {
+		if fi, err := os.Stat(src); err == nil && fi.IsDir() {
+			abs, _ := filepath.Abs(src)
+			runlog.Update(func(r *runlog.Report) { r.Source = abs })
+			runlog.SettingsFor(src)
+			return
+		}
+	}
+	runlog.SettingsFor("")
+}
+
+// recordedArgs are the command's arguments as given (already
+// windowsPaths'), without --no-log.
+func recordedArgs(args []string) []string {
+	out := []string{}
+	for _, a := range args {
+		if a != "--no-log" {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// versions are the programs a run's result depends on.
+func versions() map[string]string {
+	return map[string]string{
+		"doszer":      version,
+		"dosbox-pure": builtin.DOSBoxPureVersion,
+		"redumper":    builtin.RedumperVersion,
+	}
 }
 
 // endSteps ends the step a command was showing (status), as completed
@@ -284,7 +359,7 @@ func endSteps(err error) {
 
 // logError writes a timestamped error to stderr.
 func logError(err error) {
-	fmt.Fprintf(os.Stderr, "[%s] ERROR: %v\n", time.Now().Format("2006-01-02 15:04:05"), err)
+	fmt.Fprintf(stderr, "[%s] ERROR: %v\n", time.Now().Format("2006-01-02 15:04:05"), err)
 }
 
 // runInit implements `doszer init <source>`.
@@ -315,7 +390,7 @@ Options:
       --no-media          don't identify disc images in the source
       --os PATH           OS image model: OS image path, without extension
       --shell PATH        shell model: system shell path, without extension
-` + flagSystemDir + flagFormatText + flagHelp
+` + flagSystemDir + flagNoLog + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
 	}
@@ -354,16 +429,16 @@ Options:
 			return err
 		}
 		for _, s := range skipped {
-			fmt.Fprintf(os.Stderr, "[WARN] disc image not identified: %s\n", s)
+			fmt.Fprintf(stderr, "[WARN] disc image not identified: %s\n", s)
 		}
 		if len(media) > 0 {
-			fmt.Printf("Identified %d disc image(s)\n", len(media))
+			fmt.Fprintf(stdout, "Identified %d disc image(s)\n", len(media))
 		}
 		for _, m := range media {
 			if m.RedumpName != "" {
-				fmt.Printf("  %s: matches Redump's %q\n", m.Label, m.RedumpName)
+				fmt.Fprintf(stdout, "  %s: matches Redump's %q\n", m.Label, m.RedumpName)
 			} else if db != nil {
-				fmt.Printf("  %s: no Redump match\n", m.Label)
+				fmt.Fprintf(stdout, "  %s: no Redump match\n", m.Label)
 			}
 		}
 		o.Media = media
@@ -376,7 +451,7 @@ Options:
 			}
 		}
 		if audio > 0 && o.Audio != "wav" {
-			fmt.Printf("%s will be Ogg Vorbis, lossy: verify can't check their hashes (--audio wav keeps them checkable)\n", plural(audio, "audio track"))
+			fmt.Fprintf(stdout, "%s will be Ogg Vorbis, lossy: verify can't check their hashes (--audio wav keeps them checkable)\n", plural(audio, "audio track"))
 		}
 	}
 
@@ -433,7 +508,7 @@ Options:
 		return err
 	}
 
-	fmt.Printf("Created %s\n", path)
+	fmt.Fprintf(stdout, "Created %s\n", path)
 	return nil
 }
 
@@ -465,7 +540,7 @@ func chooseIcon(o *manifest.TemplateOptions, source string) {
 	if c.Disc != "" {
 		where = c.Disc + ":" + c.Path
 	}
-	fmt.Printf("Icon: %s (%s)\n", where, c.From)
+	fmt.Fprintf(stdout, "Icon: %s (%s)\n", where, c.From)
 }
 
 // runBuild implements `doszer build <source> [<output.dosz>]`.
@@ -483,7 +558,7 @@ Usage: doszer build [options] SOURCE [OUTPUT.dosz]
 Options:
   -n, --dry-run           print the build plan without writing an archive
 ` + flagFlatten + `      --name NAME         override the manifest's effective name
-` + flagOggQuality + flagStrict + flagFormatText + flagHelp
+` + flagOggQuality + flagStrict + flagNoLog + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 2); !ok {
 		return err
 	}
@@ -518,9 +593,9 @@ Options:
 
 	warnMissingImage(&res.Manifest.Boot, cfg.Paths.System)
 	if opts.DryRun {
-		fmt.Printf("Dry run: would write %s (%d entries)\n", res.OutputPath, len(res.Entries))
+		fmt.Fprintf(stdout, "Dry run: would write %s (%d entries)\n", res.OutputPath, len(res.Entries))
 	} else {
-		fmt.Printf("Built %s (%d entries)\n", res.OutputPath, len(res.Entries))
+		fmt.Fprintf(stdout, "Built %s (%d entries)\n", res.OutputPath, len(res.Entries))
 	}
 	return nil
 }
@@ -560,10 +635,10 @@ func warnMissingImage(b *manifest.Boot, systemDir string) {
 		}
 	}
 	if near != "" {
-		status.Printf(os.Stderr, "[WARN] %s %q is %q in %s: DOSBox Pure matches names exactly\n", what, name, near, systemDir)
+		status.Printf(stderr, "[WARN] %s %q is %q in %s: DOSBox Pure matches names exactly\n", what, name, near, systemDir)
 		return
 	}
-	status.Printf(os.Stderr, "[WARN] %s %q isn't in %s (fine if the archive is played elsewhere)\n", what, name, systemDir)
+	status.Printf(stderr, "[WARN] %s %q isn't in %s (fine if the archive is played elsewhere)\n", what, name, systemDir)
 }
 
 // printBuildPlan reports what a build did or would do. Trim/flatten/rewrite
@@ -571,23 +646,23 @@ func warnMissingImage(b *manifest.Boot, systemDir string) {
 func printBuildPlan(res *build.Result, dryRun bool) {
 	if dryRun {
 		if len(res.Trimmed) > 0 {
-			fmt.Printf("Trim removes %d file(s):\n", len(res.Trimmed))
+			fmt.Fprintf(stdout, "Trim removes %d file(s):\n", len(res.Trimmed))
 			for _, p := range res.Trimmed {
-				fmt.Printf("  - %s\n", p)
+				fmt.Fprintf(stdout, "  - %s\n", p)
 			}
 		}
 
 		if len(res.Moved) > 0 {
-			fmt.Printf("Flatten renames %d path(s):\n", len(res.Moved))
+			fmt.Fprintf(stdout, "Flatten renames %d path(s):\n", len(res.Moved))
 			for _, m := range res.Moved {
-				fmt.Printf("  %s -> %s\n", m.From, m.To)
+				fmt.Fprintf(stdout, "  %s -> %s\n", m.From, m.To)
 			}
 		}
 
 		for _, c := range res.Converted {
-			fmt.Printf("Media converts %s to:\n", c.Cue)
+			fmt.Fprintf(stdout, "Media converts %s to:\n", c.Cue)
 			for _, p := range c.Files {
-				fmt.Printf("  - %s\n", p)
+				fmt.Fprintf(stdout, "  - %s\n", p)
 			}
 		}
 
@@ -599,27 +674,27 @@ func printBuildPlan(res *build.Result, dryRun bool) {
 				}
 			}
 			if len(files) > 0 {
-				fmt.Printf("Rewrite %q -> %q changes %d file(s):\n", rule.From, rule.To, len(files))
+				fmt.Fprintf(stdout, "Rewrite %q -> %q changes %d file(s):\n", rule.From, rule.To, len(files))
 				for _, p := range files {
-					fmt.Printf("  - %s\n", p)
+					fmt.Fprintf(stdout, "  - %s\n", p)
 				}
 			}
 		}
 
 		if len(res.Suggestions) > 0 {
-			fmt.Println("Suggested rewrite rules, for paths flatten changed:")
+			fmt.Fprintln(stdout, "Suggested rewrite rules, for paths flatten changed:")
 			for _, s := range res.Suggestions {
-				fmt.Println(s)
+				fmt.Fprintln(stdout, s)
 			}
 		}
 
 		for _, w := range res.BinaryReferences {
-			fmt.Fprintf(os.Stderr, "[WARN] %s\n", w)
+			fmt.Fprintf(stderr, "[WARN] %s\n", w)
 		}
 	}
 
 	for _, w := range res.Warnings() {
-		fmt.Fprintf(os.Stderr, "[WARN] %s\n", w)
+		fmt.Fprintf(stderr, "[WARN] %s\n", w)
 	}
 }
 
@@ -639,7 +714,7 @@ Options:
 		return err
 	}
 	if !*all && fs.NArg() == 0 {
-		fmt.Fprint(os.Stderr, help)
+		fmt.Fprint(stderr, help)
 		return errUsage
 	}
 	paths := fs.Args()
@@ -682,7 +757,7 @@ Options:
 			prefix = p + ": "
 		}
 		for _, w := range warnings {
-			status.Printf(os.Stderr, "[WARN] %s%s\n", prefix, w)
+			status.Printf(stderr, "[WARN] %s%s\n", prefix, w)
 		}
 		if err != nil {
 			if len(paths) == 1 {
@@ -691,7 +766,7 @@ Options:
 			logError(fmt.Errorf("%s: %w", p, err))
 			continue
 		}
-		status.Printf(os.Stdout, "%s conforms to the specification\n", p)
+		status.Printf(stdout, "%s conforms to the specification\n", p)
 	}
 
 	switch format {
@@ -700,18 +775,18 @@ Options:
 		for i, r := range results {
 			rows[i] = []string{r.File, strconv.FormatBool(r.OK), strings.Join(r.Errors, "; "), strings.Join(r.Warnings, "; ")}
 		}
-		if err := output.EncodeCSV(os.Stdout, []string{"file", "ok", "errors", "warnings"}, rows); err != nil {
+		if err := output.EncodeCSV(stdout, []string{"file", "ok", "errors", "warnings"}, rows); err != nil {
 			return err
 		}
 	case output.JSON, output.YAML, output.TOML:
-		if err := output.Encode(os.Stdout, format, struct {
+		if err := output.Encode(stdout, format, struct {
 			Archives []result `json:"archives" yaml:"archives" toml:"archives"`
 		}{results}); err != nil {
 			return err
 		}
 	default:
 		if len(paths) > 1 {
-			fmt.Printf("%d of %s conform\n", len(paths)-failed, plural(len(paths), "archive"))
+			fmt.Fprintf(stdout, "%d of %s conform\n", len(paths)-failed, plural(len(paths), "archive"))
 		}
 	}
 	if failed > 0 {
@@ -739,7 +814,7 @@ Options:
 		return err
 	}
 	if !*all && fs.NArg() == 0 {
-		fmt.Fprint(os.Stderr, help)
+		fmt.Fprint(stderr, help)
 		return errUsage
 	}
 	paths := fs.Args()
@@ -790,7 +865,7 @@ Options:
 			prefix = p + ": "
 		}
 		for _, f := range fds {
-			fmt.Printf("%s%s [%s]\n", prefix, f.Message, f.Check)
+			fmt.Fprintf(stdout, "%s%s [%s]\n", prefix, f.Message, f.Check)
 		}
 	}
 	switch format {
@@ -801,13 +876,13 @@ Options:
 				rows = append(rows, []string{r.File, f.Check, f.Message})
 			}
 		}
-		return output.EncodeCSV(os.Stdout, []string{"file", "check", "message"}, rows)
+		return output.EncodeCSV(stdout, []string{"file", "check", "message"}, rows)
 	case output.JSON, output.YAML, output.TOML:
-		return output.Encode(os.Stdout, format, struct {
+		return output.Encode(stdout, format, struct {
 			Archives []result `json:"archives" yaml:"archives" toml:"archives"`
 		}{results})
 	}
-	fmt.Printf("%d of %s clean, %s\n", clean, plural(len(results), "archive"), plural(found, "warning"))
+	fmt.Fprintf(stdout, "%d of %s clean, %s\n", clean, plural(len(results), "archive"), plural(found, "warning"))
 	return nil
 }
 
@@ -870,7 +945,7 @@ Options:
       --drive DRIVE       drive to read, e.g. E: or /dev/sg1 (default: first drive with a disc)
       --from FILE         import a BIN/CUE image (.cue, or a .zip of one) or a floppy image (.img, .ima, .vfd)
       --offset SAMPLES    --from: drive read offset the image's audio wasn't corrected for
-` + flagFormatText + flagHelp
+` + flagNoLog + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
 	}
@@ -889,7 +964,7 @@ Options:
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Imported %s\n", p)
+			fmt.Fprintf(stdout, "Imported %s\n", p)
 			return nil
 		}
 		res, err := dump.Import(*from, fs.Arg(0), *offset)
@@ -897,7 +972,7 @@ Options:
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Imported %s (%d track file(s))\n", res.Cue, len(res.Tracks))
+		fmt.Fprintf(stdout, "Imported %s (%d track file(s))\n", res.Cue, len(res.Tracks))
 		return verifyImage(res.Cue, 0, dat2, false)
 	}
 	if *offset != 0 {
@@ -905,14 +980,14 @@ Options:
 	}
 	res, err := dump.Run(dump.Options{Dir: fs.Arg(0), Drive: *drive})
 	if res != nil && res.Log != "" {
-		fmt.Fprintf(os.Stderr, "redumper log: %s\n", res.Log)
+		fmt.Fprintf(stderr, "redumper log: %s\n", res.Log)
 	}
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Dumped %s (%d track file(s))\n", res.Cue, len(res.Tracks))
+	fmt.Fprintf(stdout, "Dumped %s (%d track file(s))\n", res.Cue, len(res.Tracks))
 	for _, e := range res.Errors {
-		fmt.Fprintf(os.Stderr, "[WARN] redumper: %s (left as read: zeros)\n", e)
+		fmt.Fprintf(stderr, "[WARN] redumper: %s (left as read: zeros)\n", e)
 	}
 	return verifyImage(res.Cue, 0, dat2, len(res.Errors) > 0)
 }
@@ -940,13 +1015,13 @@ func verifyArchive(p, dat string) error {
 	}
 	defer closeAll()
 	for _, s := range skipped {
-		fmt.Fprintf(os.Stderr, "[WARN] %s: %s\n", filepath.Base(p), s)
+		fmt.Fprintf(stderr, "[WARN] %s: %s\n", filepath.Base(p), s)
 	}
 	if len(images) == 0 && len(skipped) == 0 {
-		fmt.Printf("%s: no disc images\n", filepath.Base(p))
+		fmt.Fprintf(stdout, "%s: no disc images\n", filepath.Base(p))
 	}
 	for _, img := range images {
-		fmt.Printf("%s: %s\n", filepath.Base(p), img.Cue)
+		fmt.Fprintf(stdout, "%s: %s\n", filepath.Base(p), img.Cue)
 		if err := verifyTracks(img.Hash, dat, false); err != nil {
 			return err
 		}
@@ -970,28 +1045,28 @@ func verifyTracks(hash func() ([]redump.Track, error), dat string, readErrors bo
 		return err
 	}
 	if sel.Note != "" {
-		fmt.Fprintf(os.Stderr, "[WARN] %s\n", sel.Note)
+		fmt.Fprintf(stderr, "[WARN] %s\n", sel.Note)
 	}
 	src := fmt.Sprintf("%s datfile %s", sel.Source, sel.DB.Version)
 	m, err := sel.DB.Match(tracks)
 	switch {
 	case errors.Is(err, redump.ErrNoMatch):
-		fmt.Printf("Not verified: no track matches a Redump disc (%s): a bad dump, or a disc not in Redump yet\n", src)
+		fmt.Fprintf(stdout, "Not verified: no track matches a Redump disc (%s): a bad dump, or a disc not in Redump yet\n", src)
 	case err != nil:
 		return err
 	case m.Verified:
-		fmt.Printf("Verified: every track matches Redump's %q (%s)\n  %s\n", m.Disc.Name, src, m.Link)
+		fmt.Fprintf(stdout, "Verified: every track matches Redump's %q (%s)\n  %s\n", m.Disc.Name, src, m.Link)
 	default:
 		var differ []string
 		for _, i := range m.Differ {
 			differ = append(differ, filepath.Base(tracks[i].Path))
 		}
-		fmt.Printf("Not verified: closest Redump disc %q matches %d of its %d track(s) (%s)\n  %s\n", m.Disc.Name, m.Matching, len(m.Disc.Tracks), src, m.Link)
+		fmt.Fprintf(stdout, "Not verified: closest Redump disc %q matches %d of its %d track(s) (%s)\n  %s\n", m.Disc.Name, m.Matching, len(m.Disc.Tracks), src, m.Link)
 		if len(differ) > 0 {
-			fmt.Printf("  differing: %s\n", strings.Join(differ, ", "))
+			fmt.Fprintf(stdout, "  differing: %s\n", strings.Join(differ, ", "))
 		}
 		if readErrors {
-			fmt.Println("  the drive couldn't read some samples (see the warnings above), which likely explains it")
+			fmt.Fprintln(stdout, "  the drive couldn't read some samples (see the warnings above), which likely explains it")
 		}
 	}
 	return nil
@@ -1027,7 +1102,7 @@ Options:
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Cached Redump datfile %s (%d discs)\n", db.Version, len(db.Discs))
+		fmt.Fprintf(stdout, "Cached Redump datfile %s (%d discs)\n", db.Version, len(db.Discs))
 	}
 	if fs.NArg() == 0 {
 		return redumpStatus(external)
@@ -1054,10 +1129,10 @@ Options:
 		for _, s := range shas {
 			hits := sel.DB.Lookup(s)
 			if len(hits) == 0 {
-				fmt.Printf("%s: not in Redump\n", s)
+				fmt.Fprintf(stdout, "%s: not in Redump\n", s)
 			}
 			for _, h := range hits {
-				fmt.Printf("%s: %s, track %d (%d bytes)\n", s, h.Disc, h.Track, h.Size)
+				fmt.Fprintf(stdout, "%s: %s, track %d (%d bytes)\n", s, h.Disc, h.Track, h.Size)
 			}
 		}
 	}
@@ -1083,30 +1158,30 @@ func redumpStatus(external string) error {
 		return err
 	}
 	if emb != nil {
-		fmt.Printf("Embedded: Redump datfile %s (%d discs)\n", emb.Version, len(emb.Discs))
+		fmt.Fprintf(stdout, "Embedded: Redump datfile %s (%d discs)\n", emb.Version, len(emb.Discs))
 	} else {
-		fmt.Println("Embedded: none (built without one: make dat)")
+		fmt.Fprintln(stdout, "Embedded: none (built without one: make dat)")
 	}
 	cached, checked, err := redump.Cached()
 	switch {
 	case err != nil:
-		fmt.Printf("Cached:   unreadable (%v)\n", err)
+		fmt.Fprintf(stdout, "Cached:   unreadable (%v)\n", err)
 	case cached != nil:
-		fmt.Printf("Cached:   Redump datfile %s (%d discs), last fetched or checked %s\n", cached.Version, len(cached.Discs), checked.Format("2006-01-02 15:04"))
+		fmt.Fprintf(stdout, "Cached:   Redump datfile %s (%d discs), last fetched or checked %s\n", cached.Version, len(cached.Discs), checked.Format("2006-01-02 15:04"))
 	default:
-		fmt.Println("Cached:   none yet (fetched on the first dump, or with --update)")
+		fmt.Fprintln(stdout, "Cached:   none yet (fetched on the first dump, or with --update)")
 	}
 	if external != "" {
-		fmt.Printf("External: %s\n", external)
+		fmt.Fprintf(stdout, "External: %s\n", external)
 	}
 	cur, err := redump.Current(external)
 	if err != nil {
 		return err
 	}
 	if cur == nil {
-		fmt.Println("In use:   none")
+		fmt.Fprintln(stdout, "In use:   none")
 	} else {
-		fmt.Printf("In use:   %s (Redump datfile %s)\n", cur.Source, cur.DB.Version)
+		fmt.Fprintf(stdout, "In use:   %s (Redump datfile %s)\n", cur.Source, cur.DB.Version)
 	}
 	return nil
 }
@@ -1148,7 +1223,7 @@ Options:
       --keep              keep the session's save files
       --os PATH           OS image to boot instead of boot.os (default: install.os, else boot.os)
 ` + flagSaveDir + flagSystemDir + `      --template FILE     pristine image to compare a --from image against
-` + flagFormatText + flagHelp
+` + flagNoLog + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
 	}
@@ -1175,7 +1250,7 @@ Options:
 	}
 
 	if opts.From == "" {
-		fmt.Fprintln(os.Stderr, windowHelp)
+		fmt.Fprintln(stderr, windowHelp)
 	}
 	rep, err := install.Run(opts)
 	endSteps(err)
@@ -1186,7 +1261,7 @@ Options:
 			if r.Content != "" {
 				cmd += " --content " + shellQuote(r.Content)
 			}
-			fmt.Printf("To extract one: %s --dir FOLDER %s\n", cmd, shellQuote(opts.Source))
+			fmt.Fprintf(stdout, "To extract one: %s --dir FOLDER %s\n", cmd, shellQuote(opts.Source))
 		}
 		if err := writeInstallResult(rep); err != nil {
 			return err
@@ -1248,13 +1323,13 @@ Options:
 			for i, p := range progs {
 				rows[i] = []string{p.Name, p.Version, p.URL, strconv.FormatBool(p.Embedded)}
 			}
-			return output.EncodeCSV(os.Stdout, []string{"name", "version", "url", "embedded"}, rows)
+			return output.EncodeCSV(stdout, []string{"name", "version", "url", "embedded"}, rows)
 		}
-		return output.Encode(os.Stdout, format, struct {
+		return output.Encode(stdout, format, struct {
 			Programs []program `json:"programs" yaml:"programs" toml:"programs"`
 		}{progs})
 	}
-	fmt.Println("doszer", version)
+	fmt.Fprintln(stdout, "doszer", version)
 	for _, p := range builtin.Programs() {
 		v := p.Version
 		if !p.Embedded {
@@ -1262,7 +1337,7 @@ Options:
 		} else if v == "" {
 			v = "unknown version"
 		}
-		fmt.Printf("  %-12s %-16s %s\n", p.Name, v, p.URL)
+		fmt.Fprintf(stdout, "  %-12s %-16s %s\n", p.Name, v, p.URL)
 	}
 	return nil
 }
@@ -1299,15 +1374,15 @@ Options:
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stderr, windowHelp)
+	fmt.Fprintln(stderr, windowHelp)
 	status.Step("Playing %s", filepath.Base(fs.Arg(0)))
 	env, err := install.Play(fs.Arg(0), stringOr(*systemDir, cfg.Paths.System), stringOr(*saveDir, cfg.Paths.Saves), opts)
 	endSteps(err)
 	if err == nil {
 		if env.Temporary {
-			fmt.Println("Saves: none kept (doszer isn't set up: run doszer gui, or doszer config init)")
+			fmt.Fprintln(stdout, "Saves: none kept (doszer isn't set up: run doszer gui, or doszer config init)")
 		} else {
-			fmt.Printf("Saves: %s\n", env.SaveDir)
+			fmt.Fprintf(stdout, "Saves: %s\n", env.SaveDir)
 		}
 	}
 	return err
@@ -1323,30 +1398,30 @@ func stringOr(flagValue, configured string) string {
 // printInstallReport summarizes what install found and extracted.
 func printInstallReport(rep *install.Report, dryRun bool) {
 	for _, p := range rep.Skipped {
-		fmt.Fprintf(os.Stderr, "[WARN] %s: left out of the install session\n", p)
+		fmt.Fprintf(stderr, "[WARN] %s: left out of the install session\n", p)
 	}
 	if len(rep.Changes) > 0 {
 		if rep.Detected {
-			fmt.Printf("D: is unchanged: the setup installed to C:\n")
+			fmt.Fprintf(stdout, "D: is unchanged: the setup installed to C:\n")
 		}
-		fmt.Printf("%s %d file(s) changed\n", rep.Drive, len(rep.Changes))
+		fmt.Fprintf(stdout, "%s %d file(s) changed\n", rep.Drive, len(rep.Changes))
 	} else if rep.Drive != "" {
-		fmt.Printf("No files changed on %s (a file saved with the same content doesn't count): nothing to extract.\n", rep.Drive)
-		fmt.Println("A game that comes installed needs no install: build it as it is.")
+		fmt.Fprintf(stdout, "No files changed on %s (a file saved with the same content doesn't count): nothing to extract.\n", rep.Drive)
+		fmt.Fprintln(stdout, "A game that comes installed needs no install: build it as it is.")
 	}
 	if x := rep.Extracted; x != nil {
 		verb := "Extracted"
 		if dryRun {
 			verb = "Would extract"
 		}
-		fmt.Printf("%s %d file(s) from %s\\%s", verb, len(x.Written), rep.Drive, strings.ReplaceAll(rep.Dir, "/", "\\"))
+		fmt.Fprintf(stdout, "%s %d file(s) from %s\\%s", verb, len(x.Written), rep.Drive, strings.ReplaceAll(rep.Dir, "/", "\\"))
 		if len(x.Unchanged) > 0 {
-			fmt.Printf(" (%d already identical)", len(x.Unchanged))
+			fmt.Fprintf(stdout, " (%d already identical)", len(x.Unchanged))
 		}
-		fmt.Println()
+		fmt.Fprintln(stdout)
 		if dryRun {
 			for _, p := range x.Written {
-				fmt.Printf("  + %s\n", p)
+				fmt.Fprintf(stdout, "  + %s\n", p)
 			}
 		}
 	}
@@ -1357,27 +1432,27 @@ func printInstallReport(rep *install.Report, dryRun bool) {
 		}
 	}
 	if len(outside) > 0 {
-		fmt.Printf("Other changes on %s (not extracted):\n", rep.Drive)
+		fmt.Fprintf(stdout, "Other changes on %s (not extracted):\n", rep.Drive)
 		for _, c := range outside {
-			fmt.Printf("  %-8s %s\n", c.Kind, c.Path)
+			fmt.Fprintf(stdout, "  %-8s %s\n", c.Kind, c.Path)
 		}
 	}
 	if len(rep.Other) > 0 {
-		fmt.Printf("C: (OS image, not extracted): %d file(s) changed\n", len(rep.Other))
+		fmt.Fprintf(stdout, "C: (OS image, not extracted): %d file(s) changed\n", len(rep.Other))
 		for _, c := range rep.Other {
-			fmt.Printf("  %-8s %s\n", c.Kind, c.Path)
+			fmt.Fprintf(stdout, "  %-8s %s\n", c.Kind, c.Path)
 		}
 	}
 	if len(rep.Programs) > 0 {
-		fmt.Println("Programs installed:")
+		fmt.Fprintln(stdout, "Programs installed:")
 		for _, p := range rep.Programs {
-			fmt.Printf("  %s\n", p)
+			fmt.Fprintf(stdout, "  %s\n", p)
 		}
 		switch {
 		case rep.Exec != "" && dryRun:
-			fmt.Printf("Would set boot.exec = '%s'\n", rep.Exec)
+			fmt.Fprintf(stdout, "Would set boot.exec = '%s'\n", rep.Exec)
 		case rep.Exec != "":
-			fmt.Printf("Set boot.exec = '%s' in %s\n", rep.Exec, manifest.FileName)
+			fmt.Fprintf(stdout, "Set boot.exec = '%s' in %s\n", rep.Exec, manifest.FileName)
 		}
 	}
 	if len(rep.DLLs) > 0 {
@@ -1385,9 +1460,9 @@ func printInstallReport(rep *install.Report, dryRun bool) {
 		if dryRun {
 			verb = "Would copy"
 		}
-		fmt.Printf("%s %d DLL(s) the game imports from Windows' folders beside it:\n", verb, len(rep.DLLs))
+		fmt.Fprintf(stdout, "%s %d DLL(s) the game imports from Windows' folders beside it:\n", verb, len(rep.DLLs))
 		for _, d := range rep.DLLs {
-			fmt.Printf("  %s (from %s)\n", d.To, install.DOSPath("C:", d.From))
+			fmt.Fprintf(stdout, "  %s (from %s)\n", d.To, install.DOSPath("C:", d.From))
 		}
 	}
 	if rep.Registry != "" {
@@ -1395,11 +1470,11 @@ func printInstallReport(rep *install.Report, dryRun bool) {
 		if dryRun {
 			verb = "Would write"
 		}
-		fmt.Printf("%s %d registry value(s) the installer added to %s\n", verb, rep.RegistryValues, rep.Registry)
-		fmt.Printf("To restore them at startup, WINDOWS.BAT needs: REGEDIT /S %s\n", rep.Registry)
+		fmt.Fprintf(stdout, "%s %d registry value(s) the installer added to %s\n", verb, rep.RegistryValues, rep.Registry)
+		fmt.Fprintf(stdout, "To restore them at startup, WINDOWS.BAT needs: REGEDIT /S %s\n", rep.Registry)
 	}
 	for _, p := range rep.Kept {
-		fmt.Printf("Save file kept: %s\n", p)
+		fmt.Fprintf(stdout, "Save file kept: %s\n", p)
 	}
 }
 
@@ -1425,7 +1500,7 @@ Options:
       --add PATH=FILE     add FILE to the archive as PATH, replacing any (repeatable)
   -n, --dry-run           print the rebuild plan without writing an archive
 ` + flagFlatten + `      --manifest FILE     use this manifest instead of the archive's embedded one
-` + flagOggQuality + flagStrict + flagFormatText + flagHelp
+` + flagOggQuality + flagStrict + flagNoLog + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 2); !ok {
 		return err
 	}
@@ -1470,9 +1545,9 @@ Options:
 
 	warnMissingImage(&res.Manifest.Boot, cfg.Paths.System)
 	if opts.DryRun {
-		fmt.Printf("Dry run: would write %s (%d entries)\n", res.OutputPath, len(res.Entries))
+		fmt.Fprintf(stdout, "Dry run: would write %s (%d entries)\n", res.OutputPath, len(res.Entries))
 	} else {
-		fmt.Printf("Repacked %s (%d entries)\n", res.OutputPath, len(res.Entries))
+		fmt.Fprintf(stdout, "Repacked %s (%d entries)\n", res.OutputPath, len(res.Entries))
 	}
 	return nil
 }
@@ -1500,7 +1575,7 @@ Options:
       --add DIR           lay DIR's files over the result (repeatable)
   -n, --dry-run           print the changes without writing OUTPUT
   -f, --force             overwrite OUTPUT
-` + flagFormatText + flagHelp
+` + flagNoLog + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 3, 3); !ok {
 		return err
 	}
@@ -1516,7 +1591,7 @@ Options:
 			Input: fs.Arg(1), Output: fs.Arg(2), Add: *add, DryRun: *dryRun, Force: *force,
 		})
 	default:
-		fmt.Fprint(os.Stderr, help)
+		fmt.Fprint(stderr, help)
 		return fmt.Errorf("unknown prepare target %q", fs.Arg(0))
 	}
 	endSteps(err)
@@ -1524,12 +1599,12 @@ Options:
 		return err
 	}
 	for _, c := range rep.Changes {
-		fmt.Printf("  %-8s  %s (%s)\n", c.Action, strings.ReplaceAll(c.Path, "/", `\`), c.Why)
+		fmt.Fprintf(stdout, "  %-8s  %s (%s)\n", c.Action, strings.ReplaceAll(c.Path, "/", `\`), c.Why)
 	}
 	if *dryRun {
-		fmt.Printf("Dry run: would write %s (%d entries)\n", rep.Output, rep.Entries)
+		fmt.Fprintf(stdout, "Dry run: would write %s (%d entries)\n", rep.Output, rep.Entries)
 	} else {
-		fmt.Printf("Prepared %s (%d entries)\n", rep.Output, rep.Entries)
+		fmt.Fprintf(stdout, "Prepared %s (%d entries)\n", rep.Output, rep.Entries)
 	}
 	return nil
 }
@@ -1563,7 +1638,7 @@ Options:
 	}
 	if fs.NArg() > 0 {
 		if fs.Arg(0) != "portable" {
-			fmt.Fprint(os.Stderr, help)
+			fmt.Fprint(stderr, help)
 			return fmt.Errorf("env: unknown action %q", fs.Arg(0))
 		}
 		return runPortable(fs.Arg(1), *systemDir, *saveDir, *romDir, *from, *copyFiles, *dryRun, *force)
@@ -1595,11 +1670,11 @@ Options:
 		}
 		add("ffmpeg", r.FFmpeg)
 		add("cache", r.Cache)
-		return output.EncodeCSV(os.Stdout, []string{"key", "value"}, rows)
+		return output.EncodeCSV(stdout, []string{"key", "value"}, rows)
 	case output.JSON, output.YAML, output.TOML:
-		return output.Encode(os.Stdout, format, r)
+		return output.Encode(stdout, format, r)
 	}
-	env.Print(os.Stdout, r)
+	env.Print(stdout, r)
 	return nil
 }
 
@@ -1631,9 +1706,9 @@ Options:
 			continue
 		}
 		if i > 0 {
-			fmt.Println()
+			fmt.Fprintln(stdout)
 		}
-		info.Print(os.Stdout, r)
+		info.Print(stdout, r)
 	}
 	switch format {
 	case output.CSV:
@@ -1641,9 +1716,9 @@ Options:
 		for i, d := range data {
 			rows[i] = d.CSVRow()
 		}
-		return output.EncodeCSV(os.Stdout, info.CSVHeader, rows)
+		return output.EncodeCSV(stdout, info.CSVHeader, rows)
 	case output.JSON, output.YAML, output.TOML:
-		return output.Encode(os.Stdout, format, struct {
+		return output.Encode(stdout, format, struct {
 			Archives []info.Data `json:"archives" yaml:"archives" toml:"archives"`
 		}{data})
 	}
@@ -1667,7 +1742,7 @@ Options:
       --no-parent         remove the parent
       --os [OLD:]NEW      set the OS image, only where it is OLD
       --shell [OLD:]NEW   set the shell, only where it is OLD
-` + flagFormatData + flagHelp
+` + flagNoLog + flagFormatData + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1<<20); !ok {
 		return err
 	}
@@ -1753,19 +1828,19 @@ Options:
 		}
 		switch {
 		case show:
-			fmt.Printf("%s: %s\n", name, describeBoot(res.Before))
+			fmt.Fprintf(stdout, "%s: %s\n", name, describeBoot(res.Before))
 		case res.Changed():
 			verb := "Changed"
 			if opts.DryRun {
 				verb = "Would change"
 			}
-			fmt.Printf("%s %s: %s, was %s\n", verb, name, describeBoot(res.After), describeBoot(res.Before))
+			fmt.Fprintf(stdout, "%s %s: %s, was %s\n", verb, name, describeBoot(res.After), describeBoot(res.Before))
 		default:
 			why := "already set"
 			if len(res.Skipped) > 0 {
 				why = strings.Join(res.Skipped, "; ")
 			}
-			fmt.Printf("Left %s: %s\n", name, why)
+			fmt.Fprintf(stdout, "Left %s: %s\n", name, why)
 		}
 	}
 	switch format {
@@ -1774,11 +1849,11 @@ Options:
 		for i, r := range results {
 			rows[i] = []string{r.File, strconv.FormatBool(r.Changed), r.After.Exec, r.After.Shell, r.After.OS, r.After.Parent, r.Before.Shell, r.Before.OS, r.Before.Parent, strings.Join(r.Skipped, "; "), r.Error}
 		}
-		if err := output.EncodeCSV(os.Stdout, []string{"file", "changed", "exec", "shell", "os", "parent", "was_shell", "was_os", "was_parent", "skipped", "error"}, rows); err != nil {
+		if err := output.EncodeCSV(stdout, []string{"file", "changed", "exec", "shell", "os", "parent", "was_shell", "was_os", "was_parent", "skipped", "error"}, rows); err != nil {
 			return err
 		}
 	case output.JSON, output.YAML, output.TOML:
-		if err := output.Encode(os.Stdout, format, struct {
+		if err := output.Encode(stdout, format, struct {
 			Archives []result `json:"archives" yaml:"archives" toml:"archives"`
 		}{results}); err != nil {
 			return err
@@ -1867,7 +1942,7 @@ func chooseBoot(o *manifest.TemplateOptions, source, systemDir, boot string, cfg
 		case game.Platform == platform.Win32:
 			model = "os"
 		case game.Platform == platform.OS2:
-			fmt.Printf("%s: no boot model for OS/2\n", why)
+			fmt.Fprintf(stdout, "%s: no boot model for OS/2\n", why)
 			return nil
 		}
 	}
@@ -1922,9 +1997,9 @@ func chooseBoot(o *manifest.TemplateOptions, source, systemDir, boot string, cfg
 		}
 		o.OS, msg = pick("os", cfg.Defaults.OS, false, names)
 	}
-	fmt.Printf("%s: %s\n", why, msg)
+	fmt.Fprintf(stdout, "%s: %s\n", why, msg)
 	if winME := (platform.Target{Platform: platform.Win32, Major: 4, Minor: 90}); model == "os" && game.Platform == platform.Win32 && winME.Less(game) {
-		fmt.Fprintf(os.Stderr, "[WARN] %s programs may not run under Windows 9x\n", game)
+		fmt.Fprintf(stderr, "[WARN] %s programs may not run under Windows 9x\n", game)
 	}
 	return nil
 }
@@ -1960,7 +2035,7 @@ Options:
 	}
 	need := func(n int) error {
 		if len(a) != n {
-			fmt.Fprint(os.Stderr, help)
+			fmt.Fprint(stderr, help)
 			return errUsage
 		}
 		return nil
@@ -1977,7 +2052,7 @@ Options:
 			for _, s := range settings {
 				rows = append(rows, []string{s.Key, s.Value, s.From})
 			}
-			return output.EncodeCSV(os.Stdout, []string{"key", "value", "from"}, rows)
+			return output.EncodeCSV(stdout, []string{"key", "value", "from"}, rows)
 		case output.Fancy, output.Plain:
 			width := 0
 			for _, s := range settings {
@@ -1988,11 +2063,11 @@ Options:
 				if v == "" {
 					v = "(none)"
 				}
-				fmt.Printf("%-*s  %s [%s]\n", width, s.Key, v, s.From)
+				fmt.Fprintf(stdout, "%-*s  %s [%s]\n", width, s.Key, v, s.From)
 			}
 			return nil
 		}
-		return output.Encode(os.Stdout, format, struct {
+		return output.Encode(stdout, format, struct {
 			Settings []config.Setting `json:"settings" yaml:"settings" toml:"settings"`
 		}{settings})
 	}
@@ -2008,7 +2083,7 @@ Options:
 		}
 		for _, s := range settings {
 			if s.Key == a[1] {
-				fmt.Println(s.Value)
+				fmt.Fprintln(stdout, s.Value)
 				return nil
 			}
 		}
@@ -2018,7 +2093,7 @@ Options:
 		return nil // a table entry no file sets
 	case "set":
 		if len(a) < 3 {
-			fmt.Fprint(os.Stderr, help)
+			fmt.Fprint(stderr, help)
 			return errUsage
 		}
 		p, err := target()
@@ -2028,7 +2103,7 @@ Options:
 		if err := config.Set(p, a[1], a[2:]...); err != nil {
 			return err
 		}
-		fmt.Printf("Set %s in %s\n", a[1], p)
+		fmt.Fprintf(stdout, "Set %s in %s\n", a[1], p)
 		return nil
 	case "unset":
 		if err := need(2); err != nil {
@@ -2041,11 +2116,11 @@ Options:
 		if err := config.Unset(p, a[1]); err != nil {
 			return err
 		}
-		fmt.Printf("Unset %s in %s\n", a[1], p)
+		fmt.Fprintf(stdout, "Unset %s in %s\n", a[1], p)
 		return nil
 	case "init":
 		if len(a) > 2 {
-			fmt.Fprint(os.Stderr, help)
+			fmt.Fprint(stderr, help)
 			return errUsage
 		}
 		p := *file
@@ -2067,7 +2142,7 @@ Options:
 		}
 		text := config.Template(set, keys)
 		if p == "-" {
-			fmt.Print(text)
+			fmt.Fprint(stdout, text)
 			return nil
 		}
 		if _, err := os.Stat(p); err == nil && !*force {
@@ -2079,10 +2154,10 @@ Options:
 		if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
 			return err
 		}
-		fmt.Printf("Wrote %s\n", p)
+		fmt.Fprintf(stdout, "Wrote %s\n", p)
 		return nil
 	}
-	fmt.Fprint(os.Stderr, help)
+	fmt.Fprint(stderr, help)
 	return fmt.Errorf("config: unknown action %q", a[0])
 }
 
@@ -2124,10 +2199,10 @@ func runPortable(dir, systemDir, saveDir, romDir, from string, copyFiles, dryRun
 			for _, a := range acts {
 				rows = append(rows, []string{a.Action, a.Path, strconv.FormatInt(a.Size, 10), a.Why})
 			}
-			if e := output.EncodeCSV(os.Stdout, []string{"action", "path", "size", "why"}, rows); e != nil {
+			if e := output.EncodeCSV(stdout, []string{"action", "path", "size", "why"}, rows); e != nil {
 				return e
 			}
-		} else if e := output.Encode(os.Stdout, format, struct {
+		} else if e := output.Encode(stdout, format, struct {
 			Actions []env.PortableAction `json:"actions" yaml:"actions" toml:"actions"`
 		}{acts}); e != nil {
 			return e
@@ -2154,7 +2229,7 @@ func runPortable(dir, systemDir, saveDir, romDir, from string, copyFiles, dryRun
 		if a.Why != "" {
 			line += " (" + a.Why + ")"
 		}
-		fmt.Println(line)
+		fmt.Fprintln(stdout, line)
 	}
 	if err != nil {
 		return err
@@ -2163,7 +2238,7 @@ func runPortable(dir, systemDir, saveDir, romDir, from string, copyFiles, dryRun
 	if dryRun {
 		verb = "Dry run: would set up"
 	}
-	fmt.Printf("%s %s: %s copied (%s), %d skipped\n", verb, dir, plural(copied, "file"), env.Size(bytes), skipped)
+	fmt.Fprintf(stdout, "%s %s: %s copied (%s), %d skipped\n", verb, dir, plural(copied, "file"), env.Size(bytes), skipped)
 	return nil
 }
 
@@ -2217,18 +2292,18 @@ Options:
 	}
 	changes, err := associate(exe, *remove, *dryRun)
 	for _, c := range changes {
-		fmt.Println("  " + c)
+		fmt.Fprintln(stdout, "  "+c)
 	}
 	if err != nil {
 		return err
 	}
 	switch {
 	case *dryRun:
-		fmt.Println("Dry run: nothing changed")
+		fmt.Fprintln(stdout, "Dry run: nothing changed")
 	case *remove:
-		fmt.Println("Removed the .dosz association")
+		fmt.Fprintln(stdout, "Removed the .dosz association")
 	default:
-		fmt.Printf("Associated .dosz with %s\n", exe)
+		fmt.Fprintf(stdout, "Associated .dosz with %s\n", exe)
 	}
 	return nil
 }
@@ -2284,33 +2359,33 @@ Options:
 			}
 			rows = append(rows, []string{r.File, strings.Join(names, " > "), r.Chain.Kind, r.Chain.Boot, r.Chain.System, r.Broken})
 		}
-		if err := output.EncodeCSV(os.Stdout, []string{"file", "parents", "kind", "boot", "system_file", "broken"}, rows); err != nil {
+		if err := output.EncodeCSV(stdout, []string{"file", "parents", "kind", "boot", "system_file", "broken"}, rows); err != nil {
 			return err
 		}
 	case output.Fancy, output.Plain:
 		for i, r := range results {
 			if i > 0 {
-				fmt.Println()
+				fmt.Fprintln(stdout)
 			}
 			printChain(r.Chain, sys)
 			if r.Broken != "" {
-				fmt.Printf("Broken:  %s\n", r.Broken)
+				fmt.Fprintf(stdout, "Broken:  %s\n", r.Broken)
 			}
 			if *usedBy {
 				if len(r.UsedBy) == 0 {
-					fmt.Println("Used by: no archive beside it")
+					fmt.Fprintln(stdout, "Used by: no archive beside it")
 				}
 				for j, u := range r.UsedBy {
 					k := "Used by:"
 					if j > 0 {
 						k = ""
 					}
-					fmt.Printf("%-8s %s\n", k, filepath.Base(u))
+					fmt.Fprintf(stdout, "%-8s %s\n", k, filepath.Base(u))
 				}
 			}
 		}
 	default:
-		if err := output.Encode(os.Stdout, format, struct {
+		if err := output.Encode(stdout, format, struct {
 			Archives []result `json:"archives" yaml:"archives" toml:"archives"`
 		}{results}); err != nil {
 			return err
@@ -2352,13 +2427,13 @@ func printChain(c *chain.Chain, systemDir string) {
 		if len(notes) > 0 {
 			line += " (" + strings.Join(notes, "; ") + ")"
 		}
-		fmt.Println(line)
+		fmt.Fprintln(stdout, line)
 	}
 	if c.Kind != chain.KindShell && c.Kind != chain.KindOS {
 		if c.Boot != "" {
-			fmt.Printf("Boots:   %s, on DOSBox Pure's DOS\n", c.Boot)
+			fmt.Fprintf(stdout, "Boots:   %s, on DOSBox Pure's DOS\n", c.Boot)
 		} else {
-			fmt.Println("Boots:   DOSBox Pure's start menu (no AUTOBOOT.DBP)")
+			fmt.Fprintln(stdout, "Boots:   DOSBox Pure's start menu (no AUTOBOOT.DBP)")
 		}
 		return
 	}
@@ -2374,7 +2449,7 @@ func printChain(c *chain.Chain, systemDir string) {
 	case c.System == "":
 		state = "not in " + systemDir
 	}
-	fmt.Printf("%s└─ %s (%s: %s)\n", indent, c.Boot, what, state)
+	fmt.Fprintf(stdout, "%s└─ %s (%s: %s)\n", indent, c.Boot, what, state)
 }
 
 // runStart implements `doszer start`.
@@ -2391,7 +2466,7 @@ Options:
       --display MODE      Windows 9x: switch to WxHxBPP first (640x480x8: 256 colours)
   -n, --dry-run           show the change without writing
   -f, --force             replace an existing WINDOWS.BAT
-` + flagFormatData + flagHelp
+` + flagNoLog + flagFormatData + flagHelp
 	if ok, err := parse(fs, args, help, 1, 2); !ok {
 		return err
 	}
@@ -2404,7 +2479,7 @@ Options:
 		switch format {
 		case output.Fancy, output.Plain:
 			if len(cs) == 0 {
-				fmt.Printf("No programs installed in %s (%s model)\n", source, m.Model())
+				fmt.Fprintf(stdout, "No programs installed in %s (%s model)\n", source, m.Model())
 				return nil
 			}
 			width := 0
@@ -2423,7 +2498,7 @@ Options:
 				if c.Current {
 					notes = append(notes, "current")
 				}
-				fmt.Printf("  %-*s  %s\n", width, c.Path, strings.Join(notes, ", "))
+				fmt.Fprintf(stdout, "  %-*s  %s\n", width, c.Path, strings.Join(notes, ", "))
 			}
 			return nil
 		case output.CSV:
@@ -2431,9 +2506,9 @@ Options:
 			for _, c := range cs {
 				rows = append(rows, []string{c.Path, c.Target, c.Runs, strconv.FormatBool(c.Likely), strconv.FormatBool(c.Current)})
 			}
-			return output.EncodeCSV(os.Stdout, []string{"path", "target", "runs", "likely", "current"}, rows)
+			return output.EncodeCSV(stdout, []string{"path", "target", "runs", "likely", "current"}, rows)
 		}
-		return output.Encode(os.Stdout, format, struct {
+		return output.Encode(stdout, format, struct {
 			Model      string            `json:"model" yaml:"model" toml:"model"`
 			Candidates []start.Candidate `json:"candidates" yaml:"candidates" toml:"candidates"`
 		}{m.Model().String(), cs})
@@ -2443,17 +2518,17 @@ Options:
 		return err
 	}
 	if format.Structured() {
-		return output.Encode(os.Stdout, format, res)
+		return output.Encode(stdout, format, res)
 	}
 	verb := "Set"
 	if *dryRun {
 		verb = "Dry run: would set"
 	}
 	if res.Exec != "" {
-		fmt.Printf("%s boot.exec = %s\n", verb, res.Exec)
+		fmt.Fprintf(stdout, "%s boot.exec = %s\n", verb, res.Exec)
 		return nil
 	}
-	fmt.Printf("%s WINDOWS.BAT (%s model):\n%s", verb, res.Model, strings.ReplaceAll(res.Batch, "\r\n", "\n"))
+	fmt.Fprintf(stdout, "%s WINDOWS.BAT (%s model):\n%s", verb, res.Model, strings.ReplaceAll(res.Batch, "\r\n", "\n"))
 	return nil
 }
 
@@ -2473,7 +2548,7 @@ Options:
 	if err != nil {
 		return fmt.Errorf("%s: %w", fs.Arg(0), err)
 	}
-	_, err = os.Stdout.Write(data)
+	_, err = stdout.Write(data)
 	return err
 }
 
@@ -2489,7 +2564,7 @@ Usage: doszer convert [options] FILE
 Options:
       --to TYPE           dosp (a parent, files games share) or dosz (a game) (default: dosp)
   -n, --dry-run           show the changes without making them
-` + flagFormatText + flagHelp
+` + flagNoLog + flagFormatText + flagHelp
 	if ok, err := parse(fs, args, help, 1, 1); !ok {
 		return err
 	}
@@ -2503,12 +2578,12 @@ Options:
 		if *dryRun {
 			verb = "Dry run: would rename"
 		}
-		fmt.Printf("%s %s to %s\n", verb, filepath.Base(res.From), filepath.Base(res.To))
+		fmt.Fprintf(stdout, "%s %s to %s\n", verb, filepath.Base(res.From), filepath.Base(res.To))
 		for _, c := range res.Children {
-			fmt.Printf("  parent of %s\n", filepath.Base(c))
+			fmt.Fprintf(stdout, "  parent of %s\n", filepath.Base(c))
 		}
 		for _, f := range res.Removed {
-			fmt.Printf("  removed %s\n", f)
+			fmt.Fprintf(stdout, "  removed %s\n", f)
 		}
 	}
 	return err
@@ -2538,12 +2613,12 @@ Options:
       --overwrite         replace archives that differ (never a shell or OS image; not for zip)
       --flat              every game in roms, no folder per system (zip only)
   -n, --dry-run           show the copies without making them
-` + flagSystemDir + flagFormatData + flagHelp
+` + flagSystemDir + flagNoLog + flagFormatData + flagHelp
 	if ok, err := parse(fs, args, help, 0, 1<<20); !ok {
 		return err
 	}
 	if !*all && fs.NArg() == 0 {
-		fmt.Fprint(os.Stderr, help)
+		fmt.Fprint(stderr, help)
 		return errUsage
 	}
 	cfg, err := config.Load("")
@@ -2613,15 +2688,15 @@ Options:
 		for i, s := range steps {
 			rows[i] = []string{s.What, s.Action, s.From, s.To}
 		}
-		return output.EncodeCSV(os.Stdout, []string{"what", "action", "from", "to"}, rows)
+		return output.EncodeCSV(stdout, []string{"what", "action", "from", "to"}, rows)
 	case output.JSON, output.YAML, output.TOML:
-		return output.Encode(os.Stdout, format, struct {
+		return output.Encode(stdout, format, struct {
 			ROMs  string        `json:"roms" yaml:"roms" toml:"roms"`
 			BIOS  string        `json:"bios" yaml:"bios" toml:"bios"`
 			Steps []export.Step `json:"steps" yaml:"steps" toml:"steps"`
 		}{t.ROMs, t.BIOS, steps})
 	}
-	fmt.Printf("ROMs:  %s\nBIOS:  %s (from %s)\n\n", t.ROMs, t.BIOS, t.From)
+	fmt.Fprintf(stdout, "ROMs:  %s\nBIOS:  %s (from %s)\n\n", t.ROMs, t.BIOS, t.From)
 	words := map[string]string{export.Copy: "Copied", export.Replace: "Replaced", export.Same: "Same", export.Conflict: "Differs, kept", export.Missing: "Not here"}
 	if *dryRun {
 		words[export.Copy], words[export.Replace] = "Would copy", "Would replace"
@@ -2633,10 +2708,10 @@ Options:
 		if r, err := filepath.Rel(filepath.Dir(t.ROMs), s.To); err == nil && !strings.HasPrefix(r, "..") {
 			to = r
 		}
-		fmt.Printf("%-14s %s\n", words[s.Action], to)
+		fmt.Fprintf(stdout, "%-14s %s\n", words[s.Action], to)
 	}
 	if counts[export.Conflict] > 0 && !*overwrite {
-		fmt.Println("\n--overwrite replaces the archives that differ.")
+		fmt.Fprintln(stdout, "\n--overwrite replaces the archives that differ.")
 	}
 	if counts[export.Missing] > 0 {
 		return fmt.Errorf("%s not found here", plural(counts[export.Missing], "file"))
@@ -2671,14 +2746,14 @@ func exportZip(paths []string, sys, dir string, flat, dryRun bool) error {
 		for i, s := range steps {
 			rows[i] = []string{s.What, s.Action, s.From, s.To}
 		}
-		return output.EncodeCSV(os.Stdout, []string{"what", "action", "from", "to"}, rows)
+		return output.EncodeCSV(stdout, []string{"what", "action", "from", "to"}, rows)
 	case output.JSON, output.YAML, output.TOML:
-		return output.Encode(os.Stdout, format, struct {
+		return output.Encode(stdout, format, struct {
 			Archive string        `json:"archive" yaml:"archive" toml:"archive"`
 			Steps   []export.Step `json:"steps" yaml:"steps" toml:"steps"`
 		}{path, steps})
 	}
-	fmt.Printf("ZIP:  %s\n\n", path)
+	fmt.Fprintf(stdout, "ZIP:  %s\n\n", path)
 	word := "Added"
 	if dryRun {
 		word = "Would add"
@@ -2689,7 +2764,7 @@ func exportZip(paths []string, sys, dir string, flat, dryRun bool) error {
 		if s.Action == export.Missing {
 			w, missing = "Not here", missing+1
 		}
-		fmt.Printf("%-14s %s\n", w, s.To)
+		fmt.Fprintf(stdout, "%-14s %s\n", w, s.To)
 	}
 	if missing > 0 {
 		return fmt.Errorf("%s not found here", plural(missing, "file"))
@@ -2711,7 +2786,7 @@ Options:
       --name NAME         the game's name (default: the program's file name)
   -n, --dry-run           show the manifest without building
   -f, --force             replace an existing OUTPUT
-` + flagFormatData + flagHelp
+` + flagNoLog + flagFormatData + flagHelp
 	if ok, err := parse(fs, args, help, 1, 3); !ok {
 		return err
 	}
@@ -2724,7 +2799,7 @@ Options:
 		switch format {
 		case output.Fancy, output.Plain:
 			if len(cs) == 0 {
-				fmt.Printf("No programs in %s\n", parent)
+				fmt.Fprintf(stdout, "No programs in %s\n", parent)
 				return nil
 			}
 			width := 0
@@ -2732,7 +2807,7 @@ Options:
 				width = max(width, len(c.Path))
 			}
 			for _, c := range cs {
-				fmt.Printf("  %-*s  %s\n", width, c.Path, c.Target)
+				fmt.Fprintf(stdout, "  %-*s  %s\n", width, c.Path, c.Target)
 			}
 			return nil
 		case output.CSV:
@@ -2740,9 +2815,9 @@ Options:
 			for _, c := range cs {
 				rows = append(rows, []string{c.Path, c.Target})
 			}
-			return output.EncodeCSV(os.Stdout, []string{"path", "target"}, rows)
+			return output.EncodeCSV(stdout, []string{"path", "target"}, rows)
 		}
-		return output.Encode(os.Stdout, format, struct {
+		return output.Encode(stdout, format, struct {
 			Candidates []start.Candidate `json:"candidates" yaml:"candidates" toml:"candidates"`
 		}{cs})
 	}
@@ -2755,7 +2830,7 @@ Options:
 		return err
 	}
 	if format.Structured() {
-		return output.Encode(os.Stdout, format, struct {
+		return output.Encode(stdout, format, struct {
 			Output   string             `json:"output" yaml:"output" toml:"output"`
 			Manifest *manifest.Manifest `json:"manifest" yaml:"manifest" toml:"manifest"`
 		}{res.Output, res.Manifest})
@@ -2765,9 +2840,9 @@ Options:
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Dry run: would build %s from:\n\n%s", res.Output, data)
+		fmt.Fprintf(stdout, "Dry run: would build %s from:\n\n%s", res.Output, data)
 		return nil
 	}
-	fmt.Printf("Built %s\n", res.Output)
+	fmt.Fprintf(stdout, "Built %s\n", res.Output)
 	return nil
 }

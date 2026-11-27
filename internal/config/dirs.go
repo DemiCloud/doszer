@@ -236,16 +236,17 @@ func dirOf(flag, flagName, setting, key string, find func() Dir) Dir {
 	return find()
 }
 
-// StatsPath returns the file doszer's window keeps play time in: beside
-// the executable when portable, else $XDG_STATE_HOME/doszer (default
-// ~/.local/state/doszer) on Linux and the user config directory's doszer
-// folder elsewhere.
-func StatsPath() (string, error) {
-	const name = "playtime.json"
+// StateDir is where doszer keeps what it records - play time, logs:
+// beside the executable when portable, else $XDG_STATE_HOME/doszer
+// (default ~/.local/state/doszer) on Linux, %LOCALAPPDATA%\doszer on
+// Windows (not roaming: nothing here is worth syncing) and the user
+// config directory's doszer folder elsewhere.
+func StateDir() (string, error) {
 	if Portable() {
-		return filepath.Join(ExeDir(), name), nil
+		return ExeDir(), nil
 	}
-	if runtime.GOOS == "linux" {
+	switch runtime.GOOS {
+	case "linux":
 		base := os.Getenv("XDG_STATE_HOME")
 		if base == "" {
 			home, err := os.UserHomeDir()
@@ -254,13 +255,37 @@ func StatsPath() (string, error) {
 			}
 			base = filepath.Join(home, ".local", "state")
 		}
-		return filepath.Join(base, "doszer", name), nil
+		return filepath.Join(base, "doszer"), nil
+	case "windows":
+		if base := os.Getenv("LOCALAPPDATA"); base != "" {
+			return filepath.Join(base, "doszer"), nil
+		}
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "doszer", name), nil
+	return filepath.Join(dir, "doszer"), nil
+}
+
+// StatsPath returns the file doszer's window keeps play time in, in
+// StateDir.
+func StatsPath() (string, error) {
+	dir, err := StateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "playtime.json"), nil
+}
+
+// LogsDir returns the folder doszer records its runs in: logs in
+// StateDir.
+func LogsDir() (string, error) {
+	dir, err := StateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "logs"), nil
 }
 
 // DataDir is where a user-profile (not portable) doszer keeps its own

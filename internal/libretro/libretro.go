@@ -15,7 +15,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -25,6 +24,7 @@ import (
 	"github.com/ebitengine/purego"
 
 	"github.com/DemiCloud/doszer/internal/dl"
+	"github.com/DemiCloud/doszer/internal/runlog"
 	"github.com/DemiCloud/doszer/internal/sdl"
 )
 
@@ -585,7 +585,7 @@ func environment(cmd uint32, data unsafe.Pointer) uintptr {
 // are not read. Only warnings and errors are shown.
 func logMessage(level uint32, format unsafe.Pointer) uintptr {
 	if level >= logWarn {
-		fmt.Fprintf(os.Stderr, "[DOSBox Pure] %s", goString((*byte)(format)))
+		fmt.Fprintf(runlog.Stderr, "[DOSBox Pure] %s", goString((*byte)(format)))
 	}
 	return 0
 }

@@ -58,8 +58,9 @@ internal/dl/         dlopen/LoadLibrary without cgo
 internal/builtin/    programs embedded at build time, extracted to the user cache: the DOSBox Pure core (and SDL DLLs on Windows, `make core`), redumper (`make redumper`); guest programs, the same on every platform: RunExit, PRESSKEY (`make guest`)
 internal/dump/       doszer dump: a CD to BIN/CUE with redumper (Windows redumper through interop under WSL), resumable; or --from an existing image (Import)
 internal/redump/     Redump datfile: load (Logiqx XML/zip, compact), embedded snapshot (`make dat`), cached run-time copy, track matching; any CUE image (or zip of one) read in Redump's track layout, read-offset correction; Mode 1 and Mode 2 Form 1 sector rebuild (EDC/ECC, sector.go; XA subheaders predicted from the ISO 9660 file system, xa.go) so an archive's ISO tracks hash as Redump's raw ones, both ways in one read (ArchiveImages, for redump and verify)
-internal/interrupt/  removes registered temporary paths on SIGINT/SIGTERM
-internal/status/     terminal progress: current step with a spinner, finished steps
+internal/interrupt/  removes registered temporary paths on SIGINT/SIGTERM, then runs exit hooks (a run log's last write)
+internal/runlog/     run logs: a folder per recorded command under config.LogsDir (report.json, transcript.log, attachments); Stdout/Stderr, which cmd/doszer prints through, tee into the transcript; status steps and Decide's choices recorded; List/Find/History for logs and the window
+internal/status/     terminal progress: current step with a spinner, finished steps (SetHook: their timings, shown or not)
 internal/output/     --format (romctl's names): fancy/plain text, or a result as JSON/YAML/TOML/CSV
 assets/              the icon (doszer.svg; doszer-small.svg for 16/24 px), its .ico; `make icon` renders it into cmd/doszer's .syso and internal/libretro/icon.png
 examples/            complete example manifests (checked by internal/manifest's TestExamples)
@@ -173,6 +174,13 @@ README.md            doszer usage, configuration, install workflow
   field as noise (`exec = ''`, `extract = []`, etc.) - confirmed against
   go-toml/v2 to omit a whole empty table, not just an empty scalar, before
   relying on it.
+- Output: `cmd/doszer` prints through `stdout`/`stderr` (`runlog.Stdout`/
+  `Stderr`), never `fmt.Printf` or `os.Stdout` directly, so a recorded
+  run's transcript has every line. A choice doszer makes on its own (a
+  boot model, a start program, a folder) goes through `runlog.Decide`
+  with its reason, and the command line the window runs carries it as an
+  explicit flag, so replaying a run's commands doesn't depend on the
+  choice coming out the same.
 - Errors: wrap with context, return to `main`, which prints
   `[YYYY-MM-DD HH:MM:SS] ERROR: <message>` to stderr and exits 1. Validation
   collects every error and reports them together (`errors.Join`).

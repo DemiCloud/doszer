@@ -736,11 +736,11 @@ type guiState struct {
 }
 
 func statePath() string {
-	p, err := config.StatsPath()
+	dir, err := config.StateDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(filepath.Dir(p), "window.json")
+	return filepath.Join(dir, "window.json")
 }
 
 func loadState() guiState {

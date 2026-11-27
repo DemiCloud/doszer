@@ -898,6 +898,28 @@ archives beside FILE that have it as a parent, at any remove: what a
 shared shell archive is holding up. The Games page shows the same, from
 a game's right-click menu.
 
+## Logs
+
+Once doszer is set up (a config file exists), every command that makes
+or changes something - `dump`, `init`, `build`, `install`, `start` and
+`child` given a program, `repack`, `convert`, `set`, `prepare`,
+`export` - records its run in a folder of its own under `logs/` in
+doszer's state directory (see [First run](#first-run)):
+
+- `report.json`: the command line and working directory, doszer's,
+  DOSBox Pure's and redumper's versions, every setting in effect and
+  where it came from, each step with its timing, the choices doszer made
+  itself and why, warnings, and the result (`ok`, `failed` with the
+  error, or `interrupted`).
+- `transcript.log`: everything the command printed, a timestamped line
+  each (`out`, `err`), with its steps (`step`), choices (`why`) and
+  detail the terminal doesn't show (`log`).
+
+A dry run (`-n`) isn't recorded; `--no-log` skips one run. The window's
+commands are recorded the same way, as the command lines they run; one
+flow's runs (Import a disc: dump, init, install, start, build) share a
+session, so they are listed together.
+
 ## Window
 
 `doszer gui` opens doszer's window; `doszer` with no arguments opens it
@@ -1052,9 +1074,10 @@ the window keeps play time for the session only. (Caches - the
 extracted DOSBox Pure core, Redump's datfile - are not settings or
 saves, and are kept.)
 
-Play time is kept in `playtime.json`, and the window's size and view in
-`window.json`: beside doszer when portable, else `$XDG_STATE_HOME/doszer`
-(default `~/.local/state/doszer`) on Linux and `%APPDATA%\doszer` on
+Play time is kept in `playtime.json`, the window's size and view in
+`window.json` and run logs in `logs/` (see [Logs](#logs)): beside doszer
+when portable, else `$XDG_STATE_HOME/doszer` (default
+`~/.local/state/doszer`) on Linux and `%LOCALAPPDATA%\doszer` on
 Windows. Archives under the ROM directory are recorded by their path
 inside it, so moving the whole folder (or a portable doszer to another
 drive) keeps their history.
