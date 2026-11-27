@@ -62,7 +62,11 @@ Options:
 		if *export != "" {
 			return errors.New("--delete and --export exclude each other")
 		}
-		return deleteLogs(dir, runs)
+		n, err := runlog.Delete(dir, runs)
+		if n > 0 {
+			fmt.Fprintf(stdout, "Deleted %s\n", plural(n, "run"))
+		}
+		return err
 	}
 	if *export != "" {
 		if len(runs) == 0 {
@@ -233,29 +237,6 @@ func showRun(r *runlog.Report) error {
 			fmt.Fprintf(stdout, "  %s\n", f)
 		}
 	}
-	return nil
-}
-
-// deleteLogs removes runs' folders from the logs directory dir.
-func deleteLogs(dir string, runs []*runlog.Report) error {
-	seen := map[string]bool{}
-	n := 0
-	for _, r := range runs {
-		f := r.Folder()
-		if seen[f] {
-			continue
-		}
-		seen[f] = true
-		// Only a folder directly in the logs directory: never anything else.
-		if rel, err := filepath.Rel(dir, f); err != nil || rel != filepath.Base(f) {
-			return fmt.Errorf("%s: not in %s", f, dir)
-		}
-		if err := os.RemoveAll(f); err != nil {
-			return err
-		}
-		n++
-	}
-	fmt.Fprintf(stdout, "Deleted %s\n", plural(n, "run"))
 	return nil
 }
 

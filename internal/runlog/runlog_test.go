@@ -208,3 +208,64 @@ func TestExport(t *testing.T) {
 		t.Errorf("commands.txt:\n%s", c)
 	}
 }
+
+// TestSessionLayout: a session's runs are numbered folders in its
+// folder, indexed; a run on its own is a session of one; deleting a
+// session's last run removes its folder.
+func TestSessionLayout(t *testing.T) {
+	quiet(t)
+	logs := t.TempDir()
+	run := func(session, command string, err error) {
+		t.Setenv(SessionEnv, session)
+		if err := Start(logs, command, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		Update(func(r *Report) { r.Name = "Example Game" })
+		Finish(err)
+		reset()
+	}
+	run("20261127-120000.000", "dump", nil)
+	run("20261127-120000.000", "dump", nil)
+	run("20261127-120000.000", "build", errors.New("boom"))
+	run("", "repack", nil)
+
+	for _, p := range []string{
+		"20261127-120000.000/" + SessionFile,
+		"20261127-120000.000/01-dump/" + ReportFile,
+		"20261127-120000.000/02-dump/" + TranscriptFile,
+		"20261127-120000.000/03-build/" + ReportFile,
+	} {
+		if _, err := os.Stat(filepath.Join(logs, p)); err != nil {
+			t.Errorf("%s: %v", p, err)
+		}
+	}
+	s, err := LoadSession(filepath.Join(logs, "20261127-120000.000"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Runs) != 3 || s.Result != ResultFailed || s.Name != "Example Game" || s.Runs[2].ID != "20261127-120000.000/03-build" {
+		t.Errorf("index %+v", s)
+	}
+	runs, _ := List(logs)
+	if len(runs) != 4 || runs[0].Command != "repack" || runs[0].Session == "20261127-120000.000" || runs[0].Session == "" {
+		t.Fatalf("runs %+v", runs)
+	}
+	lone := runs[0]
+
+	// Deleting one of a session's runs re-indexes it; its last, removes it.
+	if n, err := Delete(logs, Find(runs, "20261127-120000.000/02-dump")); n != 1 || err != nil {
+		t.Fatalf("delete one: %d, %v", n, err)
+	}
+	if s, _ := LoadSession(filepath.Join(logs, "20261127-120000.000")); s == nil || len(s.Runs) != 2 {
+		t.Errorf("after deleting one: %+v", s)
+	}
+	if n, err := Delete(logs, []*Report{lone}); n != 1 || err != nil {
+		t.Fatalf("delete lone: %d, %v", n, err)
+	}
+	if _, err := os.Stat(filepath.Join(logs, lone.Session)); !os.IsNotExist(err) {
+		t.Errorf("session folder left: %v", err)
+	}
+	if _, err := Delete(logs, []*Report{{dir: filepath.Join(logs, "..", "elsewhere", "x")}}); err == nil {
+		t.Error("deleted outside the logs")
+	}
+}

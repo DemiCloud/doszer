@@ -64,13 +64,18 @@ func Start(logsDir, command string, args []string, versions map[string]string) e
 		return errors.New("runlog: already recording")
 	}
 	now := time.Now()
-	id, dir, err := newFolder(logsDir, now, command)
+	session, err := sessionFolder(logsDir, now)
 	if err != nil {
 		return err
 	}
+	id, dir, err := runFolder(filepath.Join(logsDir, session), command)
+	if err != nil {
+		return err
+	}
+	id = session + "/" + id
 	cwd, _ := os.Getwd()
 	r := &Report{
-		ID: id, Session: os.Getenv(SessionEnv), Command: command, Args: args, Dir: cwd,
+		ID: id, Session: session, Command: command, Args: args, Dir: cwd,
 		Started: now, Result: ResultRunning, Versions: versions,
 		OS: runtime.GOOS + "/" + runtime.GOARCH, dir: dir,
 	}
@@ -94,27 +99,64 @@ func Start(logsDir, command string, args []string, versions map[string]string) e
 
 var errInterrupted = errors.New("interrupted")
 
-// newFolder makes the run's folder: its start time to the millisecond
-// and the command, made unique if two runs started together.
-func newFolder(logsDir string, t time.Time, command string) (id, dir string, err error) {
-	if err := os.MkdirAll(logsDir, 0o755); err != nil {
-		return "", "", err
-	}
-	base := t.Format("20060102-150405.000") + "-" + command
-	for i := 0; ; i++ {
-		id = base
-		if i > 0 {
-			id = fmt.Sprintf("%s-%d", base, i+1)
+// NewSession names a new session: when it started, to the
+// millisecond, so session folders sort by date.
+func NewSession(t time.Time) string { return t.Format("20060102-150405.000") }
+
+// sessionFolder returns the session the run belongs to: SessionEnv's
+// (the window's flow, its folder made by its first run), else a new one
+// of its own, made unique if another started at the same moment.
+func sessionFolder(logsDir string, t time.Time) (string, error) {
+	if s := os.Getenv(SessionEnv); s != "" {
+		if s != filepath.Base(s) || s == "." || s == ".." {
+			return "", fmt.Errorf("%s=%q: not a session name", SessionEnv, s)
 		}
-		dir = filepath.Join(logsDir, id)
-		err = os.Mkdir(dir, 0o755)
+		return s, os.MkdirAll(filepath.Join(logsDir, s), 0o755)
+	}
+	if err := os.MkdirAll(logsDir, 0o755); err != nil {
+		return "", err
+	}
+	base := NewSession(t)
+	for i := 0; ; i++ {
+		s := base
+		if i > 0 {
+			s = fmt.Sprintf("%s-%d", base, i+1)
+		}
+		err := os.Mkdir(filepath.Join(logsDir, s), 0o755)
 		if err == nil {
-			return id, dir, nil
+			return s, nil
 		}
 		if !errors.Is(err, os.ErrExist) || i > 100 {
+			return "", err
+		}
+	}
+}
+
+// runFolder makes the run's folder in its session's: its place in the
+// session and its command (01-dump, 02-init...), numbered because a
+// session can run a command twice (two discs, an install again).
+func runFolder(sessionDir, command string) (id, dir string, err error) {
+	ents, err := os.ReadDir(sessionDir)
+	if err != nil {
+		return "", "", err
+	}
+	n := 0
+	for _, e := range ents {
+		if e.IsDir() {
+			n++
+		}
+	}
+	for i := n + 1; i < n+100; i++ {
+		id = fmt.Sprintf("%02d-%s", i, command)
+		dir = filepath.Join(sessionDir, id)
+		if err = os.Mkdir(dir, 0o755); err == nil {
+			return id, dir, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
 			return "", "", err
 		}
 	}
+	return "", "", err
 }
 
 // Active reports whether a run is being recorded.
@@ -281,12 +323,10 @@ func (rc *recorder) save() error {
 	if err != nil {
 		return err
 	}
-	p := filepath.Join(rc.r.dir, ReportFile)
-	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+	if err := writeFile(filepath.Join(rc.r.dir, ReportFile), append(data, '\n')); err != nil {
 		return err
 	}
-	return os.Rename(tmp, p)
+	return writeSession(filepath.Dir(rc.r.dir))
 }
 
 // SettingsFor records the settings in effect for sourceDir ("" for
@@ -321,5 +361,6 @@ func Discard() {
 	}
 	rec.transcript.Close()
 	os.RemoveAll(rec.r.dir)
+	removeOrIndex(filepath.Dir(rec.r.dir))
 	rec.done = true
 }

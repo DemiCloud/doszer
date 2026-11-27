@@ -904,8 +904,27 @@ a game's right-click menu.
 Once doszer is set up (a config file exists), every command that makes
 or changes something - `dump`, `init`, `build`, `install`, `start` and
 `child` given a program, `repack`, `convert`, `set`, `prepare`,
-`export` - records its run in a folder of its own under `logs/` in
-doszer's state directory (see [First run](#first-run)):
+`export` - records its run under `logs/` in doszer's state directory
+(see [First run](#first-run)). Runs are kept by session: the commands
+one of the window's flows ran, or a command run on its own, a session
+of one. A session's folder is named by when it started, so the folders
+sort by date; in it, an index and a folder per run, numbered in the
+order they ran (a session can run a command twice: two discs, an
+install again):
+
+```
+logs/
+  20261127-123432.519/
+    session.json        the game, its source and archive, the result, the runs
+    01-dump/            report.json, transcript.log, redumper.log
+    02-init/            report.json, transcript.log, DOSZ.TOML.after
+    03-install/
+    04-start/
+    05-build/
+```
+
+A run is named by its session and folder (`20261127-123432.519/05-build`),
+a session by its folder's name. A run's folder holds:
 
 - `report.json`: the command line and working directory, doszer's,
   DOSBox Pure's and redumper's versions, every setting in effect and
@@ -946,7 +965,8 @@ the archives they built).
 default the last run's history - into one ZIP for debugging:
 `commands.txt` (their command lines in order, with the working directory
 and, as comments, each run's time, result and the choices doszer made,
-to replay them), each run's folder under `runs/`, and this machine's
+to replay them), each session's index and run folders under `runs/`, as
+they are in `logs/`, and this machine's
 `env.json` and `settings.json`. Game data never goes in: files are listed
 by name, size and hash only. Everything is redacted unless `--no-redact`:
 the home folder becomes `~`, any user's folder in a path (`C:\Users\x`,

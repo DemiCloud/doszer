@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -224,10 +223,9 @@ func (a *app) jobDone(d *dialog) {
 	a.dirty = true
 }
 
-// newSession names a new flow's runs: when it started, and this window.
-func newSession() string {
-	return time.Now().Format("20060102-150405.000") + "-" + strconv.Itoa(os.Getpid())
-}
+// newSession names a new flow's runs, as runlog names a session: when
+// it started.
+func newSession() string { return runlog.NewSession(time.Now()) }
 
 // commandLine is args as one would type them.
 func commandLine(args []string) string {

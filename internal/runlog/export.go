@@ -18,7 +18,8 @@ import (
 //
 //   - commands.txt: the runs' command lines in the order they ran, each
 //     with its time, result and the choices doszer made, to replay them;
-//   - runs/<id>/: each run's folder (report, transcript, attachments);
+//   - runs/<session>/: each session's index, and its runs' folders
+//     (report, transcript, attachments) - those among runs;
 //   - extra's files at their names (the machine's environment).
 func Export(w io.Writer, runs []*Report, red *redact.Redactor, extra map[string][]byte) error {
 	runs = append([]*Report(nil), runs...)
@@ -42,7 +43,21 @@ func Export(w io.Writer, runs []*Report, red *redact.Redactor, extra map[string]
 	if err := add("commands.txt", text([]byte(Commands(runs))), now); err != nil {
 		return err
 	}
+	indexed := map[string]bool{}
 	for _, r := range runs {
+		if s := filepath.Dir(r.dir); !indexed[s] {
+			indexed[s] = true
+			if data, err := os.ReadFile(filepath.Join(s, SessionFile)); err == nil {
+				if red != nil {
+					if data, err = red.JSON(data); err != nil {
+						return err
+					}
+				}
+				if err := add("runs/"+r.Session+"/"+SessionFile, data, now); err != nil {
+					return err
+				}
+			}
+		}
 		ents, err := os.ReadDir(r.dir)
 		if err != nil {
 			return err

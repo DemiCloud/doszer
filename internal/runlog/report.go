@@ -1,6 +1,6 @@
 // Package runlog records what doszer's commands do, for reproducing a
 // build and debugging one: each run gets a folder under the logs
-// directory (config.LogsDir) holding its report (ReportFile: the command
+// directory (config.LogsDir), in its session's (session.go), holding its report (ReportFile: the command
 // line, settings in effect, versions, steps with their timings, the
 // decisions doszer made on its own, warnings, and what was built,
 // installed or dumped), the command's output with timestamps
@@ -11,7 +11,6 @@ package runlog
 
 import (
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -287,34 +286,6 @@ func Load(dir string) (*Report, error) {
 	}
 	r.dir = dir
 	return &r, nil
-}
-
-// List reads every run under dir, newest first. A folder without a
-// readable report is skipped; a missing dir is no runs.
-func List(dir string) ([]*Report, error) {
-	ents, err := os.ReadDir(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var out []*Report
-	for _, e := range ents {
-		if !e.IsDir() {
-			continue
-		}
-		if r, err := Load(filepath.Join(dir, e.Name())); err == nil {
-			out = append(out, r)
-		}
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if !out[i].Started.Equal(out[j].Started) {
-			return out[i].Started.After(out[j].Started)
-		}
-		return out[i].ID > out[j].ID
-	})
-	return out, nil
 }
 
 // Find returns the runs id names, from runs (newest first), oldest
