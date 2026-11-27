@@ -1066,7 +1066,10 @@ Dashboard, Library - its Games, Parents and Systems views - and Logs.
   no shell or image in the system folder is new enough or the one it
   boots is too old (judged by their names, e.g. "Windows 98 (games)"),
   and its disc: the first data track's SHA-1 from its manifest, short
-  (a click copies it whole), marked Redump when Redump has the disc. A
+  (a click copies it whole), marked Redump when Redump has every disc the
+game declares; else, or with no disc at all, a muted Unverified: no
+  datfile doszer reads vouches for it (Redump covers discs only). The
+  System menu's Unverified shows those games. A
   game over parent archives shows its
   chain, and one whose chain is broken says why. The System menu shows
   only the games booting one system (DOS, a shell, an OS image), needing

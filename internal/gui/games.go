@@ -484,7 +484,12 @@ func (a *app) drawRow(g *library.Game, x, y, w, h int32, sel, hover bool) {
 		a.badge(strings.TrimPrefix(osl, "Needs "), c, mx, my)
 	}
 	my += a.lineHeight(12, false) + a.px(12)
-	if g.Disc != "" {
+	switch {
+	case g.Err != "":
+	case g.Disc == "":
+		// Nothing a datfile vouches for: no disc to check against Redump.
+		a.badge("Unverified", colFaint, mx, my)
+	default:
 		id := g.Disc[:8]
 		iw := a.textWidth(id, 12, false) + a.px(16)
 		ih := a.lineHeight(12, false) + a.px(6)
@@ -496,8 +501,10 @@ func (a *app) drawRow(g *library.Game, x, y, w, h int32, sel, hover bool) {
 		a.monoText(id, mx+a.px(8), my+a.px(3), colText)
 		full := g.Disc
 		a.clipHit(mx, my, iw, ih, func(bool) { a.copyText(full) })
-		if g.Redump != "" {
+		if g.Verified {
 			a.text("Redump", mx+iw+a.px(8), my+a.px(3), 12, false, colDOS)
+		} else {
+			a.text("Unverified", mx+iw+a.px(8), my+a.px(3), 12, false, colFaint)
 		}
 	}
 	played := "Never played"
@@ -758,6 +765,12 @@ func (a *app) filters() []string {
 		}
 		group(dirs)
 	}
+	for i := range a.list {
+		if g := &a.list[i]; g.Err == "" && !g.Verified {
+			group([]string{filterUnverified})
+			break
+		}
+	}
 	var found []string
 	for _, f := range problems {
 		for i := range a.list {
@@ -786,6 +799,8 @@ func (a *app) matchesFilter(g *library.Game) bool {
 		return g.Boot != "" && a.files != nil && !a.hasSystem(g.Boot, g.Kind == library.KindShell)
 	case filterBroken, filterUnmet, filterNoIcon, filterUnreadable:
 		return a.problem(g, a.filter)
+	case filterUnverified:
+		return g.Err == "" && !g.Verified
 	}
 	if root, ok := strings.CutPrefix(a.filter, filterIn); ok {
 		return g.Root == root
@@ -844,7 +859,11 @@ func (a *app) needBadge(g *library.Game) (string, bool) {
 // programs need, disc hash or Redump name holds q (lower case).
 func matchesSearch(g *library.Game, q string) bool {
 	kind, _ := kindLabel(g)
-	for _, s := range []string{g.Name, g.Rel, g.System, g.Boot, kind, needLabel(g), g.Disc, g.Redump} {
+	verified := "unverified"
+	if g.Verified {
+		verified = "verified"
+	}
+	for _, s := range []string{g.Name, g.Rel, g.System, g.Boot, kind, needLabel(g), g.Disc, g.Redump, verified} {
 		if strings.Contains(strings.ToLower(s), q) {
 			return true
 		}

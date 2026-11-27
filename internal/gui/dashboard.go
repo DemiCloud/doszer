@@ -19,6 +19,7 @@ const (
 	filterUnmet      = "Windows too old"
 	filterNoIcon     = "No icon"
 	filterUnreadable = "Unreadable"
+	filterUnverified = "Unverified" // no datfile vouches for it: not a problem, a fact
 )
 
 // problems are the problem filters, in the Dashboard's order.

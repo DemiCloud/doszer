@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -102,5 +103,46 @@ func TestScanSeveralFolders(t *testing.T) {
 	}
 	if len(games) != 2 || games[0].Root != a || games[0].Rel != "dos/One.dosz" || games[1].Root != b || games[1].PlayTime != time.Minute {
 		t.Errorf("games = %+v", games)
+	}
+}
+
+// A game is verified when every disc it declares has a Redump match; a
+// game with no disc has nothing to verify.
+func TestVerified(t *testing.T) {
+	dir := t.TempDir()
+	disc := func(id, redump string) string {
+		s := "\n[[source.media]]\nid = '" + id + "'\n"
+		if redump != "" {
+			s += "redump_name = '" + redump + "'\n"
+		}
+		return s + "tracks = [{ type = 'data', sha1 = '" + strings.Repeat("a", 40) + "' }]\n"
+	}
+	head := "format = 1\nname = 'Game'\n\n[boot]\nexec = 'C:\\GAME.EXE'\n"
+	tests := []struct {
+		name, manifest string
+		want           bool
+	}{
+		{"none", head, false},
+		{"matched", head + disc("disc1", "Game (USA) (Disc 1)") + disc("disc2", "Game (USA) (Disc 2)"), true},
+		{"one unmatched", head + disc("disc1", "Game (USA) (Disc 1)") + disc("disc2", ""), false},
+	}
+	for _, tt := range tests {
+		writeArchive(t, filepath.Join(dir, tt.name+".dosz"), map[string]string{"DOSZ.TOML": tt.manifest})
+	}
+	games, err := Scan([]string{dir}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, g := range games {
+		if g.Err != "" {
+			t.Fatalf("%s: %s", g.Rel, g.Err)
+		}
+		got[strings.TrimSuffix(g.Rel, ".dosz")] = g.Verified
+	}
+	for _, tt := range tests {
+		if got[tt.name] != tt.want {
+			t.Errorf("%s: verified %v, want %v", tt.name, got[tt.name], tt.want)
+		}
 	}
 }

@@ -51,6 +51,7 @@ type Game struct {
 	Need     platform.Need // what its programs need (its own, else its parents')
 	Disc     string        // its first disc's first data track SHA-1 (the manifest's [[source.media]]), or ""
 	Redump   string        // that disc's Redump name, if Redump has it
+	Verified bool          // every disc it declares has a Redump match; false with none to check
 
 	LastPlayed time.Time
 	PlayTime   time.Duration
@@ -174,6 +175,12 @@ func read(dir, p string) Game {
 					}
 					// The disc identifies the game, as a title ID would.
 					if len(m.Source.Media) > 0 {
+						g.Verified = true
+						for _, md := range m.Source.Media {
+							if md.RedumpName == "" && md.Redump == "" {
+								g.Verified = false
+							}
+						}
 						md := m.Source.Media[0]
 						g.Redump = md.RedumpName
 						for _, t := range md.Tracks {
