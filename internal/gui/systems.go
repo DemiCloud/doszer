@@ -207,14 +207,14 @@ func (a *app) drawSystems() {
 
 func (a *app) drawSystemRow(f *systemFile, i int, x, y, w, h int32) {
 	sel := i == a.sysSel
-	k := key(f.Name, f.Shell)
+	sk := key(f.Name, f.Shell)
 	if a.sysMulti.count() > 1 {
-		sel = a.sysMulti.has(k)
+		sel = a.sysMulti.has(sk)
 	}
 	a.card(x, y, w, h, sel, a.hovered(x, y, w, h))
-	a.dragItem(&a.sysMulti, a.sysOrder, k, x, y, w, h, nil)
+	a.dragItem(&a.sysMulti, a.sysOrder, sk, x, y, w, h, nil)
 	a.clipHit(x, y, w, h, func(bool) {
-		a.sysMulti.click(a.sysOrder(), k, a.curSys(), a.rightClicking)
+		a.sysMulti.click(a.sysOrder(), sk, a.curSys(), a.rightClicking)
 		a.sysSel = i
 		a.menuAt = func() { a.systemMenu(a.sysMulti.selected(a.sysOrder(), a.curSys())) }
 	})

@@ -86,6 +86,15 @@ func TestScreenshot(t *testing.T) {
 				a.gamesMenu(a.selectedGames())
 			}
 		},
+		"sysright.png": func(a *App) { // right click on the selected system
+			a.Show("systems")
+			a.render()
+			x, y, w, _ := a.area()
+			a.mx, a.my = x+w/3, y+a.pad()+a.lineHeight(15, true)+a.px(8)+a.px(30)
+			a.click(false) // select it
+			a.render()
+			a.rightClick()
+		},
 		"logsscroll.png": func(a *App) {
 			a.Show("logs")
 			for _, r := range a.runs {
