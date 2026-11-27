@@ -4,14 +4,18 @@ import (
 	"archive/zip"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/DemiCloud/doszer/internal/redact"
 	"github.com/DemiCloud/doszer/internal/status"
 )
+
+func redactFor() *redact.Redactor { return redact.For("/home/alice", "alice", "") }
 
 // quiet points the process's standard output and error at a file for
 // the test, so what Stdout and Stderr pass through isn't printed.
@@ -158,5 +162,49 @@ func TestReadArchive(t *testing.T) {
 	}
 	if a.Content != 14000 || a.Compressed >= a.Content || len(a.SHA1) != 40 || a.Ratio() <= 0 || a.Ratio() >= 1 {
 		t.Errorf("archive %+v", a)
+	}
+}
+
+func TestExport(t *testing.T) {
+	quiet(t)
+	logs := t.TempDir()
+	if err := Start(logs, "build", []string{"/home/alice/src", "out.dosz"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Fprintln(Stdout, "Built /home/alice/out.dosz")
+	Decide("boot model", "dos", "programs need DOS")
+	Attach("DOSZ.TOML.before", []byte("# by alice\n"))
+	Finish(nil)
+	runs, _ := List(logs)
+
+	var buf strings.Builder
+	if err := Export(&buf, runs, redactFor(), map[string][]byte{"env.json": []byte(`{"home":"/home/alice"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(strings.NewReader(buf.String()), int64(buf.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{}
+	for _, f := range zr.File {
+		rc, _ := f.Open()
+		var b strings.Builder
+		_, _ = io.Copy(&b, rc)
+		rc.Close()
+		files[f.Name] = b.String()
+	}
+	id := runs[0].ID
+	for _, name := range []string{"commands.txt", "env.json", "runs/" + id + "/" + ReportFile, "runs/" + id + "/" + TranscriptFile, "runs/" + id + "/DOSZ.TOML.before"} {
+		data, ok := files[name]
+		if !ok {
+			t.Errorf("no %s in %v", name, files)
+			continue
+		}
+		if strings.Contains(strings.ToLower(data), "alice") {
+			t.Errorf("%s not redacted:\n%s", name, data)
+		}
+	}
+	if c := files["commands.txt"]; !strings.Contains(c, "doszer build ~/src out.dosz") || !strings.Contains(c, "#   chose boot model: dos (programs need DOS)") {
+		t.Errorf("commands.txt:\n%s", c)
 	}
 }

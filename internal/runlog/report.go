@@ -297,59 +297,99 @@ func List(dir string) ([]*Report, error) {
 	return out, nil
 }
 
-// Find returns the runs id names, from runs (newest first): the run with
-// that ID or a unique ID prefix, every run of the session with that ID,
-// or - for a path - every run whose source or archive it is, oldest
-// first, as they happened.
+// Find returns the runs id names, from runs (newest first), oldest
+// first: the run with that ID, every run of the session with that ID,
+// or - for a path - the history (History) of every run whose source or
+// archive it is; else the run whose ID starts with id, if only one does.
 func Find(runs []*Report, id string) []*Report {
-	var out []*Report
 	for _, r := range runs {
 		if r.ID == id {
 			return []*Report{r}
 		}
 	}
+	var seed []*Report
 	for _, r := range runs {
 		if r.Session != "" && r.Session == id {
+			seed = append(seed, r)
+		}
+	}
+	if len(seed) > 0 {
+		return oldestFirst(seed)
+	}
+	if abs, err := filepath.Abs(id); err == nil && (strings.ContainsAny(id, `/\`) || exists(id)) {
+		for _, r := range runs {
+			if samePath(r.Source, abs) || samePath(r.Archive, abs) {
+				seed = append(seed, r)
+			}
+		}
+		if len(seed) > 0 {
+			return related(runs, seed)
+		}
+	}
+	for _, r := range runs {
+		if strings.HasPrefix(r.ID, id) {
+			seed = append(seed, r)
+		}
+	}
+	if len(seed) != 1 {
+		return nil // none, or ambiguous
+	}
+	return seed
+}
+
+// History returns every run about the same game as r, oldest first: its
+// session's, those whose source or archive is r's, and so on along the
+// chain - the source's build, the archive's repack, the repack's set.
+func History(runs []*Report, r *Report) []*Report {
+	return related(runs, []*Report{r})
+}
+
+// related returns seed and every run linked to it, directly or through
+// others, by a session or a path one's source or archive and the
+// other's share.
+func related(runs, seed []*Report) []*Report {
+	in := map[*Report]bool{}
+	paths := map[string]bool{}
+	sessions := map[string]bool{}
+	key := func(p string) string {
+		if filepath.Separator == '\\' {
+			return strings.ToLower(p)
+		}
+		return p
+	}
+	add := func(r *Report) {
+		in[r] = true
+		for _, p := range []string{r.Source, r.Archive} {
+			if p != "" {
+				paths[key(p)] = true
+			}
+		}
+		if r.Session != "" {
+			sessions[r.Session] = true
+		}
+	}
+	for _, r := range seed {
+		add(r)
+	}
+	for grew := true; grew; {
+		grew = false
+		for _, r := range runs {
+			if in[r] {
+				continue
+			}
+			if sessions[r.Session] && r.Session != "" || r.Source != "" && paths[key(r.Source)] || r.Archive != "" && paths[key(r.Archive)] {
+				add(r)
+				grew = true
+			}
+		}
+	}
+	var out []*Report
+	for _, r := range runs {
+		if in[r] {
 			out = append(out, r)
 		}
 	}
-	if len(out) == 0 {
-		if abs, err := filepath.Abs(id); err == nil && (strings.ContainsAny(id, `/\`) || exists(id)) {
-			for _, r := range runs {
-				if samePath(r.Source, abs) || samePath(r.Archive, abs) {
-					out = append(out, r)
-				}
-			}
-		}
-	}
-	if len(out) == 0 {
-		for _, r := range runs {
-			if strings.HasPrefix(r.ID, id) {
-				out = append(out, r)
-			}
-		}
-		if len(out) > 1 {
-			return nil // ambiguous
-		}
-	}
-	// Oldest first: the order they ran in.
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Started.Before(out[j].Started) })
-	return out
-}
-
-// History returns every run about the same game as r: its session's, and
-// those whose source or archive is r's, oldest first.
-func History(runs []*Report, r *Report) []*Report {
-	var out []*Report
-	for _, o := range runs {
-		if o == r || r.Session != "" && o.Session == r.Session ||
-			r.Source != "" && (samePath(o.Source, r.Source) || samePath(o.Archive, r.Source)) ||
-			r.Archive != "" && (samePath(o.Archive, r.Archive) || samePath(o.Source, r.Archive)) {
-			out = append(out, o)
-		}
-	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Started.Before(out[j].Started) })
-	return out
+	return oldestFirst(out)
 }
 
 // Latest returns the newest run that wrote archive, or nil.
@@ -360,6 +400,11 @@ func Latest(runs []*Report, archive string) *Report {
 		}
 	}
 	return nil
+}
+
+func oldestFirst(rs []*Report) []*Report {
+	sort.SliceStable(rs, func(i, j int) bool { return rs[i].Started.Before(rs[j].Started) })
+	return rs
 }
 
 func exists(p string) bool {

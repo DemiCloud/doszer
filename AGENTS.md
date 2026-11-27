@@ -59,7 +59,8 @@ internal/builtin/    programs embedded at build time, extracted to the user cach
 internal/dump/       doszer dump: a CD to BIN/CUE with redumper (Windows redumper through interop under WSL), resumable; or --from an existing image (Import)
 internal/redump/     Redump datfile: load (Logiqx XML/zip, compact), embedded snapshot (`make dat`), cached run-time copy, track matching; any CUE image (or zip of one) read in Redump's track layout, read-offset correction; Mode 1 and Mode 2 Form 1 sector rebuild (EDC/ECC, sector.go; XA subheaders predicted from the ISO 9660 file system, xa.go) so an archive's ISO tracks hash as Redump's raw ones, both ways in one read (ArchiveImages, for redump and verify)
 internal/interrupt/  removes registered temporary paths on SIGINT/SIGTERM, then runs exit hooks (a run log's last write)
-internal/runlog/     run logs: a folder per recorded command under config.LogsDir (report.json, transcript.log, attachments); Stdout/Stderr, which cmd/doszer prints through, tee into the transcript; status steps and Decide's choices recorded; List/Find/History for logs and the window
+internal/redact/     removes home folders, user and host names from what is shared (the logs ZIP): one list of rules, applied to text and JSON values
+internal/runlog/     run logs: a folder per recorded command under config.LogsDir (report.json, transcript.log, attachments); Stdout/Stderr, which cmd/doszer prints through, tee into the transcript; status steps and Decide's choices recorded; List/Find/History (runs linked by session, source or archive, along the chain) for logs and the window; Export (the debug ZIP: commands.txt, runs/, redacted)
 internal/status/     terminal progress: current step with a spinner, finished steps (SetHook: their timings, shown or not)
 internal/output/     --format (romctl's names): fancy/plain text, or a result as JSON/YAML/TOML/CSV
 assets/              the icon (doszer.svg; doszer-small.svg for 16/24 px), its .ico; `make icon` renders it into cmd/doszer's .syso and internal/libretro/icon.png
@@ -327,6 +328,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | `info` | Implemented |
 | `deps` | Implemented; checked on a real parent chain (RetroDECK windows3x: games over BOWEP.shell over the Win31 shell) |
 | `env` | Implemented |
+| `logs` | Implemented; checked on a scratch portable setup (init, build, repack, set; export redacted), not yet on a real game |
 | `config` | Implemented |
 | `gui` | Implemented: Games, Systems, Settings, first-run dialog; every page rendered on Linux (WSLg) and Windows (TestScreenshot), setup choices tested; launching a game, Browse and saving settings not yet tried live |
 | `associate` | Implemented (Windows, HKCU); dry run checked on Windows, not yet applied live |

@@ -64,6 +64,7 @@ doszer deps    FILE... [--used-by] [--system-dir DIR]
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
 doszer export  FILE... | --all [DIR...] [--to retrodeck|zip] [--dir DIR] [--systems LIST] [--overwrite] [--flat] [-n] [--system-dir DIR]
+doszer logs    [RUN|SESSION|PATH...] [--transcript] [--export FILE.zip [--no-redact] [-f]]
 doszer env     [--system-dir DIR] [--save-dir DIR] [--rom-dir DIR]
 doszer env portable [DIR] [--copy] [--from FILE] [-n] [-f]
 doszer gui     [--rom-dir DIR] [--system-dir DIR] [--save-dir DIR]
@@ -929,7 +930,25 @@ doszer's state directory (see [First run](#first-run)):
   the manifest embedded in the archive written (`DOSZ.TOML.archive`),
   and redumper's log (`redumper.log`).
 
-A dry run (`-n`) isn't recorded; `--no-log` skips one run. The window's
+A dry run (`-n`) isn't recorded; `--no-log` skips one run.
+
+`doszer logs` lists the runs, newest first. Given a run's ID it shows
+that run's report; given a session, or a source directory or archive,
+it lists that game's history: every run linked to it through a shared
+source, archive or session, along the chain (the source's build, that
+archive's repack, the repack's `set`). `--transcript` prints the runs'
+output instead.
+
+`doszer logs --export FILE.zip [RUN|SESSION|PATH...]` packs runs - by
+default the last run's history - into one ZIP for debugging:
+`commands.txt` (their command lines in order, with the working directory
+and, as comments, each run's time, result and the choices doszer made,
+to replay them), each run's folder under `runs/`, and this machine's
+`env.json` and `settings.json`. Game data never goes in: files are listed
+by name, size and hash only. Everything is redacted unless `--no-redact`:
+the home folder becomes `~`, any user's folder in a path (`C:\Users\x`,
+`/mnt/c/Users/x`, `/home/x`) `<user>`, and the user and host names, as
+words, `<user>` and `<host>`. The window's
 commands are recorded the same way, as the command lines they run; one
 flow's runs (Import a disc: dump, init, install, start, build) share a
 session, so they are listed together.

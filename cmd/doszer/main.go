@@ -96,6 +96,7 @@ func init() {
 		{"verify", "check archives against their manifests and the specification", runVerify},
 		{"lint", "warn about what makes archives worse without making them wrong", runLint},
 		{"export", "copy archives into RetroDECK's folders or a ZIP, with what they need", runExport},
+		{"logs", "list recorded runs, show one, or pack them into a ZIP", runLogs},
 		{"env", "show the directories, images and tools doszer finds here", runEnv},
 		{"config", "show, change or write doszer's configuration", runConfig},
 		{"gui", "open the window listing the archives in the ROM directory", runGUI},
@@ -244,7 +245,7 @@ func newFlags(name string) *pflag.FlagSet {
 }
 
 // dataCommands are the commands with a result --format can encode.
-var dataCommands = map[string]bool{"start": true, "child": true, "deps": true, "lint": true, "export": true, "info": true, "verify": true, "set": true, "version": true, "env": true, "config": true}
+var dataCommands = map[string]bool{"start": true, "child": true, "deps": true, "lint": true, "export": true, "info": true, "verify": true, "set": true, "version": true, "env": true, "config": true, "logs": true}
 
 // format is the resolved --format of the command running.
 var format = output.Plain
