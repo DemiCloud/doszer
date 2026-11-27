@@ -49,6 +49,17 @@ func TestStart(t *testing.T) {
 	if got := Launcher(dir, "SIERRA/KQ/SIERRA.EXE"); got != "SIERRA/KQ.BAT" {
 		t.Errorf("Launcher = %q, want the shallowest batch file running it", got)
 	}
+	write("HOCUS/NEWINST.BAT", "@echo off\r\necho Press any key...\r\npause\r\nSETUP\r\nHOCUS\r\n")
+	write("HOCUS/HOCUSG.BAT", "@ultramid -q  \r\n@__hpgrvs\r\n@ultramid -q -f\r\n")
+	if got := Launcher(dir, "HOCUS/HOCUS.EXE"); got != "" {
+		t.Errorf("Launcher = %q, want none: it pauses and runs setup first", got)
+	}
+	if got := Launcher(dir, "HOCUS/__HPGRVS.EXE"); got != "HOCUS/HOCUSG.BAT" {
+		t.Errorf("Launcher = %q, want the batch file around the driver it loads", got)
+	}
+	if got := Launcher(dir, "HOCUS/ULTRAMID.EXE"); got != "" {
+		t.Errorf("Launcher = %q, want none: the driver isn't its main command", got)
+	}
 	write("TWO/A.BAT", "game\r\n")
 	write("TWO/B.BAT", "game.exe /x\r\n")
 	if got := Launcher(dir, "TWO/GAME.EXE"); got != "" {
@@ -67,6 +78,22 @@ func TestStart(t *testing.T) {
 		}
 		if got != tt.want {
 			t.Errorf("DOSPath(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestBatchMain(t *testing.T) {
+	for _, tt := range []struct{ text, want string }{
+		{"@echo off\r\ncd \\sierra\\kq\r\nC:\\sierra\\kq\\sierra -o resource.cfg\r\n", "sierra"},
+		{"C:\r\ncd\\HOCUS\r\nHOCUS\r\n", "hocus"},
+		{"@ultramid -q\r\n@__hpgrvs\r\n@ultramid -q -f\r\n", "__hpgrvs"},
+		{"lh mouse\r\ncall game.bat\r\n", "game"},
+		{"echo Insert the CD\r\npause\r\ngame\r\n", ""},
+		{"setup\r\ngame\r\n", ""},
+		{"@echo off\r\n:start\r\nif errorlevel 1 goto start\r\necho.\r\n", ""},
+	} {
+		if got := BatchMain(tt.text); got != tt.want {
+			t.Errorf("BatchMain(%q) = %q, want %q", tt.text, got, tt.want)
 		}
 	}
 }

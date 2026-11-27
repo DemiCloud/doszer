@@ -21,7 +21,6 @@ func TestStartPrograms(t *testing.T) {
 		changes  []Change
 		dir      string
 		programs []string
-		exec     string
 	}{
 		{
 			"launcher beside the game folder (Sierra)",
@@ -30,35 +29,30 @@ func TestStartPrograms(t *testing.T) {
 			"SIERRA",
 			[]string{"SIERRA/KQ7DOS.BAT", "SIERRA/KQ7DOS/CHECKCD.BAT", "SIERRA/KQ7DOS/KQ7DOS.BAT",
 				"SIERRA/KQ7DOS/INSTALL.EXE", "SIERRA/KQ7DOS/SIERRA.EXE"},
-			"SIERRA/KQ7DOS.BAT",
 		},
 		{
 			"programs only: no pick",
 			add("GAME/GAME.EXE", "GAME/SETUP.EXE", "GAME/DATA/LEVEL1.DAT"),
 			"GAME",
 			[]string{"GAME/GAME.EXE", "GAME/SETUP.EXE"},
-			"",
 		},
 		{
 			"one batch file among programs",
 			add("GAME/SETUP.EXE", "GAME/PLAY.BAT", "GAME/GAME.COM"),
 			"GAME",
 			[]string{"GAME/PLAY.BAT", "GAME/GAME.COM", "GAME/SETUP.EXE"},
-			"GAME/PLAY.BAT",
 		},
 		{
 			"two batch files: no pick",
 			add("GAME/PLAY.BAT", "GAME/SETSOUND.BAT"),
 			"GAME",
 			[]string{"GAME/PLAY.BAT", "GAME/SETSOUND.BAT"},
-			"",
 		},
 		{
 			"deeper than one folder, outside dir and deleted are left out",
 			append(add("GAME/A/B/DEEP.BAT", "OTHER/RUN.BAT", "GAME/A/RUN.EXE"), Change{Path: "GAME/OLD.BAT", Kind: Deleted}),
 			"GAME",
 			[]string{"GAME/A/RUN.EXE"},
-			"",
 		},
 	}
 	for _, tt := range tests {
@@ -67,9 +61,6 @@ func TestStartPrograms(t *testing.T) {
 			if !reflect.DeepEqual(got, tt.programs) {
 				t.Errorf("programs %q, want %q", got, tt.programs)
 			}
-			if exec := StartProgram(got); exec != tt.exec {
-				t.Errorf("exec %q, want %q", exec, tt.exec)
-			}
 		})
 	}
 }
@@ -77,8 +68,8 @@ func TestStartPrograms(t *testing.T) {
 func TestRunFromPureZipSetsExec(t *testing.T) {
 	save := filepath.Join(t.TempDir(), "x.pure.zip")
 	os.WriteFile(save, zipBytes(t, map[string]string{
-		"SIERRA/GO.BAT":       "@echo off",
-		"SIERRA/GAME/RUN.EXE": "MZ",
+		"SIERRA/GO.BAT":       "@echo off\r\ncd game\r\nrun\r\n",
+		"SIERRA/GAME/RUN.EXE": "MZ" + strings.Repeat("\x00", 62),
 	}), 0o644)
 	manifest := "format = 1\n[boot]\n# exec = 'C:\\GAME\\GAME.EXE'\n"
 
@@ -87,8 +78,8 @@ func TestRunFromPureZipSetsExec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.Exec != `C:\SIERRA\GO.BAT` || !reflect.DeepEqual(rep.Programs, []string{`C:\SIERRA\GO.BAT`, `C:\SIERRA\GAME\RUN.EXE`}) {
-		t.Fatalf("report %+v", rep)
+	if rep.Exec != "" || !reflect.DeepEqual(rep.Programs, []string{`C:\SIERRA\GO.BAT`, `C:\SIERRA\GAME\RUN.EXE`}) {
+		t.Fatalf("report %+v", rep) // a dry run lists the programs, picks none
 	}
 	if b, _ := os.ReadFile(filepath.Join(src, "DOSZ.TOML")); string(b) != manifest {
 		t.Fatal("dry run changed the manifest")

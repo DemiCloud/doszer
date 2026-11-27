@@ -14,6 +14,8 @@ import (
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/fat"
 	"github.com/DemiCloud/doszer/internal/manifest"
+	"github.com/DemiCloud/doszer/internal/platform"
+	"github.com/DemiCloud/doszer/internal/start"
 	"github.com/DemiCloud/doszer/internal/status"
 	"github.com/DemiCloud/doszer/internal/vdisk"
 	"github.com/DemiCloud/doszer/internal/vhd"
@@ -109,7 +111,7 @@ type Report struct {
 
 	// Plain model only: the programs the install added that could start
 	// the game (StartPrograms, as DOS paths), and the one set as
-	// boot.exec when the manifest had none (StartProgram), else "".
+	// boot.exec when the manifest had none (start.Exec), else "".
 	Programs []string
 	Exec     string
 
@@ -159,8 +161,10 @@ func Run(opts Options) (*Report, error) {
 }
 
 // setStartProgram fills rep.Programs for a plain model install to C:, and
-// sets boot.exec to StartProgram's pick if the manifest has none (not in
-// a dry run, which only reports it).
+// sets boot.exec to the program the game most likely starts with
+// (start.Exec, the same pick as init's and the start list's) if the
+// manifest has none. Not in a dry run: the pick reads the extracted
+// programs.
 func setStartProgram(rep *Report, m *manifest.Manifest, opts Options) error {
 	if m.Model() != manifest.ModelPlain || rep.Drive != "C:" || rep.Extracted == nil {
 		return nil
@@ -168,14 +172,16 @@ func setStartProgram(rep *Report, m *manifest.Manifest, opts Options) error {
 	for _, p := range StartPrograms(rep.Changes, rep.Dir) {
 		rep.Programs = append(rep.Programs, DOSPath(rep.Drive, p))
 	}
-	if m.Boot.Exec != "" {
+	if m.Boot.Exec != "" || opts.DryRun {
 		return nil
 	}
-	if p := StartProgram(StartPrograms(rep.Changes, rep.Dir)); p != "" {
-		rep.Exec = DOSPath(rep.Drive, p)
-		if !opts.DryRun {
-			return manifest.SetExecFile(opts.Source, rep.Exec)
-		}
+	progs, err := platform.Scan(opts.Source)
+	if err != nil {
+		return nil // no pick; the programs are listed
+	}
+	if p, ok := platform.DOSPath(start.Exec(opts.Source, progs, m.Name)); ok && p != "" {
+		rep.Exec = p
+		return manifest.SetExecFile(opts.Source, rep.Exec)
 	}
 	return nil
 }

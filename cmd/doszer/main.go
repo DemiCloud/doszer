@@ -1847,22 +1847,14 @@ func chooseBoot(o *manifest.TemplateOptions, source, systemDir, boot string, cfg
 			msg += " (" + key + " for the Windows version)"
 		}
 		starters := platform.Starters(progs)
-		start := ""
-		switch {
-		case len(starters) == 1:
-			start = starters[0].Path
-		case len(starters) > 1:
-			if p := platform.Likely(starters, o.Name); p != nil {
-				start = p.Path
+		prog, via := "", ""
+		if p := start.Pick(starters, o.Name); p != nil {
+			prog = p.Path
+			if bat := platform.Launcher(source, prog); bat != "" {
+				prog, via = bat, path.Base(prog)
 			}
 		}
-		via := ""
-		if start != "" {
-			if bat := platform.Launcher(source, start); bat != "" {
-				start, via = bat, path.Base(start)
-			}
-		}
-		if p, ok := platform.DOSPath(start); ok && start != "" {
+		if p, ok := platform.DOSPath(prog); ok && prog != "" {
 			o.Exec = p
 			msg += ", exec = " + p
 			var notes []string

@@ -22,10 +22,11 @@ type Program struct {
 // helperName matches programs that set a game up or come with it rather
 // than run it: installers, uninstallers, AutoRun menus, README viewers,
 // registration cards, DirectX setup, Acrobat Reader, DOS extenders a game
-// loads itself (DOS/4GW, PMODE/W), sound setup, archivers. A DOS game often
+// loads itself (DOS/4GW, PMODE/W), sound setup, archivers, shareware
+// catalogs and order forms. A DOS game often
 // ships a Windows setup program or the reverse, and they say nothing
 // about what the game itself needs.
-var helperName = regexp.MustCompile(`(?i)^(setup|install|instal|inst|_inst|_isdel|uninst|unins\d*|uninstal|isuninst|autorun|setupw|setup32|winsetup|dxsetup\w*|directx|dsetup|ddhelp|readme|e?regcard|regist\w*|register|ar(16|32)e\d+|acrord\w*|checknt|winarj|dos4gw|dos32a|pmodew|cwsdpmi|rtm|rtmres|dpmi16bi|sndsetup|setsound|setsnd|soundset|setblast|mssetup|pkunzip|pkzip|lha|arj|unzip|vesatest|univbe|uvconfig|vbetest)\.(exe|com)$`)
+var helperName = regexp.MustCompile(`(?i)^(setup|install|instal|inst|_inst|_isdel|uninst|unins\d*|uninstal|isuninst|autorun|setupw|setup32|winsetup|dxsetup\w*|directx|dsetup|ddhelp|readme|e?regcard|regist\w*|register|ar(16|32)e\d+|catalog|dealers?|order|vendor|swcbbs|acrord\w*|checknt|winarj|dos4gw|dos32a|pmodew|cwsdpmi|rtm|rtmres|dpmi16bi|sndsetup|setsound|setsnd|soundset|setblast|mssetup|pkunzip|pkzip|lha|arj|unzip|vesatest|univbe|uvconfig|vbetest)\.(exe|com)$`)
 
 // helperDir matches directories that hold only such helpers.
 var helperDir = regexp.MustCompile(`(?i)^(directx|dx\d*|acrobat|acroread|redist)$`)
@@ -149,13 +150,12 @@ func Likely(starters []Program, name string) *Program {
 }
 
 // Launcher returns the batch file in dir, the source, that starts the
-// program at rel: of the batch files whose text runs it by name (a game's
-// own, often passing it arguments, e.g. Sierra's "sierra -o
-// resource.cfg"), the shallowest, if only one is that shallow. "" if
-// there's none.
+// program at rel: of the batch files whose main command runs it
+// (BatchMain: a game's own, often passing it arguments, e.g. Sierra's
+// "sierra -o resource.cfg"), the shallowest, if only one is that shallow.
+// "" if there's none.
 func Launcher(dir, rel string) string {
-	base := strings.TrimSuffix(path.Base(rel), path.Ext(rel))
-	runs := regexp.MustCompile(`(?im)^[^\r\n]*?(^|[\s\\/:@])` + regexp.QuoteMeta(base) + `(\.(exe|com))?(\s|$)`)
+	base := strings.ToLower(strings.TrimSuffix(path.Base(rel), path.Ext(rel)))
 	best, depth, tie := "", 1<<30, false
 	filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.EqualFold(filepath.Ext(p), ".bat") {
@@ -171,7 +171,7 @@ func Launcher(dir, rel string) string {
 			return nil
 		}
 		data, err := os.ReadFile(p)
-		if err != nil || !runs.Match(data) {
+		if err != nil || BatchMain(string(data)) != base {
 			return nil
 		}
 		n := strings.Count(r, "/")
@@ -187,6 +187,64 @@ func Launcher(dir, rel string) string {
 		return ""
 	}
 	return best
+}
+
+// batchSkipped are batch file commands that don't run the game: output,
+// directories, the environment, control flow.
+var batchSkipped = map[string]bool{"echo": true, "rem": true, "cls": true, "cd": true, "chdir": true,
+	"set": true, "path": true, "prompt": true, "if": true, "goto": true, "exit": true, "ctty": true,
+	"lh": true, "loadhigh": true, "shift": true, "break": true, "verify": true}
+
+// BatchMain returns the program a batch file runs as its main command,
+// lowercase, without directory or extension: the last command whose
+// program no earlier line ran (so a driver loaded before the game and
+// unloaded after it, HOCUSG.BAT's "ultramid -q" ... "ultramid -q -f",
+// isn't it). "" if the batch file pauses or runs a helper (an
+// installer's "run setup, then the game" script, which doesn't belong at
+// every start), or runs nothing.
+func BatchMain(text string) string {
+	var progs []string
+	for _, line := range strings.Split(strings.ReplaceAll(text, "\r", ""), "\n") {
+		f := strings.Fields(strings.TrimLeft(strings.TrimSpace(line), "@"))
+		if len(f) == 0 || strings.HasPrefix(f[0], ":") {
+			continue
+		}
+		cmd := strings.ToLower(f[0])
+		if (cmd == "lh" || cmd == "loadhigh" || cmd == "call") && len(f) > 1 {
+			cmd = strings.ToLower(f[1])
+		}
+		if strings.HasPrefix(cmd, `cd\`) || strings.HasPrefix(cmd, "cd/") || strings.HasPrefix(cmd, "cd.") {
+			continue // "cd\game", no space
+		}
+		if i := strings.LastIndexAny(cmd, `\/:`); i >= 0 {
+			cmd = cmd[i+1:]
+		}
+		if cmd == "" {
+			continue // a drive change: "C:"
+		}
+		ext := path.Ext(cmd)
+		switch ext {
+		case ".exe", ".com", ".bat":
+			cmd = strings.TrimSuffix(cmd, ext)
+		}
+		if cmd == "pause" || IsHelper(cmd+".exe") {
+			return ""
+		}
+		if batchSkipped[cmd] || strings.HasPrefix(cmd, "echo.") {
+			continue
+		}
+		progs = append(progs, cmd)
+	}
+	for i := len(progs) - 1; i >= 0; i-- {
+		earlier := false
+		for _, q := range progs[:i] {
+			earlier = earlier || q == progs[i]
+		}
+		if !earlier {
+			return progs[i]
+		}
+	}
+	return ""
 }
 
 // DOSPath returns rel, a slash-separated path in the source, as the path

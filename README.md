@@ -188,12 +188,16 @@ or image as above. It prints one line saying what it chose and why.
 
 For the plain model, `init` also sets `exec` when one program stands out:
 the only DOS program installed in the source once helpers (also DOS
-extenders, sound setup, VESA tools, archivers) are set aside, or of
-several, the only one named like its folder or the game
-(`DESCENT2/DESCENT2.EXE`). If the game's own batch file runs it (the
-shallowest batch file naming it, e.g. one passing it arguments, as
-Sierra's `sierra -o resource.cfg` does), `exec` is the batch file. Every
-part of the path must be an 8.3 name.
+extenders, sound setup, VESA tools, archivers, shareware catalogs and
+order forms) are set aside, or of several, the only one named like its
+folder or the game (`DESCENT2/DESCENT2.EXE`). If the game's own batch
+file runs it (the shallowest batch file whose main command it is: the
+last command no earlier line ran, so a driver loaded before the game and
+unloaded after it doesn't count; e.g. one passing it arguments, as
+Sierra's `sierra -o resource.cfg` does), `exec` is the batch file. A
+batch file that pauses or runs a helper (an installer's "setup, then the
+game" script) is never picked. Every part of the path must be an 8.3
+name.
 
 `--audio wav` writes `[pack] audio = "wav"`: larger than Ogg Vorbis, but
 every track's hash stays verifiable. For a disc with audio tracks, `init`
@@ -568,9 +572,8 @@ result for one.
    `Example Game/GAME/`.
 
 4. **Check the startup program.** `install` lists the batch files and
-   programs the installer wrote, and if exactly one batch file sits at
-   the top of the new folder (the one installers write to start the
-   game), sets it as `exec` in `Example Game/DOSZ.TOML`:
+   programs the installer wrote, and sets the one that stands out, by
+   `init`'s rule, as `exec` in `Example Game/DOSZ.TOML`:
 
    ```
    Programs installed:
@@ -746,9 +749,8 @@ given.
 
 For a plain model install, `install` lists the `.BAT`, `.COM` and `.EXE`
 files the installer added in the extracted folder or one folder below it,
-and if the manifest has no `exec` and exactly one batch file is at the
-shallowest level, sets `exec` to it (not under `--dry-run`, which only
-reports it). Under the other models the shell or OS image starts the
+and if the manifest has no `exec`, sets it to the program that stands out
+by `init`'s rule (not under `--dry-run`, which only lists the programs). Under the other models the shell or OS image starts the
 game (`WINDOWS.BAT`), so there is no `exec` to set.
 
 Installers for Windows 95 and 98 often record settings in the registry,
@@ -797,7 +799,7 @@ or parent archives.
 
 `doszer start SOURCE` lists the programs installed in a source (not on
 its discs), helpers such as setup and uninstall programs aside, the
-likeliest first (named after its folder or the game): DOS programs under
+likeliest first (the one `init` would pick): DOS programs under
 the plain model, each by the batch file that starts it if the game has
 one; Windows programs too under the shell and OS image models.
 

@@ -59,7 +59,7 @@ func Candidates(source string) ([]Candidate, *manifest.Manifest, error) {
 		}
 		keep = append(keep, p)
 	}
-	likely := likeliest(keep, m.Name)
+	likely := Pick(keep, m.Name)
 	cur := current(source, m)
 	var out []Candidate
 	for _, p := range keep {
@@ -294,6 +294,30 @@ func Batch(model manifest.Model, program, registry, display string) (string, err
 		return "", errors.New("WINDOWS.BAT is for the shell and OS image models")
 	}
 	return b.String(), nil
+}
+
+// Pick is the program a game most likely starts with, of progs (its
+// programs, helpers and disc programs aside): the only one, else
+// likeliest's, else nil. init, install and the start list all use it.
+func Pick(progs []platform.Program, name string) *platform.Program {
+	if len(progs) == 1 {
+		return &progs[0]
+	}
+	return likeliest(progs, name)
+}
+
+// Exec is the program a plain DOS game in source starts with, as the
+// source path boot.exec would name (the batch file that runs it, if the
+// game has one: platform.Launcher), or "": Pick of its DOS programs.
+func Exec(source string, progs []platform.Program, name string) string {
+	p := Pick(platform.Starters(progs), name)
+	if p == nil {
+		return ""
+	}
+	if b := platform.Launcher(source, p.Path); b != "" {
+		return b
+	}
+	return p.Path
 }
 
 // likeliest is the program the game most likely starts with: platform.Likely's

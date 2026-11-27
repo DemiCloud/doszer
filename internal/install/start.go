@@ -53,30 +53,6 @@ func StartPrograms(changes []Change, dir string) []string {
 	return out
 }
 
-// StartProgram picks boot.exec from StartPrograms' list: the only batch
-// file at the shallowest level, where installers write the batch file
-// that starts the game. It returns "" when there is none or more than
-// one, leaving the choice to the user.
-func StartProgram(programs []string) string {
-	if len(programs) == 0 {
-		return ""
-	}
-	top := strings.Count(programs[0], "/")
-	var bats []string
-	for _, p := range programs {
-		if strings.Count(p, "/") != top {
-			break
-		}
-		if strings.EqualFold(path.Ext(p), ".bat") {
-			bats = append(bats, p)
-		}
-	}
-	if len(bats) != 1 {
-		return ""
-	}
-	return bats[0]
-}
-
 // DOSPath turns a drive-relative slash path into a DOS path on drive
 // ("C:"), e.g. C:\GAME\GO.BAT.
 func DOSPath(drive, p string) string {
