@@ -1,8 +1,10 @@
-// Package gui is doszer's window. Games: the archives under the ROM
-// directory as a list or grid, with their icons (DOSZ.ICO), how they boot
-// and how long they've been played; choosing one runs it with `doszer
-// run` in a process of its own, timed. Systems: the shells and OS images
-// in the system directory, which games use them and which are missing.
+// Package gui is doszer's window. Dashboard: the collection at a glance.
+// Library: the games under the ROM directory as a list or grid, with
+// their icons (DOSZ.ICO), how they boot and how long they've been played
+// (choosing one runs it with `doszer run` in a process of its own,
+// timed); the parents games share; the shells and OS images in the
+// system directory, which games use them and which are missing. Logs:
+// the runs doszer recorded, each one's report and history.
 // Settings: doszer's configuration, written to its config file. On a
 // first run (no config file) it offers to set doszer up portable, in the
 // user's profile, or not at all - and an unconfigured doszer writes no
@@ -43,6 +45,7 @@ type Options struct {
 	Screenshot string
 	Setup      func(a *App)
 	StatsPath  string // play time file instead of config.StatsPath's (tests)
+	LogsDir    string // run logs instead of config.LogsDir's (tests)
 	Exe        string // the doszer that runs games and commands, instead of this one (tests)
 }
 
@@ -64,10 +67,15 @@ const (
 	pageParents
 	pageSystems
 	pageDashboard
+	pageLogs
+	pages
 )
 
 // pageNames name the pages, for window.json and Show.
-var pageNames = map[page]string{pageDashboard: "dashboard", pageGames: "games", pageParents: "parents", pageSystems: "systems"}
+var pageNames = map[page]string{pageDashboard: "dashboard", pageGames: "games", pageParents: "parents", pageSystems: "systems", pageLogs: "logs"}
+
+// inLibrary reports whether p is one of the Library tab's views.
+func inLibrary(p page) bool { return p == pageGames || p == pageParents || p == pageSystems }
 
 type app struct {
 	o        Options
@@ -119,7 +127,8 @@ type app struct {
 	child           *childDialog
 	selectAfterScan string // an archive to select once the list is read again
 	mx, my          int32
-	scroll          [4]int32       // per page, pixels
+	scroll          [pages]int32   // per page, pixels
+	libView         page           // the Library view shown last
 	dashboardH      int32          // the Dashboard's height, as last drawn
 	parentList      []library.Game // the .dosp archives
 	parentSel       int
@@ -127,6 +136,7 @@ type app struct {
 	games
 	systems
 	settings
+	logs
 
 	running string // archive being played, or ""
 	runCh   chan runResult
@@ -186,6 +196,8 @@ func Run(o Options) error {
 	}
 	a.initGames(st)
 	a.initSystems()
+	a.initLogs()
+	a.libView = pageGames
 	// The page shown last, else the Dashboard; screenshots start at Games.
 	if o.Screenshot == "" {
 		a.page = pageDashboard
@@ -228,6 +240,8 @@ func Run(o Options) error {
 			a.systemsScanned(r)
 		case r := <-a.runCh:
 			a.finished(r)
+		case r := <-a.logsCh:
+			a.logsRead(r)
 		default:
 		}
 		a.pollJobs()
@@ -240,7 +254,7 @@ func Run(o Options) error {
 		if a.dirty {
 			a.draw()
 		}
-		if a.o.Screenshot != "" && !a.scanning && !a.sysScanning {
+		if a.o.Screenshot != "" && !a.scanning && !a.sysScanning && !a.logsReading {
 			if a.o.Setup != nil && !a.setupDone {
 				a.o.Setup(a)
 				a.setupDone = true
@@ -299,6 +313,7 @@ func (a *app) reload() {
 	if sysChanged || romChanged {
 		a.rescanSystems()
 	}
+	a.readLogs()
 	a.loadSettings()
 	a.dirty = true
 }
@@ -414,6 +429,8 @@ func (a *app) event(e *sdl.Event) {
 			}
 		} else if a.add != nil && a.add.page == 2 {
 			a.add.scroll = max(0, a.add.scroll+int(e.Wheel())*3)
+		} else if a.page == pageLogs && a.mx >= a.logSplit && a.popup == nil && a.setup == nil && a.add == nil {
+			a.scrollLog(-e.Wheel() * a.px(72))
 		} else if a.settingsOpen && a.popup == nil {
 			a.scrollSettings(-e.Wheel() * a.px(72))
 		} else if a.popup == nil && a.setup == nil && a.add == nil {
@@ -512,13 +529,10 @@ func (a *app) key(sc int32, mod uint16) {
 		a.show(pageDashboard)
 		return
 	case ctrl && sc == sc2:
-		a.show(pageGames)
+		a.show(a.libView)
 		return
 	case ctrl && sc == sc3:
-		a.show(pageParents)
-		return
-	case ctrl && sc == sc4:
-		a.show(pageSystems)
+		a.show(pageLogs)
 		return
 	case ctrl && sc == scComma:
 		a.openSettings()
@@ -543,18 +557,25 @@ func (a *app) key(sc int32, mod uint16) {
 		a.systemsKey(sc)
 	case pageParents:
 		a.parentsKey(sc)
+	case pageLogs:
+		a.logsKey(sc)
 	}
 }
 
-// refresh rescans the game folders and the system directory.
+// refresh rescans the game folders and the system directory, and reads
+// the logs again.
 func (a *app) refresh() {
 	a.rescan()
 	a.rescanSystems()
+	a.readLogs()
 }
 
 // show switches to page p.
 func (a *app) show(p page) {
 	a.page, a.popup = p, nil
+	if inLibrary(p) {
+		a.libView = p
+	}
 	a.focus = nil
 	if p == pageGames {
 		a.focus = &a.search
@@ -570,6 +591,8 @@ func (a *app) contentH() int32 {
 		return a.parentsH()
 	case pageDashboard:
 		return a.dashboardH
+	case pageLogs:
+		return a.logsH()
 	}
 	return a.gamesH()
 }
@@ -606,6 +629,8 @@ func (a *app) render() {
 		a.drawParents()
 	case pageDashboard:
 		a.drawDashboard()
+	case pageLogs:
+		a.drawLogs()
 	}
 	a.popClip()
 	a.drawToolbar()
@@ -628,19 +653,37 @@ func (a *app) drawToolbar() {
 	p := a.pad()
 	y := mh + (th-a.px(32))/2
 	x := p
-	tab := func(label string, pg page) {
+	tab := func(label string, on bool, pg page) {
 		style := btnNormal
-		if a.page == pg {
+		if on {
 			style = btnOn
 		}
 		x += a.button(label, x, y, style, func() { a.show(pg); a.refresh() }) + a.px(4)
 	}
-	tab("Dashboard", pageDashboard)
-	tab("Games", pageGames)
-	tab("Parents", pageParents)
-	tab("Systems", pageSystems)
-	x += a.px(16)
-	a.fill(x-a.px(8), y+a.px(6), a.px(1), a.px(20), colLine)
+	sep := func() {
+		x += a.px(16)
+		a.fill(x-a.px(8), y+a.px(6), a.px(1), a.px(20), colLine)
+	}
+	tab("Dashboard", a.page == pageDashboard, pageDashboard)
+	tab("Library", inLibrary(a.page), a.libView)
+	tab("Logs", a.page == pageLogs, pageLogs)
+	sep()
+	if inLibrary(a.page) {
+		// The Library's views, as one control: labels of fixed width.
+		for _, v := range []struct {
+			label string
+			pg    page
+		}{{"Games", pageGames}, {"Parents", pageParents}, {"Systems", pageSystems}} {
+			style := btnNormal
+			if a.page == v.pg {
+				style = btnOn
+			}
+			pg := v.pg
+			x += a.button(v.label, x, y, style, func() { a.show(pg) }) + a.px(2)
+		}
+		x += a.px(2)
+		sep()
+	}
 	switch a.page {
 	case pageGames:
 		a.gamesToolbar(x, y)
@@ -648,6 +691,8 @@ func (a *app) drawToolbar() {
 		a.systemsToolbar(x, y)
 	case pageParents:
 		a.parentsToolbar(x, y)
+	case pageLogs:
+		a.logsToolbar(x, y)
 	}
 }
 
@@ -670,6 +715,8 @@ func (a *app) drawStatus() {
 		left = plural(len(a.parentList), "parent")
 	case pageDashboard:
 		left = a.dashboardStatus()
+	case pageLogs:
+		left = a.logsStatus()
 	}
 	x := p + a.text(a.ellipsize(left, a.w/2, 12, false), p, ty, 12, false, colMuted)
 

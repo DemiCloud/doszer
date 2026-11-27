@@ -219,6 +219,7 @@ func (a *app) jobDone(d *dialog) {
 	if j.after != nil {
 		j.after(j.err)
 	}
+	a.readLogs() // the command may have recorded a run
 	a.dirty = true
 }
 

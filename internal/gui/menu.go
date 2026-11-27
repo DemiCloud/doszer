@@ -7,6 +7,7 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/chain"
 	"github.com/DemiCloud/doszer/internal/library"
+	"github.com/DemiCloud/doszer/internal/runlog"
 )
 
 // gameMenu opens a game's right-click menu at the mouse, its submenus
@@ -24,6 +25,12 @@ func (a *app) gameMenu(g *library.Game) {
 		{label: "Dependencies", fn: func() { a.showDeps(path, name) }},
 		{label: "Verify", fn: func() { a.runDoszer("Verify: "+name, []string{"verify", "--format", "plain", path}, nil) }},
 		{label: "Lint", fn: func() { a.lint(path, name) }},
+	}
+	if r := runlog.Latest(a.runs, path); r != nil {
+		id := r.ID
+		tools = append(tools, menuItem{label: "Build log", fn: func() { a.showRun(id) }})
+	}
+	tools = append(tools, []menuItem{
 		{label: "-"},
 		{label: "Repack…", fn: func() {
 			a.confirm("Repack "+name+"?", "Repack", func() {
@@ -37,7 +44,7 @@ func (a *app) gameMenu(g *library.Game) {
 			{label: "Edit WINDOWS.BAT…", fn: func() { a.openEditorMode(g, editBat) }},
 			{label: "Edit DOSZ.TOML…", fn: func() { a.openEditorMode(g, editToml) }},
 		}},
-	}
+	}...)
 	change := []menuItem{{label: "Parent", sub: a.parentItems(g)}}
 	switch g.Kind {
 	case library.KindOS:

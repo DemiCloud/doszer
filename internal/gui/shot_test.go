@@ -16,6 +16,7 @@ import (
 // configuration's), DOSZER_GUI_OUT
 // (where the PNGs go), DOSZER_GUI_SYSTEM (a system directory, optional),
 // DOSZER_GUI_STATS (a play time file, optional, only read),
+// DOSZER_GUI_LOGS (a run logs folder, optional, only read),
 // DOSZER_GUI_ONLY (shot names, comma-separated: only those),
 // DOSZER_GUI_EXE (a doszer binary, optional: shots running a command),
 // DOSZER_GUI_CUE (a disc image, optional: Import a disc; with DOSZER_GUI_BUILD
@@ -42,9 +43,29 @@ func TestScreenshot(t *testing.T) {
 		"systems.png":   func(a *App) { a.Show("systems") },
 		"parents.png":   func(a *App) { a.Show("parents") },
 		"dashboard.png": func(a *App) { a.Show("dashboard") },
-		"settings.png":  func(a *App) { a.Show("settings") },
-		"setup.png":     func(a *App) { a.OpenSetup() },
-		"menu.png":      func(a *App) { a.OpenGameMenu(0) },
+		"logs.png":      func(a *App) { a.Show("logs") },
+		"logsbuild.png": func(a *App) { // the newest build, ok or not
+			a.Show("logs")
+			for i, r := range a.runs {
+				if r.Build != nil && r.Build.Archive != nil {
+					a.logSel = i
+					break
+				}
+			}
+		},
+		"logsscroll.png": func(a *App) {
+			a.Show("logs")
+			for i, r := range a.runs {
+				if r.Build != nil && r.Build.Archive != nil {
+					a.logSel = i
+					break
+				}
+			}
+			a.logScroll = a.px(600)
+		},
+		"settings.png": func(a *App) { a.Show("settings") },
+		"setup.png":    func(a *App) { a.OpenSetup() },
+		"menu.png":     func(a *App) { a.OpenGameMenu(0) },
 		"edit.png": func(a *App) {
 			if len(a.view) > 0 {
 				a.openEditor(&a.list[a.view[0]])
@@ -184,6 +205,7 @@ func TestScreenshot(t *testing.T) {
 			Version:    "test",
 			SDL:        sdlLibs,
 			StatsPath:  stats,
+			LogsDir:    os.Getenv("DOSZER_GUI_LOGS"),
 			Screenshot: filepath.Join(out, name),
 			Setup:      setup,
 			Exe:        exe,

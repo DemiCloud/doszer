@@ -5,11 +5,13 @@ import (
 	"time"
 
 	"github.com/DemiCloud/doszer/internal/library"
+	"github.com/DemiCloud/doszer/internal/runlog"
 )
 
 // The Dashboard: the collection at a glance. Everything on it is the
-// games' and the system folder's own data, and each figure leads to
-// where it comes from: a page, or the games filtered to it.
+// games', the system folder's and the logs' own data, and each figure
+// leads to where it comes from: a page, the games filtered to it, or a
+// run's log.
 
 // Problem filters the Dashboard counts, besides filterMissing and
 // filterBroken.
@@ -68,6 +70,7 @@ func (a *app) dashboardStatus() string {
 			}
 		}
 	}
+	n += len(a.failedBuilds())
 	if n == 0 {
 		return "No problems"
 	}
@@ -120,8 +123,8 @@ func (a *app) drawDashboard() {
 
 	// Below: problems on the left, recent games on the right.
 	cw := (w - gap) / 2
-	lh := a.px(40)
-	rows := 5
+	lh := a.px(36)
+	rows := len(problems) + 1 // and failed builds
 	ch := a.px(48) + int32(rows)*lh
 	left, right := x, x+cw+gap
 
@@ -157,6 +160,19 @@ func (a *app) drawDashboard() {
 		a.textRight(count, left+cw-a.px(16), ry+(lh-a.lineHeight(13, true))/2, 13, true, cc)
 		ry += lh
 	}
+	// Builds whose last run failed, opening the newest one's log.
+	failed := a.failedBuilds()
+	fc, cc := colFaint, colFaint
+	if len(failed) > 0 {
+		fc, cc = colText, colError
+		if a.hovered(left+a.px(8), ry, cw-a.px(16), lh) {
+			a.round(left+a.px(8), ry, cw-a.px(16), lh, a.px(6), colCardHover)
+		}
+		id := failed[0].ID
+		a.clipHit(left+a.px(8), ry, cw-a.px(16), lh, func(bool) { a.showRun(id) })
+	}
+	a.text("Failed builds", left+a.px(16), ry+(lh-a.lineHeight(13, false))/2, 13, false, fc)
+	a.textRight(itoa(len(failed)), left+cw-a.px(16), ry+(lh-a.lineHeight(13, true))/2, 13, true, cc)
 
 	// Recent games: played, else built.
 	recent := func(title string, x int32, less func(g, h *library.Game) bool, when func(g *library.Game) time.Time) {
@@ -192,8 +208,14 @@ func (a *app) drawDashboard() {
 	recent("Recently played", right, func(g, h *library.Game) bool { return g.LastPlayed.After(h.LastPlayed) },
 		func(g *library.Game) time.Time { return g.LastPlayed })
 	y += ch + gap
-	recent("Recently built", left, func(g, h *library.Game) bool { return g.Modified.After(h.Modified) },
-		func(g *library.Game) time.Time { return g.Modified })
+	if built := a.builtRuns(); len(built) > 0 {
+		a.recentBuilds(built, left, y, cw, ch, lh, rows)
+	} else {
+		// Nothing recorded (doszer not set up, or no build since): the
+		// archives' own dates.
+		recent("Recently built", left, func(g, h *library.Game) bool { return g.Modified.After(h.Modified) },
+			func(g *library.Game) time.Time { return g.Modified })
+	}
 
 	// What the games run on, each opening those games.
 	a.card(right, y, cw, ch, false, false)
@@ -230,4 +252,29 @@ func (a *app) drawDashboard() {
 		ry += lh
 	}
 	a.dashboardH = y + ch + p + a.scroll[pageDashboard] - ay
+}
+
+// recentBuilds draws the newest builds recorded, each opening its log.
+func (a *app) recentBuilds(runs []*runlog.Report, x, y, cw, ch, lh int32, rows int) {
+	a.card(x, y, cw, ch, false, false)
+	a.text("Recently built", x+a.px(16), y+a.px(14), 15, true, colText)
+	ry := y + a.px(48)
+	for _, r := range runs[:min(rows, len(runs))] {
+		rx, rw := x+a.px(8), cw-a.px(16)
+		if a.hovered(rx, ry, rw, lh) {
+			a.round(rx, ry, rw, lh, a.px(6), colCardHover)
+		}
+		is := a.px(28)
+		a.drawIcon(a.runGame(r), rx+a.px(8), ry+(lh-is)/2, is)
+		ts, tc := r.Started.Local().Format("Jan 2, 3:04 PM"), colMuted
+		if r.Result == runlog.ResultFailed {
+			ts, tc = "Failed, "+ts, colError
+		}
+		tw := a.textWidth(ts, 12, false)
+		a.text(a.ellipsize(runSubject(r), rw-is-tw-a.px(40), 13, false), rx+is+a.px(18), ry+(lh-a.lineHeight(13, false))/2, 13, false, colText)
+		a.textRight(ts, rx+rw-a.px(8), ry+(lh-a.lineHeight(12, false))/2, 12, false, tc)
+		id := r.ID
+		a.clipHit(rx, ry, rw, lh, func(bool) { a.showRun(id) })
+		ry += lh
+	}
 }

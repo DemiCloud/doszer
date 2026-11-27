@@ -963,27 +963,32 @@ action:
 | Menu | |
 |---|---|
 | File | Open (an archive, to play), Export all games (to RetroDECK), Quit |
-| View | Dashboard, Games, Parents, Systems; list or grid, sort, refresh |
+| View | List or grid, sort, refresh |
 | Build | Import a disc, Build a folder, Repack an archive, Prepare a shell or OS image |
 | Tools | Settings, Verify and Lint (an archive, or all games), Environment |
 | Help | Keyboard shortcuts, Credits (doszer and what it embeds, linked), About (right-click the icon to save it) |
 
-The game folders and the system directory are rescanned when the window
-regains focus and when a page tab is clicked, as well as by View > Refresh.
+The game folders, the system directory and the logs are read again
+when the window regains focus and when a tab is clicked, as well as by
+View > Refresh.
 
 A file dropped on the window plays (`.dosz`), starts an import (`.cue`,
-`.zip`) or a build (a folder). Below the menu bar, four pages, the one
-shown last coming back next time:
+`.zip`) or a build (a folder). Below the menu bar, three tabs
+(Ctrl+1 to Ctrl+3), the page shown last coming back next time:
+Dashboard, Library - its Games, Parents and Systems views - and Logs.
 
 - **Dashboard** (the first page on a first run): the totals (games,
   parents, systems, size, play time), each opening its page; the
   problems (unreadable, broken parent chain, system not found, Windows
   too old - its programs need a newer Windows than any shell or image
   here - and no icon), each with its count, opening the games it applies
-  to; the games played and built most recently, each opening the game;
-  and what the games run on, each opening those games.
+  to, and the builds whose last run failed, opening its log; the games
+  played most recently, each opening the game; those built most
+  recently, from the logs (failed builds too), each opening its run in
+  Logs - without logs, the archives' dates, opening the game; and what
+  the games run on, each opening those games.
 
-- **Games**: every `.dosz` under the ROM directory, at any depth, as a
+- **Library > Games**: every `.dosz` under the ROM directory, at any depth, as a
   list or grid: each archive's icon (`DOSZ.ICO`, else its initial),
   name, folder, how it boots (DOS, a Windows 3.x shell, an OS image,
   flagged when the system folder lacks it), when it was last played,
@@ -1002,17 +1007,28 @@ shown last coming back next time:
   (Esc clears); arrows, Page Up/Down, Home and End move; Enter or a
   double click plays the game with `doszer run` in its own process, one
   at a time.
-- **Parents**: every `.dosp` under the ROM directory: icon, name,
+- **Library > Parents**: every `.dosp` under the ROM directory: icon, name,
   folder, what it boots and the games beside it that use it. Its menu
   shows dependencies, verifies, lints, creates a child (`doszer child`), or converts it back to a game (`doszer
   convert --to dosz`); a game's Tools > Convert to parent does the
   reverse.
-- **Systems**: the OS images and shells in the system directory, with
+- **Library > Systems**: the OS images and shells in the system directory, with
   their kind (fixed or dynamic VHD, raw image, shell), size, which is
   the default, and which games boot each; and the ones games boot that
   the folder hasn't. The selected one can be made the default, or
   prepared: `doszer prepare` makes a game-ready copy beside it, under a
   name you choose, the original untouched.
+- **Logs**: the recorded runs (see [Logs](#logs)), newest first, each
+  with its result and duration; the selected one's report beside them:
+  its command line, steps and their timings, the choices doszer made,
+  warnings, the discs and their Redump match, what install changed, the
+  archive written, the game's history (every linked run, each opening
+  its own), the attached files, and the archive's entries, the largest
+  first, with their sizes, compression ratio and method. Transcript
+  shows its output (`doszer logs --transcript`); Export packs its
+  history into a ZIP in a folder you pick (`doszer logs --export`,
+  redacted).
+
 Tools > Settings (Ctrl+,) is a dialog:
 
 - the folders (typed, or picked with Browse: Windows'
@@ -1022,7 +1038,8 @@ Tools > Settings (Ctrl+,) is a dialog:
   defaults, shown greyed in them.
 
 A right click on a game opens its menu, submenus cascading: Play, Edit,
-Tools (Info, Dependencies, Verify, Lint, Repack, Export, Convert to parent, Advanced:
+Tools (Info, Dependencies, Verify, Lint, Build log - its newest run in
+Logs, when one was recorded -, Repack, Export, Convert to parent, Advanced:
 edit WINDOWS.BAT or DOSZ.TOML as text), Change (Parent - the `.dosp`
 files beside it -, OS image or Shell, each listing its choices), Show in
 folder. A submenu with no room on the right opens on the left.
