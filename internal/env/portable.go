@@ -18,12 +18,12 @@ import (
 // PortableOptions say how Portable sets up a directory.
 type PortableOptions struct {
 	Dir      string        // the portable directory
-	Settings config.Config // written to its doszer.toml, directories left out
+	Settings config.Config // written to its config.toml, directories left out
 	Keys     map[string]bool
 	Copy     bool          // copy files from the directories below
 	From     config.Config // whose system, save and ROM directories Copy reads
 	DryRun   bool
-	Force    bool // overwrite an existing doszer.toml
+	Force    bool // overwrite an existing config.toml
 }
 
 // PortableAction is one thing Portable did, or would do.
@@ -35,7 +35,7 @@ type PortableAction struct {
 }
 
 // Portable sets up o.Dir as a portable doszer: the executable, a
-// doszer.toml (which makes it portable: config.PortableConfigPath) and
+// config.toml (which makes it portable: config.PortableConfigPath) and
 // system/, saves/ and roms/, which it finds by default. With o.Copy it
 // copies in the shells and OS images (and sound fonts, MT-32 ROMs) of
 // o.From's system directory, the archives under its ROM directories with

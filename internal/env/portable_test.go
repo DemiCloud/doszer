@@ -60,7 +60,7 @@ func TestPortable(t *testing.T) {
 	sort.Strings(got)
 	exe, _ := os.Executable()
 	want := []string{
-		filepath.Base(exe), "doszer.toml",
+		filepath.Base(exe), "config.toml",
 		"roms/dos/Game.dosz",
 		"roms/win3x/BOWEP.shell", "roms/win3x/SkiFree.dosz",
 		"saves/Game-CDRIVE.sav", "saves/Game.pure.zip",
@@ -72,17 +72,17 @@ func TestPortable(t *testing.T) {
 		t.Errorf("files:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 
-	// Its doszer.toml keeps the settings but not the directories, which
+	// Its config.toml keeps the settings but not the directories, which
 	// default to the portable ones.
-	cfg, set, err := config.LoadFile(filepath.Join(dir, "doszer.toml"))
+	cfg, set, err := config.LoadFile(filepath.Join(dir, "config.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cfg.Defaults.OS != "dosbox_pure/Win98" || set["paths.system"] || set["paths.roms"] || set["paths.saves"] {
-		t.Errorf("doszer.toml: %+v, keys %v", cfg, set)
+		t.Errorf("config.toml: %+v, keys %v", cfg, set)
 	}
 
-	// A second run copies nothing and keeps doszer.toml.
+	// A second run copies nothing and keeps config.toml.
 	acts, err := Portable(opts)
 	if err != nil {
 		t.Fatal(err)

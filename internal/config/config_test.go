@@ -62,7 +62,9 @@ func TestLoadUserConfigLayer(t *testing.T) {
 	}
 }
 
-func TestLoadCwdOverridesUserConfig(t *testing.T) {
+// A config.toml in the working directory is some other program's: not
+// read, not even checked.
+func TestLoadIgnoresWorkingDirectory(t *testing.T) {
 	isolate(t)
 
 	userPath, err := UserConfigPath()
@@ -70,21 +72,25 @@ func TestLoadCwdOverridesUserConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, userPath, "[build]\nogg_quality = 8")
-	writeFile(t, FileName, "[build]\nogg_quality = 3")
+	writeFile(t, FileName, "[site]\ntitle = 'not doszer'")
 
 	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Build.OggQuality != 3 {
-		t.Errorf("OggQuality = %d, want 3", cfg.Build.OggQuality)
+	if cfg.Build.OggQuality != 8 {
+		t.Errorf("OggQuality = %d, want the user config's 8", cfg.Build.OggQuality)
 	}
 }
 
-func TestLoadSourceOverridesCwd(t *testing.T) {
+func TestLoadSourceOverridesUserConfig(t *testing.T) {
 	isolate(t)
 
-	writeFile(t, FileName, "[build]\nogg_quality = 3")
+	userPath, err := UserConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, userPath, "[build]\nogg_quality = 3")
 
 	source := t.TempDir()
 	writeFile(t, filepath.Join(source, "DOSZ.TOML"), `
@@ -140,20 +146,22 @@ func TestLoadMergesTemplatesByKey(t *testing.T) {
 a = "user-a"
 b = "user-b"
 `)
-	writeFile(t, FileName, `
-[install.templates]
-b = "cwd-b"
-c = "cwd-c"
+	source := t.TempDir()
+	writeFile(t, filepath.Join(source, "DOSZ.TOML"), `
+format = 1
+
+[x-doszer.install.templates]
+b = "src-b"
+c = "src-c"
 `)
 
-	cfg, err := Load("")
+	cfg, err := Load(source)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	// Relative template paths are relative to the file that sets them.
-	cwd, _ := os.Getwd()
 	userDir := filepath.Dir(userPath)
-	want := map[string]string{"a": filepath.Join(userDir, "user-a"), "b": filepath.Join(cwd, "cwd-b"), "c": filepath.Join(cwd, "cwd-c")}
+	want := map[string]string{"a": filepath.Join(userDir, "user-a"), "b": filepath.Join(source, "src-b"), "c": filepath.Join(source, "src-c")}
 	if !reflect.DeepEqual(cfg.Install.Templates, want) {
 		t.Errorf("Templates = %v, want %v", cfg.Install.Templates, want)
 	}
@@ -162,10 +170,14 @@ c = "cwd-c"
 func TestLoadRejectsUnknownKeyInOwnFile(t *testing.T) {
 	isolate(t)
 
-	writeFile(t, FileName, "[build]\nogg_qualityy = 3")
+	userPath, err := UserConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, userPath, "[build]\nogg_qualityy = 3")
 
 	if _, err := Load(""); err == nil {
-		t.Fatal("Load should reject an unknown key in doszer.toml")
+		t.Fatal("Load should reject an unknown key in config.toml")
 	}
 }
 
@@ -248,7 +260,7 @@ func TestPortable(t *testing.T) {
 	xdg, _ := XDGConfigPath()
 	writeFile(t, xdg, "[build]\nogg_quality = 2")
 	if Portable() {
-		t.Fatal("portable without a doszer.toml beside the executable")
+		t.Fatal("portable without a config.toml beside the executable")
 	}
 	if p, _ := UserConfigPath(); p != xdg {
 		t.Fatalf("UserConfigPath = %q, want %q", p, xdg)
@@ -257,7 +269,7 @@ func TestPortable(t *testing.T) {
 	portable := filepath.Join(exeDir, FileName)
 	writeFile(t, portable, "[build]\nogg_quality = 4")
 	if !Portable() {
-		t.Fatal("not portable with a doszer.toml beside the executable")
+		t.Fatal("not portable with a config.toml beside the executable")
 	}
 	cfg, err := Load("")
 	if err != nil {
@@ -267,8 +279,7 @@ func TestPortable(t *testing.T) {
 		t.Errorf("OggQuality = %d, want the portable file's 4 (XDG's ignored)", cfg.Build.OggQuality)
 	}
 
-	// Run from the executable's directory, ./doszer.toml is the same file:
-	// one layer, not two.
+	// Run from the executable's directory: still one layer.
 	t.Chdir(exeDir)
 	if l := Layers(""); len(l) != 1 || l[0].Kind != "portable" {
 		t.Errorf("Layers = %+v, want the portable file only", l)

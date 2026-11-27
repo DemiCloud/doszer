@@ -646,15 +646,16 @@ Every setting can be given as a flag. Precedence, highest first:
 
 1. Command-line flags
 2. `<source>/DOSZ.TOML`'s `[x-doszer]` table (per-game settings)
-3. `./doszer.toml`
-4. The user config file: `doszer.toml` beside the doszer executable if
-   there is one (portable mode), else `$XDG_CONFIG_HOME/doszer/config.toml`
+3. The config file: `config.toml` beside the doszer executable if there
+   is one (portable mode), else `$XDG_CONFIG_HOME/doszer/config.toml`
    (default `~/.config/doszer/config.toml`, and `%APPDATA%\doszer\config.toml`
    on Windows)
-5. Built-in defaults
+4. Built-in defaults
 
-`doszer.toml` and the user config file group the settings in tables. A
-relative path is relative to the file that sets it:
+Only folders doszer owns are read: a `config.toml` in the working
+directory belongs to some other program. The config file groups the
+settings in tables. A relative path is relative to the file that sets
+it:
 
 ```toml
 [paths]
@@ -701,11 +702,11 @@ from.
 
 ### Portable
 
-A `doszer.toml` beside the executable makes doszer portable: it is the
+A `config.toml` beside the executable makes doszer portable: it is the
 user config file, and `system/`, `saves/` and `roms/` beside the
 executable are the default directories. `doszer env portable [DIR]` sets
 this up in DIR (default: doszer's own directory): a copy of the
-executable, the three folders, and a commented `doszer.toml` carrying
+executable, the three folders, and a commented `config.toml` carrying
 the current settings except the directories. `--copy` also copies, from
 the directories in effect, the shells and OS images (and sound fonts and
 MT-32 ROMs) of the system directory, every `.dosz` under the ROM
@@ -1195,7 +1196,7 @@ or OS image run `doszer repack` (in place) and `doszer prepare`.
 With no config file, the window asks where doszer should keep its
 settings, saves and play time:
 
-- **Portable**: everything beside doszer (`doszer.toml`, `roms/`,
+- **Portable**: everything beside doszer (`config.toml`, `roms/`,
   `system/`, `saves/`), as `doszer env portable` sets up. Not offered
   where doszer's folder can't be written to.
 - **User profile**: the user config file (`~/.config/doszer/config.toml`,

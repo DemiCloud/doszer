@@ -1691,7 +1691,7 @@ Options:
 ` + flagSystemDir + flagSaveDir + flagROMDir + `      --copy              portable: copy images, archives and saves from the configured directories
       --from FILE         portable: take settings and directories from FILE (implies --copy)
   -n, --dry-run           portable: show what would be done
-  -f, --force             portable: overwrite DIR's doszer.toml
+  -f, --force             portable: overwrite DIR's config.toml
 ` + flagFormatData + flagHelp
 	if ok, err := parse(fs, args, help, 0, 2); !ok {
 		return err

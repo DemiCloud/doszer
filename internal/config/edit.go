@@ -125,7 +125,7 @@ func isPathKey(key string) bool {
 // paths.roms takes several values (written as an array). A relative
 // path value is taken from the working directory, and stored relative to
 // the file when it lies under the file's directory (so a portable
-// doszer.toml stays portable).
+// config.toml stays portable).
 func Set(path, key string, values ...string) error {
 	table, name, err := splitKey(key)
 	if err != nil {

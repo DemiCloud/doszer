@@ -222,8 +222,9 @@ README.md            doszer usage, configuration, install workflow
   clicks or ticks something: no note or row that appears with a
   checkbox, no button whose label (and so width) changes with state.
 - Every configuration setting is also available as a flag. Precedence:
-  flags, `<source>/DOSZ.TOML`, `./doszer.toml`,
-  `$XDG_CONFIG_HOME/doszer/config.toml`, defaults.
+  flags, `<source>/DOSZ.TOML`, `config.toml` (beside the executable
+  when portable, else `$XDG_CONFIG_HOME/doszer/`), defaults. Never the
+  working directory's: a `config.toml` there is another program's.
 - Tests are table-driven. Build test fixtures (disc images, ZIPs, disk images)
   programmatically in tests; do not commit binary game data.
 - Commit every big change - a fix, feature or refactor, with its spec,

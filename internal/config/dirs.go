@@ -22,7 +22,7 @@ func ExeDir() string {
 	return filepath.Dir(exe)
 }
 
-// PortableConfigPath returns the doszer.toml beside the executable, or ""
+// PortableConfigPath returns the config.toml beside the executable, or ""
 // if there is none. Its presence makes doszer portable: that file is the
 // user config instead of $XDG_CONFIG_HOME's.
 func PortableConfigPath() string {
@@ -308,7 +308,7 @@ func DataDir() (string, error) {
 }
 
 // Configured reports whether any config file exists for the window to
-// use: the portable or user config, or ./doszer.toml.
+// use: the portable or user config.
 func Configured() bool {
 	for _, l := range Layers("") {
 		if l.Found {

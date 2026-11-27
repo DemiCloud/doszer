@@ -117,7 +117,7 @@ func (a *app) drawSetup() {
 		accent              bool
 	}
 	options := []option{
-		{"Portable", "Everything beside doszer, to carry on a USB stick or keep in one folder:", filepath.Join(exe, "{doszer.toml, roms, system, saves}"), portableOK, "doszer's folder can't be written to", false},
+		{"Portable", "Everything beside doszer, to carry on a USB stick or keep in one folder:", filepath.Join(exe, "{config.toml, roms, system, saves}"), portableOK, "doszer's folder can't be written to", false},
 		{"User profile (recommended)", "Settings in " + user, userDirs, true, "", true},
 		{"Don't save", "Try doszer without writing anything: no settings, play time or game saves.", "This question comes back next time.", true, "", false},
 	}

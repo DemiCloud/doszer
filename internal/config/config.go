@@ -1,8 +1,7 @@
 // Package config loads doszer's configuration (README "Configuration"),
 // merging, lowest precedence first: built-in defaults, the user config file
-// (doszer.toml beside the executable when portable, else
-// $XDG_CONFIG_HOME's), ./doszer.toml, and a source's own DOSZ.TOML
-// [x-doszer] table. Command-line flags, the highest layer, are applied by
+// (config.toml beside the executable when portable, else
+// $XDG_CONFIG_HOME's), and a source's own DOSZ.TOML [x-doszer] table. Command-line flags, the highest layer, are applied by
 // the caller. It also finds the directories doszer uses when none is set
 // (dirs.go).
 package config
@@ -21,9 +20,10 @@ import (
 	"github.com/DemiCloud/doszer/internal/manifest"
 )
 
-// FileName is the config file name looked for in the working directory and
-// beside the executable.
-const FileName = "doszer.toml"
+// FileName is the config file's name: beside the executable (portable),
+// or in the user config directory. Only folders doszer owns are looked
+// in: a config.toml in the working directory is some other program's.
+const FileName = "config.toml"
 
 // Config holds every doszer setting (README "Configuration"), in the
 // config file's tables.
@@ -88,14 +88,13 @@ func Default() Config {
 // Layer is one configuration file, lowest precedence first in Layers.
 type Layer struct {
 	Path     string `json:"path" yaml:"path" toml:"path"`
-	Kind     string `json:"kind" yaml:"kind" toml:"kind"` // user, portable, cwd, manifest
+	Kind     string `json:"kind" yaml:"kind" toml:"kind"` // user, portable, manifest
 	Found    bool   `json:"found" yaml:"found" toml:"found"`
 	manifest bool   // a DOSZ.TOML: settings under [x-doszer]
 }
 
 // Layers returns the configuration files Load reads for sourceDir, lowest
-// precedence first, whether or not they exist. ./doszer.toml is left out
-// when it is the portable config itself.
+// precedence first, whether or not they exist.
 func Layers(sourceDir string) []Layer {
 	var out []Layer
 	user, err := UserConfigPath()
@@ -106,9 +105,6 @@ func Layers(sourceDir string) []Layer {
 		}
 		out = append(out, Layer{Path: user, Kind: kind})
 	}
-	if cwd, err := filepath.Abs(FileName); err == nil && !sameFile(cwd, user) {
-		out = append(out, Layer{Path: cwd, Kind: "cwd"})
-	}
 	if sourceDir != "" {
 		p, _ := filepath.Abs(filepath.Join(sourceDir, manifest.FileName))
 		out = append(out, Layer{Path: p, Kind: "manifest", manifest: true})
@@ -118,15 +114,6 @@ func Layers(sourceDir string) []Layer {
 		out[i].Found = err == nil && !fi.IsDir()
 	}
 	return out
-}
-
-func sameFile(a, b string) bool {
-	if a == b {
-		return true
-	}
-	fa, err1 := os.Stat(a)
-	fb, err2 := os.Stat(b)
-	return err1 == nil && err2 == nil && os.SameFile(fa, fb)
 }
 
 // Load returns the effective configuration for sourceDir, merging Layers

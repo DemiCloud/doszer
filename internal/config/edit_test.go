@@ -89,7 +89,11 @@ func TestTemplateLoads(t *testing.T) {
 			keys = map[string]bool{"paths.system": true, "paths.roms": true, "build.ogg_quality": true, "install.os.a/b": true}
 		}
 		text := Template(set, keys)
-		writeFile(t, FileName, text)
+		userPath, err := UserConfigPath()
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, userPath, text)
 		cfg, err := Load("")
 		if err != nil {
 			t.Fatalf("current %v: %v\n%s", current, err, text)
