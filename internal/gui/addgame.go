@@ -13,9 +13,9 @@ import (
 
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/dump"
+	"github.com/DemiCloud/doszer/internal/flow"
 	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/manifest"
-	"github.com/DemiCloud/doszer/internal/platform"
 	"github.com/DemiCloud/doszer/internal/start"
 )
 
@@ -152,14 +152,7 @@ func suggestName(s string) string {
 }
 
 // safeName makes name a file name on every system.
-func safeName(name string) string {
-	return strings.TrimSpace(strings.Map(func(r rune) rune {
-		if strings.ContainsRune(`\/:*?"<>|`, r) || r < 32 {
-			return -1
-		}
-		return r
-	}, name))
-}
+func safeName(name string) string { return flow.SafeName(name) }
 
 func (a *app) addGameKey(sc int32) {
 	switch sc {
@@ -186,7 +179,7 @@ func (a *app) addGameNext() {
 			g.name.set(name)
 		}
 		// A folder of only discs needs installing; an installed game not.
-		g.install = !hasInstalledPrograms(dir)
+		g.install = !flow.HasInstalledPrograms(dir)
 		g.named, g.page = false, 1
 		a.focus = &g.name
 		return
@@ -258,41 +251,26 @@ func (a *app) addGameRun() {
 	}
 	out := filepath.Join(g.dests[g.dest], name+g.ext())
 
-	var steps []step
+	fo := flow.Options{Name: g.name.text, Source: src, Folder: g.useFolder, Init: !g.hasManifest,
+		Boot: bootChoices[g.boot].flag, SystemDir: a.o.SystemDir}
+	if g.audio == 1 {
+		fo.Audio = "wav"
+	}
 	switch {
 	case g.useFolder:
-		// Built where it is: nothing to dump.
 	case g.useFiles:
 		for _, f := range g.files {
-			steps = append(steps, step{args: []string{"dump", "--from", strings.TrimSpace(f.text), src}})
+			fo.Files = append(fo.Files, strings.TrimSpace(f.text))
 		}
 	default:
-		d := g.drives[g.drive].path
-		for i := 1; i <= g.discs; i++ {
-			if i > 1 {
-				steps = append(steps, step{prompt: "Put disc " + itoa(i) + " of " + itoa(g.discs) + " in " + d + ", then Continue."})
-			}
-			steps = append(steps, step{args: []string{"dump", "--drive", d, src}})
-		}
+		fo.Drive, fo.Discs = g.drives[g.drive].path, g.discs
 	}
-	initArgs := []string{"init", "--force", "--name", g.name.text}
-	if b := bootChoices[g.boot].flag; b != "" {
-		initArgs = append(initArgs, "--boot", b)
-	}
-	if g.audio == 1 {
-		initArgs = append(initArgs, "--audio", "wav")
-	}
-	if a.o.SystemDir != "" {
-		initArgs = append(initArgs, "--system-dir", a.o.SystemDir)
-	}
-	if !g.hasManifest {
-		steps = append(steps, step{args: append(initArgs, src)})
-	}
+	steps := flowSteps(flow.Prepare(fo))
 	plan := &addPlan{name: g.name.text, src: src, out: out, temp: temp, keep: (g.keep || g.useFolder) && !temp, folder: g.useFolder, flatten: g.flatten}
 	if !g.install {
 		// An installed game in a folder: choose (or change) what it starts
 		// with before building.
-		if g.useFolder && hasInstalledPrograms(src) {
+		if g.useFolder && flow.HasInstalledPrograms(src) {
 			a.add = nil
 			if len(steps) == 0 {
 				a.chooseStart(plan)
@@ -309,18 +287,11 @@ func (a *app) addGameRun() {
 		a.runPlan(plan, append(steps, buildStep(plan)), a.added(plan))
 		return
 	}
-	installArgs := []string{"install"}
-	if a.o.SystemDir != "" {
-		installArgs = append(installArgs, "--system-dir", a.o.SystemDir)
-	}
 	if f, err := os.CreateTemp("", "doszer-install-*.json"); err == nil {
 		f.Close()
 		plan.result = f.Name()
 	}
-	steps = append(steps,
-		step{prompt: "Next, DOSBox Pure opens with the game's disc. Run its setup (SETUP.EXE or INSTALL.EXE: in Windows, from the CD drive), install the game, then close DOSBox Pure's window."},
-		step{args: append(installArgs, src), env: []string{install.ResultEnv + "=" + plan.result}},
-	)
+	steps = append(steps, flowSteps(flow.Install(src, a.o.SystemDir, "", plan.result))...)
 	plan.install = steps[len(steps)-2:]
 	a.add = nil
 	a.runPlan(plan, steps, a.installed(plan))
@@ -355,18 +326,11 @@ func (a *app) installed(plan *addPlan) func(error) {
 func (a *app) addGameExtract() {
 	g := a.add
 	p, r := g.plan, g.retry
-	args := []string{"install", "--from", r.From}
-	if r.Content != "" {
-		args = append(args, "--content", r.Content)
-	}
-	if a.o.SystemDir != "" {
-		args = append(args, "--system-dir", a.o.SystemDir)
-	}
-	args = append(args, "--dir", r.Folders[g.choice].Name, p.src)
+	ex := flow.Extract(p.src, a.o.SystemDir, r, r.Folders[g.choice].Name)
 	os.Remove(p.result) // a failure now is the extraction's, not the folder's
 	a.add = nil
 	next := a.installed(p)
-	a.runPlan(p, []step{{args: args}}, func(err error) {
+	a.runPlan(p, flowSteps([]flow.Step{ex}), func(err error) {
 		if err == nil {
 			os.Remove(r.From)
 			if r.Content != "" {
@@ -387,11 +351,16 @@ func (a *app) runPlan(p *addPlan, steps []step, after func(err error)) {
 
 // buildStep builds plan's archive.
 func buildStep(p *addPlan) step {
-	args := []string{"build"}
-	if p.flatten {
-		args = append(args, "--flatten")
+	return flowSteps([]flow.Step{flow.Build(p.src, p.out, p.flatten)})[0]
+}
+
+// flowSteps are a flow's steps, as the dialog runs them.
+func flowSteps(fs []flow.Step) []step {
+	out := make([]step, len(fs))
+	for i, f := range fs {
+		out[i] = step{args: f.Args, prompt: f.Prompt, env: f.Env}
 	}
-	return step{args: append(args, p.src, p.out)}
+	return out
 }
 
 // added is what happens once a game is built: its dump removed unless
@@ -446,11 +415,11 @@ func (a *app) addGameFinish(set bool) {
 	p := g.plan
 	var steps []step
 	if set && len(g.candidates) > 0 {
-		args := []string{"start", "--force"}
+		display := ""
 		if g.windows9x && g.colors256 {
-			args = append(args, "--display", "640x480x8")
+			display = "640x480x8"
 		}
-		steps = append(steps, step{args: append(args, p.src, g.candidates[g.choice].Path)})
+		steps = append(steps, flowSteps([]flow.Step{flow.Start(p.src, g.candidates[g.choice].Path, display)})...)
 	}
 	steps = append(steps, buildStep(p))
 	a.add = nil
@@ -904,18 +873,6 @@ func (a *app) addGameFolder(g *addGame, x, y, w, bottom int32) int32 {
 func haveFFmpeg() bool {
 	_, err := exec.LookPath("ffmpeg")
 	return err == nil
-}
-
-// hasInstalledPrograms reports whether dir holds programs outside its
-// disc images: a game installed already.
-func hasInstalledPrograms(dir string) bool {
-	progs, _ := platform.Scan(dir)
-	for _, p := range progs {
-		if !strings.Contains(p.Path, ":") {
-			return true
-		}
-	}
-	return false
 }
 
 // ext is the archive's extension: a parent's .dosp or a game's .dosz.

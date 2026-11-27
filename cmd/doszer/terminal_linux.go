@@ -14,13 +14,15 @@ func fromTerminal() bool {
 	if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
 		return true
 	}
-	for _, f := range []*os.File{os.Stdin, os.Stdout} {
-		var t syscall.Termios
-		if _, _, e := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), syscall.TCGETS, uintptr(unsafe.Pointer(&t))); e == 0 {
-			return true
-		}
-	}
-	return false
+	return isTerminal(os.Stdin) || isTerminal(os.Stdout)
+}
+
+// isTerminal reports whether f is a terminal (not merely a character
+// device, as /dev/null is).
+func isTerminal(f *os.File) bool {
+	var t syscall.Termios
+	_, _, e := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), syscall.TCGETS, uintptr(unsafe.Pointer(&t)))
+	return e == 0
 }
 
 // detached is never set off Windows: there is no console to free.

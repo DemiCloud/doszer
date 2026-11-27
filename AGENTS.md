@@ -56,7 +56,8 @@ internal/libretro/   built-in frontend: hosts a libretro core in-process (enviro
 internal/sdl/        the few SDL2 functions internal/libretro uses, loaded at run time through purego
 internal/dl/         dlopen/LoadLibrary without cgo
 internal/builtin/    programs embedded at build time, extracted to the user cache: the DOSBox Pure core (and SDL DLLs on Windows, `make core`), redumper (`make redumper`); guest programs, the same on every platform: RunExit, PRESSKEY (`make guest`)
-internal/dump/       doszer dump: a CD to BIN/CUE with redumper (Windows redumper through interop under WSL), resumable; or --from an existing image (Import)
+internal/flow/       the commands that make an archive (dump/import, init, install, extract, start, build, repack), planned once for doszer make and the window's Import a disc / Build a folder
+internal/dump/       doszer dump: a CD to BIN/CUE with redumper (Windows redumper through interop under WSL), resumable; or --from an existing image (Import; .cue, .iso, a zip of one), a floppy image, or a game's archive (ImportArchive: a zip of its files, a .dosz made without doszer)
 internal/redump/     Redump datfile: load (Logiqx XML/zip, compact), embedded snapshot (`make dat`), cached run-time copy, track matching; any CUE image (or zip of one) read in Redump's track layout, read-offset correction; Mode 1 and Mode 2 Form 1 sector rebuild (EDC/ECC, sector.go; XA subheaders predicted from the ISO 9660 file system, xa.go) so an archive's ISO tracks hash as Redump's raw ones, both ways in one read (ArchiveImages, for redump and verify)
 internal/interrupt/  removes registered temporary paths on SIGINT/SIGTERM, then runs exit hooks (a run log's last write)
 internal/redact/     removes home folders, user and host names from what is shared (the logs ZIP): one list of rules, applied to text and JSON values
@@ -322,6 +323,7 @@ emulated CPU must not use CMOV/SSE (zig's default x86 CPU does).
 | Command | State |
 |---|---|
 | `init` | Implemented; without a boot model it picks one from the programs' needs (internal/platform), which matched the hand-chosen model of all five local test sources |
+| `make` | Implemented; a real game ZIP (extract, init, build), a folder and a doszer archive (repack) checked, not yet a CD with --install |
 | `build` | Implemented |
 | `install` | Implemented; live plain and OS image (`--drive c`) sessions passed under standalone DOSBox Pure (before its support was removed); built-in frontend checked with the real core (headless test on Linux and on Windows via WSL interop, and a window under WSLg), no full live install yet; `--from` checked on a real D: save (Next steps) |
 | `start` | Implemented |

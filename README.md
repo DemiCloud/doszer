@@ -45,6 +45,8 @@ make help    # every target
 ```
 doszer dump    DIR [--drive DRIVE | --from FILE [--offset SAMPLES]] [--dat FILE]
 doszer redump  [SHA1|FILE|IMAGE|FILE.dosz...] [--update] [--dat FILE] [--offset SAMPLES]
+doszer make    --drive DRIVE | --from FILE... NAME [OUTPUT.dosz] [--install] [--start PROGRAM] [-n]
+doszer make    DIR [OUTPUT.dosz]
 doszer init    SOURCE [--os PATH | --shell PATH | --exec PATH | --boot MODEL] [--audio FMT] [--name NAME] [--no-media] [--no-icon] [--system-dir DIR] [-f]
 doszer build   SOURCE [OUTPUT.dosz] [--name NAME] [--flatten] [-n] [--strict] [--ogg-quality N]
 doszer install SOURCE [--dir PATH] [--from FILE [--content FILE] [--template FILE]] [-f] [-n] [--keep]
@@ -518,9 +520,33 @@ game under an OS image, with trimming, flattening, rewrites, a startup
 [King's Quest VII](examples/kings-quest-vii/DOSZ.TOML), a DOS game
 installed from CD under the plain model.
 
+## Make
+
+`doszer make` runs a whole build, as the window's Build > Import a disc
+and Build a folder do - the same commands, in order, as one session in
+the logs:
+
+```bash
+doszer make --drive E: --install "Example Game"         # a CD: dump, init, install, start, build
+doszer make --from "Example Game (Disc 1).cue" --from "Example Game (Disc 2).cue" "Example Game"
+doszer make --from DOSBOX_EXAMPLE.ZIP "Example Game"    # a game's archive: extract, init, build
+doszer make /path/to/Example\ Game                       # a folder, built where it is
+```
+
+From a drive or files, the game goes into a source folder named after it
+in `paths.sources` (kept), or a temporary one (removed after). The
+archive goes to OUTPUT, else `NAME.dosz` in the ROM folder; an archive
+that already has a manifest is repacked there as it is. On a terminal,
+`make` waits where the window does - for the next disc, before the
+install session, for the folder to keep when the setup changed several,
+and for the program the game starts with (the likely one the default);
+without one it takes the likely choices, and fails where only a flag
+(`--dir`, `--start`) can decide. `-n` prints the commands it would run
+first.
+
 ## From a CD to a .dosz
 
-A DOS game that installs from CD, start to finish, under the plain model
+The steps `make` runs, one by one. A DOS game that installs from CD, start to finish, under the plain model
 (see "Boot models" for the others). This assumes a disc you own.
 [examples/kings-quest-vii](examples/kings-quest-vii/DOSZ.TOML) is the
 result for one.

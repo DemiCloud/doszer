@@ -80,6 +80,7 @@ func init() {
 	commands = []command{
 		{"dump", "dump a CD to BIN/CUE into a source directory", runDump},
 		{"redump", "show the Redump datfile in use, or check tracks against it", runRedump},
+		{"make", "make an archive from a CD, a disc image, a game's archive or folder", runMake},
 		{"init", "write a commented DOSZ.TOML into a source directory", runInit},
 		{"build", "build an archive from a source directory", runBuild},
 		{"install", "run an installer and extract the result into a source", runInstall},

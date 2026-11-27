@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"syscall"
 	"unsafe"
 )
@@ -9,6 +10,7 @@ var (
 	kernel32              = syscall.NewLazyDLL("kernel32.dll")
 	getConsoleProcessList = kernel32.NewProc("GetConsoleProcessList")
 	freeConsole           = kernel32.NewProc("FreeConsole")
+	getConsoleMode        = kernel32.NewProc("GetConsoleMode")
 	messageBox            = syscall.NewLazyDLL("user32.dll").NewProc("MessageBoxW")
 )
 
@@ -30,6 +32,13 @@ func fromTerminal() bool {
 		return false
 	}
 	return true
+}
+
+// isTerminal reports whether f is a console (not a pipe, a file or NUL).
+func isTerminal(f *os.File) bool {
+	var mode uint32
+	r, _, _ := getConsoleMode.Call(f.Fd(), uintptr(unsafe.Pointer(&mode)))
+	return r != 0
 }
 
 // showError shows err in a message box.
