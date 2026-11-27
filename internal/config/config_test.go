@@ -369,3 +369,26 @@ func TestSourcesDirOf(t *testing.T) {
 		t.Errorf("set: %+v", d)
 	}
 }
+
+// Portable, what doszer records goes in state/ beside the executable,
+// out of the way of its config and content folders.
+func TestPortableStateDir(t *testing.T) {
+	isolate(t)
+	exeDir := t.TempDir()
+	executable = func() (string, error) { return filepath.Join(exeDir, "doszer"), nil }
+	t.Cleanup(func() { executable = os.Executable })
+	writeFile(t, filepath.Join(exeDir, FileName), "")
+	for name, f := range map[string]func() (string, error){"state": StateDir, "playtime.json": StatsPath, "logs": LogsDir} {
+		p, err := f()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := filepath.Join(exeDir, "state")
+		if name != "state" {
+			want = filepath.Join(want, name)
+		}
+		if p != want {
+			t.Errorf("%s: %s, want %s", name, p, want)
+		}
+	}
+}

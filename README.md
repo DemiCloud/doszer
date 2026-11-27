@@ -703,8 +703,9 @@ from.
 ### Portable
 
 A `config.toml` beside the executable makes doszer portable: it is the
-user config file, and `system/`, `saves/` and `roms/` beside the
-executable are the default directories. `doszer env portable [DIR]` sets
+user config file, `system/`, `saves/` and `roms/` beside the executable
+are the default directories, and `state/` holds play time, the window's
+state and the logs. `doszer env portable [DIR]` sets
 this up in DIR (default: doszer's own directory): a copy of the
 executable, the three folders, and a commented `config.toml` carrying
 the current settings except the directories. `--copy` also copies, from
@@ -1213,8 +1214,8 @@ extracted DOSBox Pure core, Redump's datfile - are not settings or
 saves, and are kept.)
 
 Play time is kept in `playtime.json`, the window's size and view in
-`window.json` and run logs in `logs/` (see [Logs](#logs)): beside doszer
-when portable, else `$XDG_STATE_HOME/doszer` (default
+`window.json` and run logs in `logs/` (see [Logs](#logs)), all in doszer's
+state folder: `state/` beside doszer when portable, else `$XDG_STATE_HOME/doszer` (default
 `~/.local/state/doszer`) on Linux and `%LOCALAPPDATA%\doszer` on
 Windows. Archives under the ROM directory are recorded by their path
 inside it, so moving the whole folder (or a portable doszer to another

@@ -236,14 +236,16 @@ func dirOf(flag, flagName, setting, key string, find func() Dir) Dir {
 	return find()
 }
 
-// StateDir is where doszer keeps what it records - play time, logs:
-// beside the executable when portable, else $XDG_STATE_HOME/doszer
+// StateDir is where doszer keeps what it records - play time, the
+// window's state, logs: state/ beside the executable when portable (the
+// same shape as the installed layout, and out of the way of the config
+// and content folders), else $XDG_STATE_HOME/doszer
 // (default ~/.local/state/doszer) on Linux, %LOCALAPPDATA%\doszer on
 // Windows (not roaming: nothing here is worth syncing) and the user
 // config directory's doszer folder elsewhere.
 func StateDir() (string, error) {
 	if Portable() {
-		return ExeDir(), nil
+		return filepath.Join(ExeDir(), "state"), nil
 	}
 	switch runtime.GOOS {
 	case "linux":
