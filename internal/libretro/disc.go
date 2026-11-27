@@ -14,6 +14,8 @@ import (
 var (
 	probeSwapAt int
 	probeDisc   string
+	// probeKeys, if set, presses keys after a frame (TestProbe).
+	probeKeys func(frame int, press func(key uint32, down bool))
 )
 
 // diskControl is the core's struct retro_disk_control_ext_callback

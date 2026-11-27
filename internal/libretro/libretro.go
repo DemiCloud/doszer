@@ -300,6 +300,16 @@ func Run(cfg Config) error {
 		if frame == probeSwapAt {
 			h.nextDisc()
 		}
+		if probeKeys != nil {
+			probeKeys(frame, func(key uint32, down bool) {
+				if key < retrokLast {
+					h.keys[key] = down
+				}
+				if h.keyboard != nil {
+					h.keyboard(down, key, 0, 0)
+				}
+			})
+		}
 		// Fast-forward draws at most 60 frames a second: presenting
 		// every one would cap the speed.
 		if !h.fast || time.Since(h.lastDraw) >= time.Second/60 {

@@ -731,8 +731,10 @@ then name C:, which the manifest's `[[layout.rewrite]]` rules can fix
 (`build --dry-run` suggests rules for paths that move).
 
 The folder to extract is `--dir`, or the one top-level folder every
-change is under, or the root when every change is a file there (`--dir /`
-asks for the root). A session that changed nothing extracts nothing:
+change is under, also when files in the root changed beside it (a
+launcher batch file the installer wrote there, listed as not extracted),
+or the root when every change is a file there (`--dir /` asks for the
+root). A session that changed nothing extracts nothing:
 DOSBox Pure doesn't save a file rewritten with the same content, so
 running a setup program and keeping its settings leaves no change. A
 game that comes installed doesn't need `install`; `init` and `build` it

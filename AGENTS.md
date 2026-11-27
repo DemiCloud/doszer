@@ -274,7 +274,7 @@ against DOSBox Pure 1.0 Preview 8 (`dosbox_pure_libretro.cpp`) and its
 `internal/libretro`'s `TestProbe` runs real content headless and saves a
 screenshot every few seconds (`DOSZER_PROBE_CONTENT`, `_SYSTEM`, `_OUT`,
 `_FRAMES`, `_EVERY`; `_RAMDISK` for `bootos_ramdisk`, default `diff`;
-`_PACED` to run in real time; `_SWAP` a frame after which to swap discs): how to see what a game does in an OS image
+`_PACED` to run in real time; `_SWAP` a frame after which to swap discs; `_KEYS` keys to press, `FRAME:KEY,...` with names such as `down*5`, `enter`, `text=c:\game`, which drives the start menu and an installer under `_PACED`): how to see what a game does in an OS image
 session without a window, e.g. a startup script that leaves the screen
 black. It logs the frame at which the core closed the session, if it did.
 Use a system directory of symlinks to the images, and `diff` or `true`,

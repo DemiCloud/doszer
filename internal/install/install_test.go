@@ -56,8 +56,9 @@ func TestPickDir(t *testing.T) {
 	}{
 		{[]string{"GAME/A.EXE", "GAME/SUB/B.DAT"}, "GAME", false},
 		{[]string{"GAME/A.EXE", "OTHER/B.DAT"}, "", true},
-		{[]string{"A.EXE", "B.CFG"}, "", false},     // only root files: the root
-		{[]string{"A.CFG", "GAME/B.EXE"}, "", true}, // root and a folder
+		{[]string{"A.EXE", "B.CFG"}, "", false},                                       // only root files: the root
+		{[]string{"HOCUS.BAT", "HOCUS/HOCUS.EXE", "HOCUS/HOCUS.DAT"}, "HOCUS", false}, // a launcher in the root: the folder
+		{[]string{"A.CFG", "GAME/B.EXE", "OTHER/C.DAT"}, "", true},                    // root and two folders
 		{nil, "", true},
 	}
 	for _, tt := range tests {

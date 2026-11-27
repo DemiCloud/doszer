@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/DemiCloud/doszer/internal/builtin"
@@ -45,7 +46,9 @@ func TestProbe(t *testing.T) {
 	}
 	last := 0
 	probeSwapAt = envInt("DOSZER_PROBE_SWAP", 0)
+	probeKeys = probeKeyScript(t, os.Getenv("DOSZER_PROBE_KEYS"))
 	defer func() {
+		probeKeys = nil
 		if probeSwapAt != 0 {
 			t.Logf("swapped at frame %d: %q", probeSwapAt, probeDisc)
 		}
@@ -79,4 +82,73 @@ func envInt(key string, def int) int {
 		return n
 	}
 	return def
+}
+
+// probeKeyScript parses DOSZER_PROBE_KEYS: space-separated FRAME:KEYS,
+// KEYS comma-separated names (down, up, left, right, enter, esc, tab,
+// space, bs, colon, or one character), each optionally *N; text=STRING
+// types STRING. From FRAME on, one key is pressed and released per two
+// frames.
+func probeKeyScript(t *testing.T, script string) func(int, func(uint32, bool)) {
+	if script == "" {
+		return nil
+	}
+	named := map[string][]uint32{"down": {274}, "up": {273}, "right": {275}, "left": {276},
+		"enter": {13}, "esc": {27}, "tab": {9}, "space": {32}, "bs": {8}, "colon": {304, 59}}
+	type press struct {
+		frame int
+		keys  []uint32 // held together: modifiers first
+	}
+	var queue []press
+	for _, item := range strings.Fields(script) {
+		f, spec, ok := strings.Cut(item, ":")
+		frame, err := strconv.Atoi(f)
+		if !ok || err != nil {
+			t.Fatalf("DOSZER_PROBE_KEYS %q: want FRAME:KEYS", item)
+		}
+		var keys [][]uint32
+		for _, tok := range strings.Split(spec, ",") {
+			if text, ok := strings.CutPrefix(tok, "text="); ok {
+				for _, c := range strings.ToLower(text) {
+					if c == ':' {
+						keys = append(keys, named["colon"])
+					} else {
+						keys = append(keys, []uint32{uint32(c)})
+					}
+				}
+				continue
+			}
+			n := 1
+			if name, count, ok := strings.Cut(tok, "*"); ok {
+				tok = name
+				n, _ = strconv.Atoi(count)
+			}
+			k, ok := named[tok]
+			if !ok && len(tok) == 1 {
+				k = []uint32{uint32(strings.ToLower(tok)[0])}
+			} else if !ok {
+				t.Fatalf("DOSZER_PROBE_KEYS: unknown key %q", tok)
+			}
+			for range n {
+				keys = append(keys, k)
+			}
+		}
+		for i, k := range keys {
+			queue = append(queue, press{frame + 2*i, k})
+		}
+	}
+	return func(frame int, pressKey func(uint32, bool)) {
+		for _, p := range queue {
+			switch frame {
+			case p.frame:
+				for _, k := range p.keys {
+					pressKey(k, true)
+				}
+			case p.frame + 1:
+				for i := len(p.keys) - 1; i >= 0; i-- {
+					pressKey(p.keys[i], false)
+				}
+			}
+		}
+	}
 }
