@@ -64,7 +64,7 @@ func TestTextSelection(t *testing.T) {
 // line as one line and a label's value a tab after it.
 func TestSelectionSeparators(t *testing.T) {
 	a := &app{scale: 1, faces: map[faceKey]font.Face{}, selText: map[string][]string{}, selSeps: map[string][]string{}}
-	cmd := "doszer build --format plain --flatten 'D:\\Tools\\doszer\\sources\\Space Hulk' 'D:\\Tools\\doszer\\roms\\Space Hulk.dosz'"
+	cmd := "doszer build --format plain --flatten 'C:\\path\\to\\sources\\Example Game' 'C:\\path\\to\\roms\\Example Game.dosz'"
 	for i, l := range a.wrapMono(cmd, 300) {
 		sep := sepWrap
 		if i == 0 {
@@ -73,7 +73,7 @@ func TestSelectionSeparators(t *testing.T) {
 		a.selAdd("r", l, sep)
 	}
 	a.selAdd("r", "Source", sepLine)
-	for i, l := range a.wrapKeep(`D:\Tools\doszer\sources\Space Hulk with a long tail of words`, 120, 13, false) {
+	for i, l := range a.wrapKeep(`C:\path\to\sources\Example Game with a long tail of words`, 120, 13, false) {
 		sep := sepWrap
 		if i == 0 {
 			sep = sepColumn
@@ -83,7 +83,7 @@ func TestSelectionSeparators(t *testing.T) {
 	if n := len(a.selText["r"]); n < 5 {
 		t.Fatalf("expected wrapping, got %d lines: %q", n, a.selText["r"])
 	}
-	want := cmd + "\nSource\t" + `D:\Tools\doszer\sources\Space Hulk with a long tail of words`
+	want := cmd + "\nSource\t" + `C:\path\to\sources\Example Game with a long tail of words`
 	if got := a.regionText("r"); got != want {
 		t.Errorf("region text\n%q\nwant\n%q", got, want)
 	}
