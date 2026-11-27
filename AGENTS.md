@@ -202,6 +202,11 @@ README.md            doszer usage, configuration, install workflow
   (genres, summaries, artwork from third-party sources) are out of
   scope, unless they come into an archive through the packaging
   pipeline.
+- Text to read is selectable (`stext`/`smono`/`selAdd` into a region,
+  `sepWrap` for a wrapped line's rest, `sepColumn` for a label's value),
+  so it copies as it would be typed: a command line wrapped to fit pastes
+  as one line. What is clicked (buttons, list items, links) isn't: a
+  drag-select there would fight the click.
 - Window text is terse, like help output: a title, a label or a short
   line, never a sentence explaining what the user can see for
   themselves ("Credits", not "doszer and the programs it embeds:").

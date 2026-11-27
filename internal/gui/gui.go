@@ -118,6 +118,7 @@ type app struct {
 	tsel    textSel
 	selHits []selHit
 	selText map[string][]string
+	selSeps map[string][]string // per region, what goes before each line when copied (selAdd)
 
 	setupDone       bool   // Options.Setup ran
 	exportDir       string // the RetroDECK root Export last used (window.json)
@@ -192,7 +193,7 @@ func Run(o Options) error {
 	a := &app{
 		o: o, win: win, ren: ren, dirty: true,
 		faces: map[faceKey]font.Face{}, texts: map[textKey]*texture{}, icons: map[string]*texture{},
-		runCh: make(chan runResult, 1), selText: map[string][]string{},
+		runCh: make(chan runResult, 1), selText: map[string][]string{}, selSeps: map[string][]string{},
 	}
 	a.initGames(st)
 	a.initSystems()
@@ -613,6 +614,7 @@ func (a *app) render() {
 	a.selHits = a.selHits[:0]
 	a.areaUnderMouse = nil
 	clear(a.selText)
+	clear(a.selSeps)
 	a.layer = layerPage
 	c := colBackground
 	sdl.SetRenderDrawColor(a.ren, c.r, c.g, c.b, 255)

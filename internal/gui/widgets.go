@@ -519,6 +519,63 @@ type selHit struct {
 // for copying.
 func (a *app) selRegion(id string, lines []string) { a.selText[id] = lines }
 
+// Separators selAdd puts before a line when the selection is copied.
+const (
+	sepLine   = "\n" // a line of its own
+	sepWrap   = ""   // the previous line, wrapped: one line when pasted
+	sepColumn = "\t" // the previous line's next column (a label's value)
+)
+
+// selAdd appends s to region id's text, to be copied after sep, and
+// returns its index: a region built as it is drawn, every line of it
+// drawn each frame (scrolled-off ones too, unseen).
+func (a *app) selAdd(id, s, sep string) int {
+	a.selText[id] = append(a.selText[id], s)
+	a.selSeps[id] = append(a.selSeps[id], sep)
+	return len(a.selText[id]) - 1
+}
+
+// stext draws s like text and makes it selectable, as the next line of
+// region id after sep.
+func (a *app) stext(id, sep, s string, x, y int32, size float64, bold bool, c rgba) int32 {
+	idx := a.selAdd(id, s, sep)
+	k := faceKey{px: int(a.px(size)), bold: bold}
+	w := a.textWidth(s, size, bold)
+	a.selTextLine(id, idx, x, y, w+a.px(6), a.lineHeight(size, bold)+a.px(4), s, x, k)
+	return a.text(s, x, y, size, bold, c)
+}
+
+// smono is stext in the monospaced face, 12 logical pixels.
+func (a *app) smono(id, sep, s string, x, y int32, c rgba) int32 {
+	idx := a.selAdd(id, s, sep)
+	k := faceKey{px: int(a.px(12)), mono: true}
+	w := int32(font.MeasureString(a.faceOf(k), s).Ceil())
+	a.selTextLine(id, idx, x, y, w+a.px(6), a.lineHeight(12, false)+a.px(4), s, x, k)
+	return a.monoText(s, x, y, c)
+}
+
+// regionText is a region's whole text, its lines joined by their
+// separators.
+func (a *app) regionText(id string) string {
+	lines := a.selText[id]
+	var b strings.Builder
+	for i, l := range lines {
+		if i > 0 {
+			b.WriteString(a.sepBefore(id, i))
+		}
+		b.WriteString(l)
+	}
+	return b.String()
+}
+
+// sepBefore is what goes before line i of region id when copied.
+func (a *app) sepBefore(id string, i int) string {
+	if seps := a.selSeps[id]; i < len(seps) {
+		return seps[i]
+	}
+	return "\n"
+}
+
 // lineLen is line idx of a region's length in runes.
 func (a *app) lineLen(region string, idx int) int {
 	if lines := a.selText[region]; idx >= 0 && idx < len(lines) {
@@ -696,7 +753,7 @@ func (a *app) selected_() string {
 			c1 = min(to.col, len(r))
 		}
 		if i > from.line {
-			b.WriteByte('\n')
+			b.WriteString(a.sepBefore(t.region, i))
 		}
 		if c1 > c0 {
 			b.WriteString(string(r[c0:c1]))
@@ -722,7 +779,7 @@ func (a *app) selMenu(h *selHit) {
 	}
 	// Taken as the menu opens: the click choosing Copy mustn't be able
 	// to change what it copies.
-	sel, all := a.selected_(), strings.Join(a.selText[h.region], "\n")
+	sel, all := a.selected_(), a.regionText(h.region)
 	a.openMenu(a.mx, a.my, []string{"Copy\tCtrl+C", "Copy all"}, func(i int) {
 		if i == 0 {
 			a.copyText(sel)

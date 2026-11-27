@@ -59,3 +59,37 @@ func TestTextSelection(t *testing.T) {
 		})
 	}
 }
+
+// TestSelectionSeparators: a region built with selAdd copies a wrapped
+// line as one line and a label's value a tab after it.
+func TestSelectionSeparators(t *testing.T) {
+	a := &app{scale: 1, faces: map[faceKey]font.Face{}, selText: map[string][]string{}, selSeps: map[string][]string{}}
+	cmd := "doszer build --format plain --flatten 'D:\\Tools\\doszer\\sources\\Space Hulk' 'D:\\Tools\\doszer\\roms\\Space Hulk.dosz'"
+	for i, l := range a.wrapMono(cmd, 300) {
+		sep := sepWrap
+		if i == 0 {
+			sep = sepLine
+		}
+		a.selAdd("r", l, sep)
+	}
+	a.selAdd("r", "Source", sepLine)
+	for i, l := range a.wrapKeep(`D:\Tools\doszer\sources\Space Hulk with a long tail of words`, 120, 13, false) {
+		sep := sepWrap
+		if i == 0 {
+			sep = sepColumn
+		}
+		a.selAdd("r", l, sep)
+	}
+	if n := len(a.selText["r"]); n < 5 {
+		t.Fatalf("expected wrapping, got %d lines: %q", n, a.selText["r"])
+	}
+	want := cmd + "\nSource\t" + `D:\Tools\doszer\sources\Space Hulk with a long tail of words`
+	if got := a.regionText("r"); got != want {
+		t.Errorf("region text\n%q\nwant\n%q", got, want)
+	}
+	last := len(a.selText["r"]) - 1
+	a.tsel = textSel{region: "r", active: true, from: selPos{0, 0}, to: selPos{last, a.lineLen("r", last)}}
+	if got := a.selected_(); got != want {
+		t.Errorf("selected\n%q\nwant\n%q", got, want)
+	}
+}
