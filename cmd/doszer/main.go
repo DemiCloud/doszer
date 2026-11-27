@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1180,8 +1181,43 @@ Options:
 	endSteps(err)
 	if rep != nil {
 		printInstallReport(rep, opts.DryRun)
+		if r := rep.Retry; r != nil {
+			cmd := "doszer install --from " + shellQuote(r.From)
+			if r.Content != "" {
+				cmd += " --content " + shellQuote(r.Content)
+			}
+			fmt.Printf("To extract one: %s --dir FOLDER %s\n", cmd, shellQuote(opts.Source))
+		}
+		if err := writeInstallResult(rep); err != nil {
+			return err
+		}
 	}
 	return err
+}
+
+// writeInstallResult writes rep's Retry to install.ResultEnv's file, for
+// the window.
+func writeInstallResult(rep *install.Report) error {
+	p := os.Getenv(install.ResultEnv)
+	if p == "" || rep.Retry == nil {
+		return nil
+	}
+	data, err := json.Marshal(rep.Retry)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(p, data, 0o644)
+}
+
+// shellQuote quotes s for a command line if it needs it.
+func shellQuote(s string) string {
+	if s != "" && !strings.ContainsAny(s, " \t'\"$`\\&|;<>()*?[]#~!") {
+		return s
+	}
+	if runtime.GOOS == "windows" {
+		return `"` + s + `"`
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // runVersion implements `doszer version`.

@@ -3,6 +3,7 @@ package gui
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -59,6 +60,7 @@ type job struct {
 type step struct {
 	args   []string
 	prompt string
+	env    []string // KEY=VALUE added to the command's environment
 }
 
 func (j *job) Write(p []byte) (int, error) {
@@ -156,6 +158,9 @@ func (a *app) startStep(d *dialog) {
 		j.Write([]byte("\n$ " + line + "\n"))
 	}
 	cmd := exec.Command(exe, st.args...)
+	if len(st.env) > 0 {
+		cmd.Env = append(os.Environ(), st.env...)
+	}
 	hideConsole(cmd)
 	cmd.Stdout, cmd.Stderr = j, j
 	j.cmd = cmd

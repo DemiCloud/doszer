@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"github.com/DemiCloud/doszer/internal/install"
 	"os"
 	"path/filepath"
 	"slices"
@@ -76,6 +77,10 @@ func TestScreenshot(t *testing.T) {
 			}
 		},
 		"folder.png": func(a *App) { a.openBuildFolder() },
+		"installdir.png": func(a *App) { // install's changes span folders
+			a.add = &addGame{page: 3, plan: &addPlan{name: "Example Game", src: "/path/to/Example Game"}, dests: []string{"/path/to/roms"},
+				retry: &install.Retry{Drive: "C:", From: "x.pure.zip", Folders: []install.Folder{{Name: "GAME", Files: 120, Bytes: 48 << 20}, {Name: "TOOLS", Files: 9, Bytes: 20 << 20}}}}
+		},
 		"export.png": func(a *App) { a.openExport("Export all games", nil) },
 		"child.png": func(a *App) {
 			if len(a.parentList) > 0 {

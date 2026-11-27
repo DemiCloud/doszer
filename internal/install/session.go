@@ -20,6 +20,7 @@ import (
 // Session is one install run's temporary content.
 type Session struct {
 	unregister func()
+	keep       bool // KeepContent: Close leaves Dir
 
 	Name    string // content name: also the prefix of every save file the run creates
 	Content string // the temporary .dosz
@@ -176,10 +177,16 @@ func addData(zw *zipw.Writer, name string, data []byte) error {
 
 // Close removes the session's temporary content.
 func (s *Session) Close() error {
-	err := os.RemoveAll(s.Dir)
 	s.unregister()
-	return err
+	if s.keep {
+		return nil
+	}
+	return os.RemoveAll(s.Dir)
 }
+
+// KeepContent leaves the session's content in place past Close, for
+// extracting from its D: save later (Retry).
+func (s *Session) KeepContent() { s.keep = true }
 
 // SaveFiles are the save files a session can produce.
 type SaveFiles struct {

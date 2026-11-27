@@ -4,10 +4,12 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -49,26 +51,47 @@ func TestDiff(t *testing.T) {
 }
 
 func TestPickDir(t *testing.T) {
+	type f struct {
+		path string
+		size int64
+	}
 	tests := []struct {
-		paths   []string
+		name    string
+		files   []f
 		want    string
-		wantErr bool
+		folders []string // a DirChoiceError's, biggest first
 	}{
-		{[]string{"GAME/A.EXE", "GAME/SUB/B.DAT"}, "GAME", false},
-		{[]string{"GAME/A.EXE", "OTHER/B.DAT"}, "", true},
-		{[]string{"A.EXE", "B.CFG"}, "", false},                                       // only root files: the root
-		{[]string{"HOCUS.BAT", "HOCUS/HOCUS.EXE", "HOCUS/HOCUS.DAT"}, "HOCUS", false}, // a launcher in the root: the folder
-		{[]string{"A.CFG", "GAME/B.EXE", "OTHER/C.DAT"}, "", true},                    // root and two folders
-		{nil, "", true},
+		{"one folder", []f{{"GAME/A.EXE", 10}, {"GAME/SUB/B.DAT", 10}}, "GAME", nil},
+		{"only root files: the root", []f{{"A.EXE", 1}, {"B.CFG", 1}}, "", nil},
+		{"a launcher in the root: the folder", []f{{"HOCUS.BAT", 22}, {"HOCUS/HOCUS.EXE", 9}, {"HOCUS/HOCUS.DAT", 9}}, "HOCUS", nil},
+		{"named like the game, though smaller", []f{{"HOCUS/HOCUS.EXE", 10}, {"SOUND/DRV.EXE", 90}}, "HOCUS", nil},
+		{"a word of the name starts it", []f{{"DESCENT2/D2.EXE", 10}, {"UTILS/X.EXE", 90}}, "DESCENT2", nil},
+		{"80% of the bytes", []f{{"GAME/DATA.DAT", 80}, {"SB16/DRV.EXE", 20}}, "GAME", nil},
+		{"none stands out", []f{{"A.CFG", 1}, {"GAME/B.EXE", 70}, {"OTHER/C.DAT", 30}}, "", []string{"GAME", "OTHER"}},
+		{"nothing", nil, "", []string{}},
 	}
 	for _, tt := range tests {
 		var cs []Change
-		for _, p := range tt.paths {
-			cs = append(cs, Change{Path: p, Kind: Added})
+		for _, x := range tt.files {
+			cs = append(cs, Change{Path: x.path, Kind: Added, Size: x.size})
 		}
-		got, err := pickDir(cs)
-		if got != tt.want || (err != nil) != tt.wantErr {
-			t.Errorf("pickDir(%v) = %q, %v", tt.paths, got, err)
+		got, err := pickDir(cs, "Hocus Pocus: Descent")
+		var dc *DirChoiceError
+		switch {
+		case tt.folders == nil && (err != nil || got != tt.want):
+			t.Errorf("%s: %q, %v; want %q", tt.name, got, err, tt.want)
+		case tt.folders != nil && len(tt.folders) == 0 && err == nil:
+			t.Errorf("%s: %q, want an error", tt.name, got)
+		case len(tt.folders) > 0 && !errors.As(err, &dc):
+			t.Errorf("%s: %q, %v; want a DirChoiceError", tt.name, got, err)
+		case len(tt.folders) > 0:
+			var names []string
+			for _, f := range dc.Folders {
+				names = append(names, f.Name)
+			}
+			if !reflect.DeepEqual(names, tt.folders) {
+				t.Errorf("%s: folders %v, want %v", tt.name, names, tt.folders)
+			}
 		}
 	}
 }
@@ -620,5 +643,38 @@ func TestRunSessionNoChanges(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(saveDir); len(entries) != 0 {
 		t.Fatal("save file not cleaned up")
+	}
+}
+
+// A session whose changes span folders none of which stands out keeps
+// its save, and Retry extracts the chosen folder from it.
+func TestRunSessionDirChoice(t *testing.T) {
+	systemDir, saveDir := fakeDOSBoxPure(t)
+	save := filepath.Join(t.TempDir(), "split.pure.zip")
+	os.WriteFile(save, zipBytes(t, map[string]string{
+		"MAIN/RUN.EXE":   strings.Repeat("g", 60),
+		"TOOLS/EDIT.EXE": strings.Repeat("t", 40),
+	}), 0o644)
+	t.Setenv("FAKE_SAVE", save)
+	t.Setenv("FAKE_SUFFIX", ".pure.zip")
+
+	src := writeSource(t, "format = 1\nname = \"Example Game\"\n", map[string]string{"README.TXT": ""})
+	rep, err := Run(Options{Source: src, SystemDir: systemDir, SaveDir: saveDir})
+	var dc *DirChoiceError
+	if !errors.As(err, &dc) || rep == nil || rep.Retry == nil {
+		t.Fatalf("Run = %+v, %v; want a DirChoiceError with a Retry", rep, err)
+	}
+	r := rep.Retry
+	if len(r.Folders) != 2 || r.Folders[0].Name != "MAIN" || r.Content != "" {
+		t.Fatalf("retry %+v", r)
+	}
+	if _, err := os.Stat(r.From); err != nil {
+		t.Fatalf("save not kept: %v", err)
+	}
+	if _, err := Run(Options{Source: src, From: r.From, Dir: "TOOLS"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(src, "TOOLS", "EDIT.EXE")); err != nil {
+		t.Fatal(err)
 	}
 }

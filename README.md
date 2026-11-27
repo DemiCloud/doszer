@@ -733,11 +733,17 @@ top-level folder outside `WINDOWS` every change is under. The game's paths
 then name C:, which the manifest's `[[layout.rewrite]]` rules can fix
 (`build --dry-run` suggests rules for paths that move).
 
-The folder to extract is `--dir`, or the one top-level folder every
-change is under, also when files in the root changed beside it (a
-launcher batch file the installer wrote there, listed as not extracted),
-or the root when every change is a file there (`--dir /` asks for the
-root). A session that changed nothing extracts nothing:
+The folder to extract is `--dir`, or else chosen from the top-level
+folders the changes are in: the only one, also when files in the root
+changed beside it (a launcher batch file the installer wrote there,
+listed as not extracted); of several, the only one named like the game
+(`HOCUS` of Hocus Pocus, `DESCENT2` of Descent II), else the one holding
+at least 80% of their bytes (a sound driver or utilities folder beside
+the game is small); with no folder, the root (`--dir /` asks for it).
+When no folder stands out, `install` lists them with their sizes, keeps
+the session's save (and, for D:, the session's content) and prints the
+`install --from` command that extracts one without installing again;
+the window offers the folders to choose from. A session that changed nothing extracts nothing:
 DOSBox Pure doesn't save a file rewritten with the same content, so
 running a setup program and keeping its settings leaves no change. A
 game that comes installed doesn't need `install`; `init` and `build` it

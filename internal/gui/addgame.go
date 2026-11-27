@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/DemiCloud/doszer/internal/config"
+	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/platform"
 	"github.com/DemiCloud/doszer/internal/start"
@@ -22,7 +23,7 @@ import (
 // would type - doszer dump (or dump --from), init and build - run one
 // after the other in a dialog.
 type addGame struct {
-	page     int // 0: source, 1: options
+	page     int // 0: source, 1: options, 2: start program, 3: folder
 	drives   []drive
 	useFiles bool
 	drive    int
@@ -48,9 +49,10 @@ type addGame struct {
 	plan       *addPlan
 	candidates []start.Candidate
 	choice     int
-	scroll     int  // the report's lines scrolled up from its end
-	windows9x  bool // the game boots an OS image: start --display applies
-	colors256  bool // start --display 640x480x8
+	scroll     int            // the report's lines scrolled up from its end
+	windows9x  bool           // the game boots an OS image: start --display applies
+	retry      *install.Retry // page 3: install's changes span these folders
+	colors256  bool           // start --display 640x480x8
 }
 
 // addPlan is where a game being added goes.
@@ -60,6 +62,7 @@ type addPlan struct {
 	install        []step   // the install step, to run again
 	report         []string // install's output
 	folder         bool     // Build a folder, not Import a disc
+	result         string   // the install step's install.ResultEnv file
 	flatten        bool     // build --flatten
 }
 
@@ -300,9 +303,13 @@ func (a *app) addGameRun() {
 	if a.o.SystemDir != "" {
 		installArgs = append(installArgs, "--system-dir", a.o.SystemDir)
 	}
+	if f, err := os.CreateTemp("", "doszer-install-*.json"); err == nil {
+		f.Close()
+		plan.result = f.Name()
+	}
 	steps = append(steps,
 		step{prompt: "Next, DOSBox Pure opens with the game's disc. Run its setup (SETUP.EXE or INSTALL.EXE: in Windows, from the CD drive), install the game, then close DOSBox Pure's window."},
-		step{args: append(installArgs, src)},
+		step{args: append(installArgs, src), env: []string{install.ResultEnv + "=" + plan.result}},
 	)
 	plan.install = steps[len(steps)-2:]
 	a.add = nil
@@ -310,13 +317,20 @@ func (a *app) addGameRun() {
 }
 
 // installed ends an install run: its output stays up, read before Next
-// moves on to choosing the program.
+// moves on to choosing the program. Changes spanning folders none of
+// which stands out go to choosing the folder.
 func (a *app) installed(plan *addPlan) func(error) {
 	return func(err error) {
 		if err != nil {
+			if r := install.ReadRetry(plan.result); r != nil {
+				a.add = &addGame{page: 3, plan: plan, retry: r, dests: []string{filepath.Dir(plan.out)}, useFolder: plan.folder}
+				a.dialog = nil
+				return
+			}
 			a.say("Kept in "+plan.src, true)
 			return
 		}
+		os.Remove(plan.result)
 		if d := a.dialog; d != nil && d.job != nil {
 			plan.report = d.job.lines()
 			d.buttons = []dialogButton{a.copyAll(d), {label: "Next", style: btnAccent, fn: func() { a.chooseStart(plan) }}}
@@ -324,6 +338,33 @@ func (a *app) installed(plan *addPlan) func(error) {
 			a.chooseStart(plan)
 		}
 	}
+}
+
+// addGameExtract extracts the chosen folder from the install session's
+// kept save (install --from), then goes on as after the session.
+func (a *app) addGameExtract() {
+	g := a.add
+	p, r := g.plan, g.retry
+	args := []string{"install", "--format", "plain", "--from", r.From}
+	if r.Content != "" {
+		args = append(args, "--content", r.Content)
+	}
+	if a.o.SystemDir != "" {
+		args = append(args, "--system-dir", a.o.SystemDir)
+	}
+	args = append(args, "--dir", r.Folders[g.choice].Name, p.src)
+	os.Remove(p.result) // a failure now is the extraction's, not the folder's
+	a.add = nil
+	next := a.installed(p)
+	a.runSteps("Build "+p.name, []step{{args: args}}, func(err error) {
+		if err == nil {
+			os.Remove(r.From)
+			if r.Content != "" {
+				os.RemoveAll(filepath.Dir(r.Content))
+			}
+		}
+		next(err)
+	})
 }
 
 // buildStep builds plan's archive.
@@ -427,6 +468,8 @@ func (a *app) drawAddGame() {
 		title = what + ": how should it be built?"
 	case 2:
 		title = what + ": which program starts it?"
+	case 3:
+		title = what + ": which folder is the game?"
 	}
 	a.text(title, x+p, ty, 19, true, colText)
 	ty += a.lineHeight(19, true) + a.px(16)
@@ -439,6 +482,8 @@ func (a *app) drawAddGame() {
 		ty = a.addGameOptions(g, cx, ty, cw)
 	case 2:
 		ty = a.addGameStart(g, cx, ty, cw, y+h-p-a.px(48))
+	case 3:
+		ty = a.addGameFolder(g, cx, ty, cw, y+h-p-a.px(48))
 	}
 
 	// Buttons.
@@ -471,8 +516,13 @@ func (a *app) drawAddGame() {
 			place("Build anyway", btnNormal, func() { a.addGameFinish(false) })
 		}
 	}
+	if g.page == 3 {
+		place("Extract", btnAccent, a.addGameExtract)
+	}
 	place("Cancel", btnNormal, func() {
-		if g.plan != nil {
+		if g.retry != nil {
+			a.say("Save kept: "+g.retry.From, false)
+		} else if g.plan != nil {
 			a.say("The installed game is kept in "+g.plan.src, false)
 		}
 		a.add = nil
@@ -815,6 +865,19 @@ func (a *app) addGameStart(g *addGame, x, y, w, bottom int32) int32 {
 		}
 		idx := i
 		y = a.option(x, y, w, g.choice == i, c.Path, detail, func() { g.choice = idx })
+	}
+	return y
+}
+
+// addGameFolder lists the folders install's changes span, the biggest
+// first (and chosen).
+func (a *app) addGameFolder(g *addGame, x, y, w, bottom int32) int32 {
+	a.pushClip(x, y, w, bottom-y)
+	defer a.popClip()
+	for i, f := range g.retry.Folders {
+		idx := i
+		detail := itoa(f.Files) + " files, " + size(f.Bytes)
+		y = a.option(x, y, w, g.choice == i, g.retry.Drive+`\`+f.Name, detail, func() { g.choice = idx })
 	}
 	return y
 }

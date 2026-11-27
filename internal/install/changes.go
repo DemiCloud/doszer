@@ -187,45 +187,135 @@ func (pz *PureZip) Changes(content fs.FS) []Change {
 	return out
 }
 
-// pickDir chooses the folder to extract when none was given: the one
-// top-level directory every added or modified file is under, also when
-// files beside it in the root changed too (a launcher batch file, an
-// AUTOEXEC.BAT line: the game is the folder, and the root files are
-// listed as not extracted), or the root ("") when they're all files in
-// the root (an installer that only writes its configuration beside the
-// game it came with).
-func pickDir(changes []Change) (string, error) {
-	tops := map[string]bool{}
+// Folder is a top-level folder an install's changes are in: its added
+// and modified files and their bytes.
+type Folder struct {
+	Name  string `json:"name" yaml:"name" toml:"name"`
+	Files int    `json:"files" yaml:"files" toml:"files"`
+	Bytes int64  `json:"bytes" yaml:"bytes" toml:"bytes"`
+}
+
+// DirChoiceError is pickDir's answer when the changes span several
+// folders and none stands out: they're listed, the biggest first.
+type DirChoiceError struct{ Folders []Folder }
+
+func (e *DirChoiceError) Error() string {
+	var names []string
+	for _, f := range e.Folders {
+		names = append(names, fmt.Sprintf("%s (%s)", f.Name, sizeText(f.Bytes)))
+	}
+	return "changes span " + strings.Join(names, ", ") + ": choose the folder to extract with --dir"
+}
+
+func sizeText(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%d KB", n>>10)
+	}
+	return fmt.Sprintf("%d bytes", n)
+}
+
+// pickDir chooses the folder to extract when none was given, from the
+// top-level folders added or modified files are in:
+//   - the only one, also when files in the root changed beside it (a
+//     launcher batch file, an AUTOEXEC.BAT line: they're listed as not
+//     extracted);
+//   - of several, the only one named like the game (gameNamed: HOCUS of
+//     Hocus Pocus), else the one holding at least 80% of their bytes (a
+//     game's data dwarfs the sound drivers or utilities an installer
+//     may add beside it);
+//   - with no folder, the root ("": an installer that only writes its
+//     configuration beside the game it came with).
+//
+// Otherwise a *DirChoiceError lists them.
+func pickDir(changes []Change, name string) (string, error) {
+	byName := map[string]*Folder{}
+	root := false
 	for _, c := range changes {
 		if c.Kind == Deleted {
 			continue
 		}
 		top, _, nested := strings.Cut(c.Path, "/")
 		if !nested {
-			top = "" // a file in the root
+			root = true
+			continue
 		}
-		tops[top] = true
-	}
-	if len(tops) == 2 && tops[""] {
-		delete(tops, "")
-	}
-	if len(tops) == 1 {
-		for t := range tops {
-			return t, nil
+		f := byName[strings.ToUpper(top)]
+		if f == nil {
+			f = &Folder{Name: top}
+			byName[strings.ToUpper(top)] = f
 		}
+		f.Files++
+		f.Bytes += c.Size
 	}
-	if len(tops) == 0 {
+	var folders []Folder
+	var total int64
+	for _, f := range byName {
+		folders = append(folders, *f)
+		total += f.Bytes
+	}
+	sort.Slice(folders, func(i, j int) bool {
+		if folders[i].Bytes != folders[j].Bytes {
+			return folders[i].Bytes > folders[j].Bytes
+		}
+		return folders[i].Name < folders[j].Name
+	})
+	switch {
+	case len(folders) == 0 && root:
+		return "", nil
+	case len(folders) == 0:
 		return "", errors.New("the installer changed no files")
+	case len(folders) == 1:
+		return folders[0].Name, nil
 	}
-	var names []string
-	for t := range tops {
-		if t == "" {
-			t = "(root)"
+	named := -1
+	for i, f := range folders {
+		if gameNamed(f.Name, name) {
+			if named >= 0 {
+				named = -2
+				break
+			}
+			named = i
 		}
-		names = append(names, t)
 	}
-	sort.Strings(names)
-	return "", fmt.Errorf("changes span %s: choose the folder to extract with --dir", strings.Join(names, ", "))
+	if named >= 0 {
+		return folders[named].Name, nil
+	}
+	if folders[0].Bytes*5 >= total*4 {
+		return folders[0].Name, nil
+	}
+	return "", &DirChoiceError{folders}
+}
+
+// gameNamed reports whether a folder is named like the game, by letters
+// and digits: the whole name (HOCUSPOC... cut to 8.3 or not), or one of
+// its words of four letters or more starting the folder's name (DESCENT2
+// of Descent II).
+func gameNamed(folder, name string) bool {
+	norm := func(s string) string {
+		var b strings.Builder
+		for _, r := range strings.ToLower(s) {
+			if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+				b.WriteRune(r)
+			}
+		}
+		return b.String()
+	}
+	f, n := norm(folder), norm(name)
+	if f == "" || n == "" {
+		return false
+	}
+	if f == n || len(f) >= 4 && strings.HasPrefix(n, f) {
+		return true
+	}
+	for _, w := range strings.Fields(name) {
+		if w = norm(w); len(w) >= 4 && strings.HasPrefix(f, w) {
+			return true
+		}
+	}
+	return false
 }
 
 // under reports whether p is dir or inside it, case-insensitively.

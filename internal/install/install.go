@@ -2,6 +2,7 @@ package install
 
 import (
 	"archive/zip"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -41,7 +42,8 @@ type Options struct {
 	OS        string            // OS image an OS image session boots instead of boot.os (e.g. a plain install image)
 	InstallOS map[string]string // configured install images by boot.os, the fallback for OS
 
-	session bool // extracting what a session just wrote (Extract's modifiedOK)
+	session bool   // extracting what a session just wrote (Extract's modifiedOK)
+	name    string // the game's name, for pickDir
 }
 
 // sessionOS is the OS image an OS image session boots, and a -CDRIVE.sav
@@ -87,7 +89,7 @@ func checkDiffSafe(systemDir, osPath string) error {
 // osDriveDir picks the folder to extract from an OS image's C: changes:
 // Windows changes its own files during any session, so WINDOWS/ and files
 // in the root don't count.
-func osDriveDir(changes []Change) (string, error) {
+func osDriveDir(changes []Change, name string) (string, error) {
 	var own []Change
 	for _, c := range changes {
 		top, _, nested := strings.Cut(c.Path, "/")
@@ -95,7 +97,7 @@ func osDriveDir(changes []Change) (string, error) {
 			own = append(own, c)
 		}
 	}
-	return pickDir(own)
+	return pickDir(own, name)
 }
 
 // Report is what an install found and did.
@@ -124,6 +126,40 @@ type Report struct {
 	// OS image model: DLLs the installer put in Windows' folders that the
 	// extracted programs import, copied beside them (copyImportedDLLs).
 	DLLs []DLLCopy
+
+	// Retry, when a session's changes span folders none of which stands
+	// out (DirChoiceError): what extracting one of them takes without
+	// running the session again.
+	Retry *Retry
+}
+
+// ResultEnv names a file install writes its Retry to as JSON, if it has
+// one: how the window, running install as a child process, learns which
+// folders to offer when the changes span several.
+const ResultEnv = "DOSZER_INSTALL_RESULT"
+
+// ReadRetry reads the Retry an install wrote to the ResultEnv file p; nil
+// if it wrote none.
+func ReadRetry(p string) *Retry {
+	data, err := os.ReadFile(p)
+	if err != nil || len(data) == 0 {
+		return nil
+	}
+	var r Retry
+	if json.Unmarshal(data, &r) != nil || len(r.Folders) == 0 || r.From == "" {
+		return nil
+	}
+	return &r
+}
+
+// Retry is how to extract a session's changes once the folder is chosen:
+// install --from From (--content Content) --dir <one of Folders>. The
+// save, and the content if a D: save needs it, are kept for it.
+type Retry struct {
+	Drive   string   `json:"drive"` // "C:" or "D:"
+	Folders []Folder `json:"folders"`
+	From    string   `json:"from"`
+	Content string   `json:"content,omitempty"`
 }
 
 // Run runs an install session, or reads opts.From, and extracts the
@@ -133,6 +169,7 @@ func Run(opts Options) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	opts.name = m.Name
 	switch d := strings.ToUpper(strings.TrimSuffix(opts.Drive, ":")); d {
 	case "":
 	case "C", "D":
@@ -223,6 +260,10 @@ func runSession(opts Options, m *manifest.Manifest) (*Report, error) {
 	}
 	if err != nil {
 		rep.Kept = saves
+		var dc *DirChoiceError
+		if errors.As(err, &dc) {
+			rep.Retry = retry(rep, s, saves, dc)
+		}
 		return rep, err
 	}
 	if opts.Keep || opts.DryRun {
@@ -233,6 +274,24 @@ func runSession(opts Options, m *manifest.Manifest) (*Report, error) {
 		}
 	}
 	return rep, nil
+}
+
+// retry is how to extract one of dc's folders from the session's kept
+// save: the drive's save, and for D: the session content it was made
+// over, kept past the session.
+func retry(rep *Report, s *Session, saves []string, dc *DirChoiceError) *Retry {
+	r := &Retry{Drive: rep.Drive, Folders: dc.Folders}
+	for _, p := range saves {
+		cdrive := cdriveSave.MatchString(p) || strings.HasSuffix(strings.ToLower(p), ".pure.zip")
+		if cdrive == (rep.Drive != "D:") {
+			r.From = p
+		}
+	}
+	if rep.Drive == "D:" {
+		s.KeepContent()
+		r.Content = s.Content
+	}
+	return r
 }
 
 // collectOS reads an OS image session: D: from the content's synthesized
@@ -414,7 +473,7 @@ func extract(rep *Report, src fs.FS, opts Options) error {
 	rep.Dir = strings.Trim(filepath.ToSlash(opts.Dir), "/.")
 	if opts.Dir == "" { // "/" asks for the root
 		var err error
-		if rep.Dir, err = pickDir(rep.Changes); err != nil {
+		if rep.Dir, err = pickDir(rep.Changes, opts.name); err != nil {
 			return err
 		}
 	}
@@ -546,7 +605,7 @@ func extractOverlay(rep *Report, image, sav string, opts Options) error {
 		return err
 	}
 	if opts.Dir == "" {
-		if opts.Dir, err = osDriveDir(rep.Changes); err != nil {
+		if opts.Dir, err = osDriveDir(rep.Changes, opts.name); err != nil {
 			return err
 		}
 	}
