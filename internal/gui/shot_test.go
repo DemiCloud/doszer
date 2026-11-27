@@ -71,6 +71,21 @@ func TestScreenshot(t *testing.T) {
 				}
 			}
 		},
+		"logsmulti.png": func(a *App) { // two items selected, their menu open
+			a.Show("logs")
+			if order := a.logOrder(); len(order) >= 2 {
+				a.logMulti.all(order[:2])
+				a.mx, a.my = a.px(200), a.px(160)
+				a.logsMenu()
+			}
+		},
+		"gamesmulti.png": func(a *App) { // games selected, their menu open
+			if order := a.gameOrder(); len(order) >= 2 {
+				a.gameMulti.all(order[:2])
+				a.mx, a.my = a.px(300), a.px(170)
+				a.gamesMenu(a.selectedGames())
+			}
+		},
 		"logsscroll.png": func(a *App) {
 			a.Show("logs")
 			for _, r := range a.runs {

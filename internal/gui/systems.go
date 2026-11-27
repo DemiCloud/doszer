@@ -207,8 +207,17 @@ func (a *app) drawSystems() {
 
 func (a *app) drawSystemRow(f *systemFile, i int, x, y, w, h int32) {
 	sel := i == a.sysSel
+	k := key(f.Name, f.Shell)
+	if a.sysMulti.count() > 1 {
+		sel = a.sysMulti.has(k)
+	}
 	a.card(x, y, w, h, sel, a.hovered(x, y, w, h))
-	a.clipHit(x, y, w, h, func(bool) { a.sysSel = i })
+	a.dragItem(&a.sysMulti, a.sysOrder, k, x, y, w, h, nil)
+	a.clipHit(x, y, w, h, func(bool) {
+		a.sysMulti.click(a.sysOrder(), k, a.curSys(), a.rightClicking)
+		a.sysSel = i
+		a.menuAt = func() { a.systemMenu(a.sysMulti.selected(a.sysOrder(), a.curSys())) }
+	})
 
 	c := colOS
 	if f.Shell {
@@ -310,7 +319,7 @@ func (a *app) prepare(f systemFile) {
 			a.say("Prepare: a file name, without folders", true)
 			return
 		}
-		a.runDoszer("Prepare: "+name, []string{"prepare", kind, "--format", "plain", in, filepath.Join(filepath.Dir(in), name)}, func(err error) {
+		a.runDoszer("Prepare: "+name, []string{"prepare", kind, in, filepath.Join(filepath.Dir(in), name)}, func(err error) {
 			a.rescanSystems()
 		})
 	}

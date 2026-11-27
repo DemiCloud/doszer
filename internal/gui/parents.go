@@ -50,11 +50,23 @@ func (a *app) drawParents() {
 	for i := range a.parentList {
 		g := &a.parentList[i]
 		x, y, w, h := ax+p, ay+p+int32(i)*(a.rowH()+a.rowGap())-a.scroll[pageParents], aw-2*p, a.rowH()
-		a.card(x, y, w, h, i == a.parentSel, a.hovered(x, y, w, h))
+		sel := i == a.parentSel
+		if a.parentMulti.count() > 1 {
+			sel = a.parentMulti.has(g.Path)
+		}
+		a.card(x, y, w, h, sel, a.hovered(x, y, w, h))
 		idx := i
+		a.dragItem(&a.parentMulti, a.parentOrder, g.Path, x, y, w, h, nil)
 		a.clipHit(x, y, w, h, func(bool) {
+			a.parentMulti.click(a.parentOrder(), g.Path, a.curParent(), a.rightClicking)
 			a.parentSel = idx
-			a.menuAt = func() { a.parentMenu(g) }
+			a.menuAt = func() {
+				if ps := a.parentMulti.selected(a.parentOrder(), a.curParent()); len(ps) > 1 {
+					a.parentsMenu(ps)
+				} else {
+					a.parentMenu(g)
+				}
+			}
 		})
 		is := a.px(64)
 		a.drawIcon(g, x+a.px(12), y+(h-is)/2, is)
@@ -94,15 +106,17 @@ func (a *app) parentMenu(g *library.Game) {
 	path, name := g.Path, g.Name
 	items := []menuItem{
 		{label: "Dependencies", fn: func() { a.showDeps(path, name) }},
-		{label: "Verify", fn: func() { a.runDoszer("Verify: "+name, []string{"verify", "--format", "plain", path}, nil) }},
+		{label: "Verify", fn: func() { a.runDoszer("Verify: "+name, []string{"verify", path}, nil) }},
 		{label: "Lint", fn: func() { a.lint(path, name) }},
 		{label: "-"},
 		{label: "Create child…", fn: func() { a.openChild(path, name) }},
+		{label: "Export games using it…", fn: func() { a.exportChildren(a.children([]string{path}), name) }},
 		{label: "Convert to game…", fn: func() { a.convert(path, name, "dosz") }},
 	}
 	if canOpen() {
 		items = append(items, menuItem{label: "-"}, menuItem{label: "Show in folder", fn: func() { a.showInFolder(path) }})
 	}
+	items = append(items, menuItem{label: "-"}, menuItem{label: "Delete…", fn: func() { a.deleteArchives([]string{path}) }})
 	a.openMenuItems(a.mx, a.my, items)
 }
 
@@ -114,7 +128,7 @@ func (a *app) convert(path, name, to string) {
 		what = "a game (.dosz)"
 	}
 	a.confirm("Convert "+name+"?", "Convert", func() {
-		a.runDoszer("Convert: "+name, []string{"convert", "--format", "plain", "--to", to, path}, func(err error) {
+		a.runDoszer("Convert: "+name, []string{"convert", "--to", to, path}, func(err error) {
 			if err == nil {
 				a.rescan()
 			}

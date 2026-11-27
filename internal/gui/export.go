@@ -96,7 +96,7 @@ func (e *exportDialog) ready() bool { return e.folderOK() && len(e.chosen()) > 0
 func (a *app) runExport() {
 	e := a.exp
 	dir := e.folders[e.kind].text
-	args := []string{"export", "--format", "plain", "--to", exportTypes[e.kind].flag, "--dir", dir, "--systems", strings.Join(e.chosen(), ",")}
+	args := []string{"export", "--to", exportTypes[e.kind].flag, "--dir", dir, "--systems", strings.Join(e.chosen(), ",")}
 	if e.overwrite && e.kind != exportZip {
 		args = append(args, "--overwrite")
 	}

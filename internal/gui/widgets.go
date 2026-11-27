@@ -346,7 +346,9 @@ func (a *app) openMenu(x, y int32, items []string, pick func(int)) {
 func (a *app) rightClick() {
 	a.popup = nil
 	a.menuAt = nil
+	a.rightClicking = true
 	a.click(false)
+	a.rightClicking = false
 	if a.menuAt != nil {
 		a.menuAt()
 	}

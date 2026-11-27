@@ -176,7 +176,7 @@ func (a *app) drawRunReport(r *runlog.Report, x, y, w int32) int32 {
 	// What can be done with it: each a doszer command.
 	bx := x
 	bx += a.button("Transcript", bx, rp.y, btnNormal, func() {
-		a.runDoszer("Transcript", []string{"logs", "--format", "plain", "--transcript", r.ID}, nil)
+		a.runDoszer("Transcript", []string{"logs", "--transcript", r.ID}, nil)
 	}) + a.px(4)
 	bx += a.button("Export…", bx, rp.y, btnNormal, func() { a.exportRun(r) }) + a.px(4)
 	if canOpen() {
@@ -360,7 +360,7 @@ func (a *app) drawSessionReport(g *runGroup, x, y, w int32) int32 {
 	key := g.key
 	bx := x
 	bx += a.button("Transcript", bx, rp.y, btnNormal, func() {
-		a.runDoszer("Transcript", []string{"logs", "--format", "plain", "--transcript", key}, nil)
+		a.runDoszer("Transcript", []string{"logs", "--transcript", key}, nil)
 	}) + a.px(4)
 	a.button("Export…", bx, rp.y, btnNormal, func() { a.exportLogs(g.subject(), g.first().Started, key) })
 	rp.gap(50)

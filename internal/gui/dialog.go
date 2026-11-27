@@ -16,7 +16,8 @@ import (
 // dialog is a modal message, question, or a doszer command's live
 // output. Every action the window takes on archives is a doszer command,
 // run as a process of its own and shown with its command line, so the
-// command line can always do what the window does.
+// command line can always do what the window does - but deleting files
+// (libraryactions.go), which needs no doszer.
 type dialog struct {
 	title   string
 	lines   []string // the message, or the command line above the output

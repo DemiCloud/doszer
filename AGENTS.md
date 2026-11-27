@@ -207,6 +207,11 @@ README.md            doszer usage, configuration, install workflow
   so it copies as it would be typed: a command line wrapped to fit pastes
   as one line. What is clicked (buttons, list items, links) isn't: a
   drag-select there would fight the click.
+- Lists select several items through `multiSel` (Ctrl/Shift+click, drag
+  from an item); a right click keeps a selection holding the item and
+  opens the selection's menu. Deleting archives or system files is the
+  one window action that isn't a doszer command (os.Remove, confirmed,
+  naming the games left unable to start).
 - Window text is terse, like help output: a title, a label or a short
   line, never a sentence explaining what the user can see for
   themselves ("Credits", not "doszer and the programs it embeds:").

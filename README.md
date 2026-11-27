@@ -64,7 +64,7 @@ doszer deps    FILE... [--used-by] [--system-dir DIR]
 doszer prepare shell SHELL OUTPUT [--add DIR...] [-n] [-f]
 doszer prepare os    IMAGE OUTPUT [--add DIR...] [-n] [-f]
 doszer export  FILE... | --all [DIR...] [--to retrodeck|zip] [--dir DIR] [--systems LIST] [--overwrite] [--flat] [-n] [--system-dir DIR]
-doszer logs    [RUN|SESSION|PATH...] [--transcript] [--export FILE.zip [--no-redact] [-f]]
+doszer logs    [RUN|SESSION|PATH...] [--transcript] [--export FILE.zip [--no-redact] [-f]] [--delete]
 doszer env     [--system-dir DIR] [--save-dir DIR] [--rom-dir DIR]
 doszer env portable [DIR] [--copy] [--from FILE] [-n] [-f]
 doszer gui     [--rom-dir DIR] [--system-dir DIR] [--save-dir DIR]
@@ -939,6 +939,9 @@ source, archive or session, along the chain (the source's build, that
 archive's repack, the repack's `set`). `--transcript` prints the runs'
 output instead.
 
+`doszer logs --delete RUN|SESSION|PATH...` deletes runs' logs (never
+the archives they built).
+
 `doszer logs --export FILE.zip [RUN|SESSION|PATH...]` packs runs - by
 default the last run's history - into one ZIP for debugging:
 `commands.txt` (their command lines in order, with the working directory
@@ -1048,11 +1051,23 @@ Tools (Info, Dependencies, Verify, Lint, Build log - its newest run in
 Logs, when one was recorded -, Repack, Export, Convert to parent, Advanced:
 edit WINDOWS.BAT or DOSZ.TOML as text), Change (Parent - the `.dosp`
 files beside it -, OS image or Shell, each listing its choices), Show in
-folder. A submenu with no room on the right opens on the left.
+folder, Delete. A submenu with no room on the right opens on the left.
+A parent's menu also exports the games using it; a shell's or OS
+image's exports the games booting it, prepares it, or deletes it.
 Every action is the doszer command that does it, run in its own process
 and shown in a dialog with its command line and live output - the
 command line can do anything the window does. Repack and the changes ask
 first.
+
+Lists select several items, as file managers do: Ctrl+click adds or
+removes one, Shift+click takes the range from the last one clicked, and
+a drag from an item takes the items it crosses (Ctrl+A in Logs takes
+them all). A right click on the selection opens its menu: games export
+(each with what it needs: its parents, shell or OS image), verify or
+delete; parents and system files export the games using them or delete;
+Logs' runs export into one ZIP or delete (Delete key). Deleting asks
+first, says which games it leaves unable to start, and is for good: the
+files aren't moved to the trash.
 
 Edit opens a game's settings: a form over its embedded manifest (name;
 boots DOS, Windows 3.x or Windows 9x, with the program, shell or OS

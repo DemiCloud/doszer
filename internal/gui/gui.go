@@ -114,6 +114,11 @@ type app struct {
 	dialog                    *dialog
 	jobs                      []*dialog // dialogs whose command is still running
 	menuAt                    func()    // the right-click menu of what was clicked last
+	rightClicking             bool      // the click being handled is a right click's
+	dragRows                  []dragRow // items a drag selection can reach, this frame
+
+	// Several items selected, per list.
+	gameMulti, parentMulti, sysMulti, logMulti multiSel
 
 	tsel    textSel
 	selHits []selHit
@@ -418,8 +423,10 @@ func (a *app) event(e *sdl.Event) {
 		x, y := e.MouseXY()
 		a.mx, a.my = int32(float64(x)*a.ratio), int32(float64(y)*a.ratio)
 		a.selDrag()
+		a.dragSel()
 	case sdl.EventMouseButtonUp:
 		a.tsel.drag = false
+		a.endDrags()
 	case sdl.EventMouseWheel:
 		if a.dialog != nil {
 			a.dialog.scroll = max(0, a.dialog.scroll+int(e.Wheel())*3)
@@ -559,7 +566,7 @@ func (a *app) key(sc int32, mod uint16) {
 	case pageParents:
 		a.parentsKey(sc)
 	case pageLogs:
-		a.logsKey(sc)
+		a.logsKey(sc, ctrl)
 	}
 }
 
@@ -612,6 +619,7 @@ func (a *app) render() {
 	a.dirty = false
 	a.hits = a.hits[:0]
 	a.selHits = a.selHits[:0]
+	a.dragRows = a.dragRows[:0]
 	a.areaUnderMouse = nil
 	clear(a.selText)
 	clear(a.selSeps)

@@ -69,7 +69,7 @@ func (a *app) menus() []menu {
 			{label: "An archive…", fn: a.lintFile},
 			{label: "All games", fn: a.lintAll},
 		}},
-		{label: "Environment", fn: func() { a.runDoszer("Environment", []string{"env", "--format", "plain"}, nil) }},
+		{label: "Environment", fn: func() { a.runDoszer("Environment", []string{"env"}, nil) }},
 	}
 	if !config.Configured() {
 		tools = append(tools, menuItem{label: "-"}, menuItem{label: "Set up doszer…", fn: a.openSetup})
@@ -181,7 +181,7 @@ func (a *app) repackFile() {
 	}
 	name := filepath.Base(p)
 	a.confirm("Repack "+name+"?", "Repack", func() {
-		a.runDoszer("Repack: "+name, []string{"repack", "--format", "plain", p, p}, func(err error) {
+		a.runDoszer("Repack: "+name, []string{"repack", p, p}, func(err error) {
 			if err == nil {
 				a.rescan()
 			}
@@ -208,7 +208,7 @@ func (a *app) preparePicker() {
 
 func (a *app) verifyFile() {
 	if p, ok := pickFile("Verify an archive", fileArchive); ok {
-		a.runDoszer("Verify: "+filepath.Base(p), []string{"verify", "--format", "plain", p}, nil)
+		a.runDoszer("Verify: "+filepath.Base(p), []string{"verify", p}, nil)
 	}
 }
 
@@ -217,12 +217,12 @@ func (a *app) verifyAll() {
 		a.alert("No ROM folder", "Choose where games go first: Tools, Settings.")
 		return
 	}
-	a.runDoszer("Verify all games", append([]string{"verify", "--format", "plain", "--all"}, config.DirPaths(a.romDirs)...), nil)
+	a.runDoszer("Verify all games", append([]string{"verify", "--all"}, config.DirPaths(a.romDirs)...), nil)
 }
 
 // lint runs `doszer lint` on an archive.
 func (a *app) lint(path, name string) {
-	a.runDoszer("Lint: "+name, []string{"lint", "--format", "plain", path}, nil)
+	a.runDoszer("Lint: "+name, []string{"lint", path}, nil)
 }
 
 func (a *app) lintFile() {
@@ -236,7 +236,7 @@ func (a *app) lintAll() {
 		a.alert("No ROM folder", "Choose where games go first: Tools, Settings.")
 		return
 	}
-	a.runDoszer("Lint all games", append([]string{"lint", "--format", "plain", "--all"}, config.DirPaths(a.romDirs)...), nil)
+	a.runDoszer("Lint all games", append([]string{"lint", "--all"}, config.DirPaths(a.romDirs)...), nil)
 }
 
 // showShortcuts lists the keyboard shortcuts as a table.

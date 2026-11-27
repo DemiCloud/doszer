@@ -392,7 +392,7 @@ func (a *app) saveEditor() {
 	tmp.Write(data)
 	tmp.Close()
 	path, name := e.path, e.name
-	args := []string{"repack", "--format", "plain", "--manifest", tmp.Name()}
+	args := []string{"repack", "--manifest", tmp.Name()}
 	if e.flatten && !m.Layout.Flatten {
 		args = append(args, "--flatten")
 	}

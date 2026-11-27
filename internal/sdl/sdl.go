@@ -212,6 +212,7 @@ var (
 	SetWindowMinimumSize   func(w uintptr, width, height int32)
 	GetClipboardText       func() *byte
 	SetClipboardText       func(text string) int32
+	GetModState            func() int32
 	Free                   func(p unsafe.Pointer)
 	SetWindowSize          func(w uintptr, width, height int32)
 	RenderReadPixels       func(r uintptr, rect *Rect, format uint32, pixels unsafe.Pointer, pitch int32) int32
@@ -290,6 +291,7 @@ func Load(handle uintptr, sym func(uintptr, string) (uintptr, error)) (err error
 	bind(&RenderReadPixels, "SDL_RenderReadPixels")
 	bind(&GetClipboardText, "SDL_GetClipboardText")
 	bind(&SetClipboardText, "SDL_SetClipboardText")
+	bind(&GetModState, "SDL_GetModState")
 	bind(&Free, "SDL_free")
 	bind(&SetWindowSize, "SDL_SetWindowSize")
 	if err == nil {

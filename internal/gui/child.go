@@ -59,7 +59,7 @@ func (a *app) createChild() {
 		return
 	}
 	out := c.output()
-	args := []string{"child", "--format", "plain", "--name", name}
+	args := []string{"child", "--name", name}
 	if _, err := os.Stat(out); err == nil {
 		args = append(args, "-f")
 	}

@@ -276,6 +276,7 @@ func (a *app) gamesKey(sc int32, ctrl bool) {
 			return
 		}
 		a.sel = max(0, min(len(a.view)-1, a.sel+d))
+		a.gameMulti.clear()
 		a.reveal()
 	}
 	switch {
@@ -402,15 +403,27 @@ func (a *app) drawGames() {
 		}
 		hover := a.hovered(x, y, w, h)
 		g := &a.list[a.view[i]]
-		if a.grid {
-			a.drawTile(g, x, y, w, h, i == a.sel, hover)
-		} else {
-			a.drawRow(g, x, y, w, h, i == a.sel, hover)
+		sel := i == a.sel
+		if a.gameMulti.count() > 1 {
+			sel = a.gameMulti.has(g.Path)
 		}
+		if a.grid {
+			a.drawTile(g, x, y, w, h, sel, hover)
+		} else {
+			a.drawRow(g, x, y, w, h, sel, hover)
+		}
+		a.dragItem(&a.gameMulti, a.gameOrder, g.Path, x, y, w, h, nil)
 		a.clipHit(x, y, w, h, func(double bool) {
+			plain := a.gameMulti.click(a.gameOrder(), g.Path, a.curGame(), a.rightClicking)
 			a.sel = i
-			a.menuAt = func() { a.gameMenu(g) }
-			if double {
+			a.menuAt = func() {
+				if ps := a.selectedGames(); len(ps) > 1 {
+					a.gamesMenu(ps)
+				} else {
+					a.gameMenu(g)
+				}
+			}
+			if double && plain {
 				a.play()
 			}
 		})

@@ -302,12 +302,21 @@ func (a *app) selectRow(l logRow) {
 	}
 }
 
-func (a *app) logsKey(sc int32) {
+func (a *app) logsKey(sc int32, ctrl bool) {
 	rows := a.logRows()
 	if len(rows) == 0 {
 		return
 	}
 	sel := max(0, a.selectedRow(rows))
+	switch {
+	case ctrl && sc == scA:
+		a.logMulti.all(a.logOrder())
+		return
+	case sc == scDelete:
+		a.deleteSelectedLogs()
+		return
+	}
+	a.logMulti.clear()
 	switch sc {
 	case scUp:
 		sel--
@@ -446,7 +455,11 @@ func (a *app) drawLogs() {
 	for i, l := range rows {
 		h := a.rowHeight(l)
 		if y+h >= ay && y <= ay+ah {
-			a.drawLogRow(l, ax+p, y, listW, h, i == sel)
+			on := i == sel
+			if a.logMulti.count() > 1 {
+				on = a.logMulti.has(rowKey(l))
+			}
+			a.drawLogRow(l, ax+p, y, listW, h, on)
 		}
 		y += h + a.rowGap()
 	}
@@ -471,7 +484,8 @@ func (a *app) drawLogRow(l logRow, x, y, w, h int32, sel bool) {
 		r := l.r
 		x, w = x+a.px(24), w-a.px(24)
 		a.card(x, y, w, h, sel, a.hovered(x, y, w, h))
-		a.clipHit(x, y, w, h, func(bool) { a.selectRow(l) })
+		a.dragItem(&a.logMulti, a.logOrder, rowKey(l), x, y, w, h, nil)
+		a.clipHit(x, y, w, h, func(bool) { a.clickLogRow(l) })
 		d := a.px(8)
 		a.round(x+a.px(12), y+(h-d)/2, d, d, d/2, resultColour(r))
 		a.text(r.Command, x+a.px(28), y+(h-a.lineHeight(13, true))/2, 13, true, colText)
@@ -479,14 +493,8 @@ func (a *app) drawLogRow(l logRow, x, y, w, h int32, sel bool) {
 		return
 	}
 	a.card(x, y, w, h, sel, a.hovered(x, y, w, h))
-	a.clipHit(x, y, w, h, func(bool) {
-		// A click selects the item; on the selected item, it opens or
-		// closes it.
-		if g.session() && a.logGroup == g.key && a.logRun == "" {
-			a.logOpen[g.key] = !a.logOpen[g.key]
-		}
-		a.selectRow(l)
-	})
+	a.dragItem(&a.logMulti, a.logOrder, rowKey(l), x, y, w, h, nil)
+	a.clipHit(x, y, w, h, func(bool) { a.clickLogRow(l) })
 	last := g.result()
 	d := a.px(10)
 	a.round(x+a.px(14), y+(h-d)/2, d, d, d/2, resultColourOf(last.Result, g.warnings()))
@@ -504,6 +512,109 @@ func (a *app) drawLogRow(l logRow, x, y, w, h int32, sel bool) {
 		line = mark + "  " + g.commands() + "  ·  " + resultLabelOf(last.Result, g.warnings(), g.running())
 	}
 	a.text(a.ellipsize(line, w-(tx-x)-a.px(12), 12, false), tx, y+a.px(32), 12, false, colMuted)
+}
+
+// rowKey is a line's key in the selection: an item's, or "run:" and a
+// run's ID.
+func rowKey(l logRow) string {
+	if l.r != nil {
+		return "run:" + l.r.ID
+	}
+	return l.g.key
+}
+
+// logOrder is the lines' keys, in order.
+func (a *app) logOrder() []string {
+	rows := a.logRows()
+	out := make([]string, len(rows))
+	for i, l := range rows {
+		out[i] = rowKey(l)
+	}
+	return out
+}
+
+// curLog is the selected line's key, or "".
+func (a *app) curLog() string {
+	rows := a.logRows()
+	if i := a.selectedRow(rows); i >= 0 {
+		return rowKey(rows[i])
+	}
+	return ""
+}
+
+// clickLogRow handles a click on a line: it selects it (Ctrl and Shift
+// adding to the selection) and shows its report; a plain click on the
+// selected item opens or closes it. A right click opens the selection's
+// menu.
+func (a *app) clickLogRow(l logRow) {
+	was := a.curLog() == rowKey(l) && a.logMulti.count() <= 1
+	plain := a.logMulti.click(a.logOrder(), rowKey(l), a.curLog(), a.rightClicking)
+	if plain && was && l.r == nil && l.g.session() {
+		a.logOpen[l.g.key] = !a.logOpen[l.g.key]
+	}
+	if !a.rightClicking || !was {
+		a.selectRow(l)
+	}
+	a.menuAt = a.logsMenu
+}
+
+// selectedLogs are what the selected lines name, as doszer logs takes
+// them (a session, or a run's ID), and how many runs they hold.
+func (a *app) selectedLogs() (ids []string, runs int) {
+	for _, k := range a.logMulti.selected(a.logOrder(), a.curLog()) {
+		if id, ok := strings.CutPrefix(k, "run:"); ok {
+			ids, runs = append(ids, id), runs+1
+			continue
+		}
+		for _, g := range a.groups {
+			if g.key == k {
+				ids, runs = append(ids, k), runs+len(g.runs)
+			}
+		}
+	}
+	return ids, runs
+}
+
+// logsMenu is the selected lines' menu.
+func (a *app) logsMenu() {
+	ids, _ := a.selectedLogs()
+	if len(ids) == 0 {
+		return
+	}
+	a.openMenuItems(a.mx, a.my, []menuItem{
+		{label: "Export…", fn: a.exportSelectedLogs},
+		{label: "-"},
+		{label: "Delete…", fn: a.deleteSelectedLogs},
+	})
+}
+
+// exportSelectedLogs packs the selected runs into one ZIP.
+func (a *app) exportSelectedLogs() {
+	ids, runs := a.selectedLogs()
+	if len(ids) == 0 {
+		return
+	}
+	subject, when := plural(runs, "run"), time.Now()
+	if len(ids) == 1 {
+		if g := a.selectedGroup(); g != nil {
+			subject, when = g.subject(), g.first().Started
+		}
+	}
+	a.exportLogs(subject, when, ids...)
+}
+
+// deleteSelectedLogs deletes the selected runs, once confirmed:
+// doszer logs --delete.
+func (a *app) deleteSelectedLogs() {
+	ids, runs := a.selectedLogs()
+	if len(ids) == 0 {
+		return
+	}
+	a.confirm("Delete "+plural(runs, "run")+"?", "Delete", func() {
+		a.runDoszer("Delete logs", append([]string{"logs", "--delete"}, ids...), func(error) {
+			a.logMulti.clear()
+		})
+	}, "Their logs are deleted for good. The archives they built stay.")
 }
 
 // scrollLog scrolls the report, within its height.
@@ -524,7 +635,7 @@ func (a *app) exportRun(r *runlog.Report) {
 // exportLogs packs what (a run, session or path, as doszer logs takes
 // them) into a ZIP in a folder the user picks, named after subject and
 // when: doszer logs --export, redacted.
-func (a *app) exportLogs(subject string, when time.Time, what string) {
+func (a *app) exportLogs(subject string, when time.Time, what ...string) {
 	start, _ := os.UserHomeDir()
 	dir, ok := pickFolder("export", start)
 	if !ok {
@@ -535,7 +646,7 @@ func (a *app) exportLogs(subject string, when time.Time, what string) {
 		name = "run"
 	}
 	out := filepath.Join(dir, "doszer-logs-"+name+"-"+when.Format("20060102-150405")+".zip")
-	a.runDoszer("Export logs", []string{"logs", "--format", "plain", "--force", "--export", out, what}, nil)
+	a.runDoszer("Export logs", append([]string{"logs", "--force", "--export", out}, what...), nil)
 }
 
 // builtRuns are the newest recorded run of each archive built, or

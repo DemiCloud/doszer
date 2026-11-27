@@ -96,7 +96,7 @@ func init() {
 		{"verify", "check archives against their manifests and the specification", runVerify},
 		{"lint", "warn about what makes archives worse without making them wrong", runLint},
 		{"export", "copy archives into RetroDECK's folders or a ZIP, with what they need", runExport},
-		{"logs", "list recorded runs, show one, or pack them into a ZIP", runLogs},
+		{"logs", "list recorded runs, show one, pack them into a ZIP, or delete them", runLogs},
 		{"env", "show the directories, images and tools doszer finds here", runEnv},
 		{"config", "show, change or write doszer's configuration", runConfig},
 		{"gui", "open the window listing the archives in the ROM directory", runGUI},

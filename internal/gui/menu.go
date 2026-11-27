@@ -21,9 +21,9 @@ func (a *app) gameMenu(g *library.Game) {
 		}
 	}
 	tools := []menuItem{
-		{label: "Info", fn: func() { a.runDoszer("Info: "+name, []string{"info", "--format", "plain", path}, nil) }},
+		{label: "Info", fn: func() { a.runDoszer("Info: "+name, []string{"info", path}, nil) }},
 		{label: "Dependencies", fn: func() { a.showDeps(path, name) }},
-		{label: "Verify", fn: func() { a.runDoszer("Verify: "+name, []string{"verify", "--format", "plain", path}, nil) }},
+		{label: "Verify", fn: func() { a.runDoszer("Verify: "+name, []string{"verify", path}, nil) }},
 		{label: "Lint", fn: func() { a.lint(path, name) }},
 	}
 	if r := runlog.Latest(a.runs, path); r != nil {
@@ -34,7 +34,7 @@ func (a *app) gameMenu(g *library.Game) {
 		{label: "-"},
 		{label: "Repack…", fn: func() {
 			a.confirm("Repack "+name+"?", "Repack", func() {
-				a.runDoszer("Repack: "+name, []string{"repack", "--format", "plain", path, path}, rescan)
+				a.runDoszer("Repack: "+name, []string{"repack", path, path}, rescan)
 			}, "Rebuilds the archive from its embedded manifest, in place.")
 		}},
 		{label: "Export…", fn: func() { a.openExport("Export "+name, []string{path}) }},
@@ -62,6 +62,7 @@ func (a *app) gameMenu(g *library.Game) {
 	if canOpen() {
 		items = append(items, menuItem{label: "-"}, menuItem{label: "Show in folder", fn: func() { a.showInFolder(path) }})
 	}
+	items = append(items, menuItem{label: "-"}, menuItem{label: "Delete…", fn: func() { a.deleteArchives([]string{path}) }})
 	a.openMenuItems(a.mx, a.my, items)
 }
 
@@ -87,7 +88,7 @@ func (a *app) parentItems(g *library.Game) []menuItem {
 			}, "Gives "+filepath.Base(path)+" "+what+".")
 		}}
 	}
-	none := set("None", []string{"set", "--format", "plain", "--no-parent", path}, "no parent")
+	none := set("None", []string{"set", "--no-parent", path}, "no parent")
 	if cur == "" {
 		none = menuItem{label: "• None"}
 	}
@@ -109,7 +110,7 @@ func (a *app) parentItems(g *library.Game) []menuItem {
 		case n == cur:
 			items = append(items, menuItem{label: "• " + n})
 		default:
-			items = append(items, set(n, []string{"set", "--format", "plain", "--parent", n, path}, n+" as its parent"))
+			items = append(items, set(n, []string{"set", "--parent", n, path}, n+" as its parent"))
 		}
 	}
 	return items
@@ -134,7 +135,7 @@ func (a *app) systemItems(g *library.Game, shell bool) []menuItem {
 		n := f.Name
 		items = append(items, menuItem{label: n, fn: func() {
 			a.confirm("Change "+name+"'s "+what+"?", "Change", func() {
-				a.runDoszer(strings.ToUpper(what[:1])+what[1:]+": "+name, []string{"set", "--format", "plain", flag, n, path}, func(err error) {
+				a.runDoszer(strings.ToUpper(what[:1])+what[1:]+": "+name, []string{"set", flag, n, path}, func(err error) {
 					if err == nil {
 						a.rescan()
 					}
@@ -172,7 +173,7 @@ func (a *app) RunDeps(n int) {
 // showDeps runs `doszer deps` on an archive, with the window's system
 // directory.
 func (a *app) showDeps(path, name string) {
-	args := []string{"deps", "--format", "plain", "--used-by"}
+	args := []string{"deps", "--used-by"}
 	if a.o.SystemDir != "" {
 		args = append(args, "--system-dir", a.o.SystemDir)
 	}

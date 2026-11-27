@@ -255,7 +255,7 @@ func (a *app) addGameRun() {
 		// Built where it is: nothing to dump.
 	case g.useFiles:
 		for _, f := range g.files {
-			steps = append(steps, step{args: []string{"dump", "--format", "plain", "--from", strings.TrimSpace(f.text), src}})
+			steps = append(steps, step{args: []string{"dump", "--from", strings.TrimSpace(f.text), src}})
 		}
 	default:
 		d := g.drives[g.drive].path
@@ -263,10 +263,10 @@ func (a *app) addGameRun() {
 			if i > 1 {
 				steps = append(steps, step{prompt: "Put disc " + itoa(i) + " of " + itoa(g.discs) + " in " + d + ", then Continue."})
 			}
-			steps = append(steps, step{args: []string{"dump", "--format", "plain", "--drive", d, src}})
+			steps = append(steps, step{args: []string{"dump", "--drive", d, src}})
 		}
 	}
-	initArgs := []string{"init", "--format", "plain", "--force", "--name", g.name.text}
+	initArgs := []string{"init", "--force", "--name", g.name.text}
 	if b := bootChoices[g.boot].flag; b != "" {
 		initArgs = append(initArgs, "--boot", b)
 	}
@@ -300,7 +300,7 @@ func (a *app) addGameRun() {
 		a.runPlan(plan, append(steps, buildStep(plan)), a.added(plan))
 		return
 	}
-	installArgs := []string{"install", "--format", "plain"}
+	installArgs := []string{"install"}
 	if a.o.SystemDir != "" {
 		installArgs = append(installArgs, "--system-dir", a.o.SystemDir)
 	}
@@ -346,7 +346,7 @@ func (a *app) installed(plan *addPlan) func(error) {
 func (a *app) addGameExtract() {
 	g := a.add
 	p, r := g.plan, g.retry
-	args := []string{"install", "--format", "plain", "--from", r.From}
+	args := []string{"install", "--from", r.From}
 	if r.Content != "" {
 		args = append(args, "--content", r.Content)
 	}
@@ -378,7 +378,7 @@ func (a *app) runPlan(p *addPlan, steps []step, after func(err error)) {
 
 // buildStep builds plan's archive.
 func buildStep(p *addPlan) step {
-	args := []string{"build", "--format", "plain"}
+	args := []string{"build"}
 	if p.flatten {
 		args = append(args, "--flatten")
 	}
@@ -437,7 +437,7 @@ func (a *app) addGameFinish(set bool) {
 	p := g.plan
 	var steps []step
 	if set && len(g.candidates) > 0 {
-		args := []string{"start", "--format", "plain", "--force"}
+		args := []string{"start", "--force"}
 		if g.windows9x && g.colors256 {
 			args = append(args, "--display", "640x480x8")
 		}

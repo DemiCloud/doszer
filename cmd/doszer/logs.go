@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,14 +20,16 @@ import (
 func runLogs(args []string) error {
 	fs := newFlags("logs")
 	export := fs.String("export", "", "")
+	del := fs.Bool("delete", false, "")
 	noRedact := fs.Bool("no-redact", false, "")
 	transcript := fs.Bool("transcript", false, "")
 	force := fs.BoolP("force", "f", false, "")
-	const help = `doszer logs - list recorded runs, show one, or pack them into a ZIP
+	const help = `doszer logs - list recorded runs, show one, pack them into a ZIP, or delete them
 
 Usage: doszer logs [options] [RUN|SESSION|PATH...]
 
 Options:
+      --delete            delete the runs
       --export FILE.zip   pack the runs (default: the last run's history) with this machine's environment
   -f, --force             export: overwrite FILE
       --no-redact         export: keep home folders, user and host names
@@ -52,6 +55,15 @@ Options:
 		runs = append(runs, found...)
 	}
 
+	if *del {
+		if len(fs.Args()) == 0 {
+			return errors.New("--delete: name the runs, sessions or paths to delete")
+		}
+		if *export != "" {
+			return errors.New("--delete and --export exclude each other")
+		}
+		return deleteLogs(dir, runs)
+	}
 	if *export != "" {
 		if len(runs) == 0 {
 			if len(all) == 0 {
@@ -221,6 +233,29 @@ func showRun(r *runlog.Report) error {
 			fmt.Fprintf(stdout, "  %s\n", f)
 		}
 	}
+	return nil
+}
+
+// deleteLogs removes runs' folders from the logs directory dir.
+func deleteLogs(dir string, runs []*runlog.Report) error {
+	seen := map[string]bool{}
+	n := 0
+	for _, r := range runs {
+		f := r.Folder()
+		if seen[f] {
+			continue
+		}
+		seen[f] = true
+		// Only a folder directly in the logs directory: never anything else.
+		if rel, err := filepath.Rel(dir, f); err != nil || rel != filepath.Base(f) {
+			return fmt.Errorf("%s: not in %s", f, dir)
+		}
+		if err := os.RemoveAll(f); err != nil {
+			return err
+		}
+		n++
+	}
+	fmt.Fprintf(stdout, "Deleted %s\n", plural(n, "run"))
 	return nil
 }
 
