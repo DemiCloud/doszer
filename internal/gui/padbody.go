@@ -134,8 +134,9 @@ func padArt(l *padLayout, w, h int, button float32) *image.NRGBA {
 	for _, b := range l.bumpers {
 		x0, x1 := float32(b[0])*fw, float32(b[1])*fw
 		fill(img, color.NRGBA{30, 30, 34, 255}, func(r *vector.Rasterizer) {
-			top := ly - button*0.75
-			roundRect(r, x0, top, x1-x0, float32(by(0.12))*fh-top, button*0.6)
+			// A thin bar the bumper button sits on, its lower edge under
+			// the body.
+			roundRect(r, x0, ly-button*0.62, x1-x0, button*1.5, button*0.5)
 		})
 	}
 	fill(img, color.NRGBA{86, 86, 94, 255}, func(r *vector.Rasterizer) { shape.path(r, fw, fh, 0) })

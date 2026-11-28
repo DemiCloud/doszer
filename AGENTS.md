@@ -478,7 +478,9 @@ waits on a game that needs it.
    capture in Windows 9x, and audio. Checked live (2026-11-24/25, Windows
    build): Betrayal in Antara to its menu with audio and mouse, quitting
    closed doszer; keyboard in Recoil. Not done yet: Ctrl+F10, gamepads
-   (implemented 2026-11-27, internal/gamepad, untested with hardware),
+   (implemented 2026-11-27, internal/gamepad: the gamepad editor's
+   detection and live view checked with an Xbox One controller on
+   Windows; play in doszer run not yet),
    fullscreen, fast-forward, a Linux/WSLg session, `install`.
 2. Finish the live `install` test against real DOSBox Pure. Passed
    (2026-11-13): a plain session (Descent II, 32 files from the

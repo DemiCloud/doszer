@@ -121,7 +121,7 @@ var (
 var padLayouts = []padLayout{
 	{
 		name: "Xbox", glyphs: xboxGlyphs, shape: xboxShape, aspect: xboxAspect,
-		pos: layoutAt(xboxAspect, [2]float64{0.25, 0.145},
+		pos: layoutAt(xboxAspect, [2]float64{0.25, 0.20},
 			[2]float64{0.247, by(0.248)}, [2]float64{0.645, by(0.448)}, [2]float64{0.373, by(0.464)},
 			[2]float64{0.771, by(0.248)}, [2]float64{0.434, by(0.248)}, [2]float64{0.584, by(0.248)},
 			0.088, 0.056, 0.066),
@@ -130,8 +130,8 @@ var padLayouts = []padLayout{
 	},
 	{
 		name: "Steam Controller", glyphs: xboxGlyphs, shape: steamShape, aspect: steamAspect,
-		pos: layoutAt(steamAspect, [2]float64{0.21, 0.135},
-			[2]float64{0.355, by(0.268)}, [2]float64{0.645, by(0.268)}, [2]float64{0.17, by(0.20)},
+		pos: layoutAt(steamAspect, [2]float64{0.21, 0.15},
+			[2]float64{0.37, by(0.268)}, [2]float64{0.63, by(0.268)}, [2]float64{0.17, by(0.20)},
 			[2]float64{0.83, by(0.17)}, [2]float64{0.33, by(0.05)}, [2]float64{0.67, by(0.05)},
 			0.068, 0.045, 0.056),
 		inert:   [][4]float64{{0.322, by(0.545), 0.233, 0.325 * (1 - bodyTop)}, {0.678, by(0.545), 0.233, 0.325 * (1 - bodyTop)}},
