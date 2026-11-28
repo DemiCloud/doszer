@@ -58,6 +58,7 @@ doszer manifest FILE.dosz
 doszer convert FILE [--to dosp|dosz] [-n]
 doszer child   PARENT [PROGRAM [OUTPUT.dosz]] [--name NAME] [-n] [-f]
 doszer repack  INPUT.dosz [OUTPUT.dosz] [--manifest FILE] [--add PATH=FILE...] [--flatten] [-n] [--strict] [--ogg-quality N]
+doszer pad     FILE.dosz [--from-save [--apply]] [--save-dir DIR]
 doszer set     FILE.dosz... [--parent [OLD:]NEW | --no-parent] [--os [OLD:]NEW] [--shell [OLD:]NEW] [-n]
 doszer verify  FILE.dosz... | --all [DIR...]
 doszer lint    FILE... | --all [DIR...] [--system-dir DIR]
@@ -464,11 +465,13 @@ to keep that if L3 is needed for something else. `hold_port2` makes a
 control a shift key: while it's held, the pad uses `[[input.pad]]` #2's
 mapping, doubling the controls one pad has.
 
-To try a mapping out, open the Controller Mapper from DOSBox Pure's menu
-in the game, then copy what works into the manifest. A `PADMAP.DBP` made
-with the Controller Mapper can also be shipped as it is: copy it from the
-save file (`<save dir>/<content>.pure.zip`) into the source's root. It is
-binary, labels are lost, and `[[input.pad]]` replaces it.
+To make a mapping by playing, map the game's controls in DOSBox Pure's
+Controller Mapper (its menu, in the game), then take them back:
+`doszer pad --from-save FILE.dosz` reads the mapping the mapper saved
+(`PADMAP.DBP` in `<save dir>/<content>.pure.zip`) as `[[input.pad]]`,
+each binding labelled as the manifest or the archive's `DOS.YML` labels
+the same actions, and `--apply` writes it into the archive's manifest.
+`doszer pad FILE.dosz` prints the manifest's own.
 
 In RetroArch, each port's device type (Quick Menu, Controls) must be the
 default, "Use Gamepad Mapper" (it may show as `[Pad Mapper] ...`); a preset

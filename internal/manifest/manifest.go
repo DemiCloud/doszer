@@ -173,6 +173,20 @@ func (p *Pad) Padmap() padmap.Pad {
 	return padmap.Pad{Controls: controls, Wheel: p.Wheel}
 }
 
+// PadFrom returns a pad in the manifest's form.
+func PadFrom(p padmap.Pad) Pad {
+	c := p.Controls
+	return Pad{
+		B: c["b"], Y: c["y"], Select: c["select"], Start: c["start"],
+		Up: c["up"], Down: c["down"], Left: c["left"], Right: c["right"],
+		A: c["a"], X: c["x"], L: c["l"], R: c["r"],
+		L2: c["l2"], R2: c["r2"], L3: c["l3"], R3: c["r3"],
+		LStickLeft: c["lstick_left"], LStickRight: c["lstick_right"], LStickUp: c["lstick_up"], LStickDown: c["lstick_down"],
+		RStickLeft: c["rstick_left"], RStickRight: c["rstick_right"], RStickUp: c["rstick_up"], RStickDown: c["rstick_down"],
+		Wheel: p.Wheel,
+	}
+}
+
 // Pads returns every [[input.pad]] entry in padmap's form.
 func (m *Manifest) Pads() []padmap.Pad {
 	pads := make([]padmap.Pad, len(m.Input.Pad))

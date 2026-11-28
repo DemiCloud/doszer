@@ -91,6 +91,7 @@ func init() {
 		{"convert", "make an archive a parent (.dosp) or a game (.dosz)", runConvert},
 		{"child", "list a parent's programs, or make a game over it starting one", runChild},
 		{"set", "change archives' parent, OS image or shell in place", runSet},
+		{"pad", "show a game's gamepad mapping, or take the one made in DOSBox Pure", runPad},
 		{"prepare", "make a game-ready copy of a Windows shell or OS image", runPrepare},
 		{"info", "show what an archive or source directory holds", runInfo},
 		{"deps", "show what archives need: parents, shell or OS image", runDeps},
@@ -251,7 +252,7 @@ func newFlags(name string) *pflag.FlagSet {
 }
 
 // dataCommands are the commands with a result --format can encode.
-var dataCommands = map[string]bool{"start": true, "child": true, "deps": true, "lint": true, "export": true, "info": true, "verify": true, "set": true, "version": true, "env": true, "config": true, "logs": true}
+var dataCommands = map[string]bool{"start": true, "child": true, "deps": true, "lint": true, "export": true, "info": true, "verify": true, "set": true, "version": true, "env": true, "config": true, "logs": true, "pad": true}
 
 // format is the resolved --format of the command running.
 var format = output.Plain
@@ -303,7 +304,7 @@ func parse(fs *pflag.FlagSet, args []string, help string, min, max int) (ok bool
 // with one only list.
 var recorded = map[string]int{
 	"dump": 1, "init": 1, "build": 1, "install": 1, "start": 2, "repack": 1,
-	"convert": 1, "child": 2, "set": 1, "prepare": 1, "export": 1,
+	"convert": 1, "child": 2, "set": 1, "prepare": 1, "export": 1, "pad": 1,
 }
 
 // startRun starts recording fs's command, once doszer is set up (until

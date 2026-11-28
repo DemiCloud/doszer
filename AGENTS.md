@@ -34,7 +34,7 @@ internal/icon/       DOSZ.ICO (spec §6.8.4): ICO file or NE/PE icon group to IC
 internal/config/     configuration layering (README "Configuration": [paths] roms/system/saves, [defaults], [build], [install.os], [install.templates]; keys dotted), portable mode, default directories (system, saves, ROMs - several) and RetroDECK's
 internal/cue/        CUE parsing, track byte ranges, normalized track hash (§7.2)
 internal/iso9660/    ISO 9660 reader, for [[extract]] (§5.7)
-internal/padmap/     [[input.pad]] (§5.9): PADMAP.DBP and DOS.YML encoding (§6.8.2, §6.8.3)
+internal/padmap/     [[input.pad]] (§5.9): PADMAP.DBP and DOS.YML encoding (§6.8.2, §6.8.3); decoding PADMAP.DBP as DOSBox Pure's mapper saves it, labels from DOS.YML (doszer pad)
 internal/verify/     doszer verify: an archive against its manifest and spec §8/§11
 internal/export/     doszer export: archives into RetroDECK's roms/<system> (dos, windows3x, windows9x), parents beside, shell/OS image into bios (never replaced); or that layout into a new ZIP (WriteZip), flat (one roms folder) or not; --systems filter
 internal/lint/       doszer lint: quality warnings verify doesn't give (icon, identified discs, boot OS new enough, .dosp)

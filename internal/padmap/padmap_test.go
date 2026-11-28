@@ -193,3 +193,53 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+// Decoding inverts encoding (labels aside: they're DOS.YML's), and reads
+// what DOSBox Pure's mapper saves.
+func TestDecodePADMAP(t *testing.T) {
+	pads := []Pad{
+		{Controls: map[string]string{"b": "space", "a": "leftctrl+x", "start": "esc", "l3": "menu",
+			"lstick_left": "joy_left", "lstick_right": "joy_right", "rstick_up": "mouse_move_up"},
+			Wheel: []string{"f1", "f5+leftshift"}},
+		{},
+		{Controls: map[string]string{"x": "hold_port1", "r2": "wheel"}},
+	}
+	got, err := DecodePADMAP(EncodePADMAP(pads))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(pads) {
+		t.Fatalf("%d pads, want %d", len(got), len(pads))
+	}
+	for i := range pads {
+		if !reflect.DeepEqual(got[i].Controls, pads[i].Controls) && !(len(got[i].Controls) == 0 && len(pads[i].Controls) == 0) {
+			t.Errorf("pad %d controls %v, want %v", i, got[i].Controls, pads[i].Controls)
+		}
+		if !reflect.DeepEqual(got[i].Wheel, pads[i].Wheel) {
+			t.Errorf("pad %d wheel %v, want %v", i, got[i].Wheel, pads[i].Wheel)
+		}
+	}
+
+	// An axis bound on one side only, as the mapper saves it: the other
+	// side KBD_NONE.
+	axis := []byte{0, 1, 16, codes["kp4"], 0}
+	if got, err := DecodePADMAP(axis); err != nil || got[0].Controls["lstick_left"] != "kp4" || len(got[0].Controls) != 1 {
+		t.Errorf("one-sided axis: %+v, %v", got, err)
+	}
+
+	for _, bad := range [][]byte{nil, {1, 0}, {0, 1}, {0, 1, 0}, {0, 1, 0, 150}, {0, 1, 21, 1}} {
+		if _, err := DecodePADMAP(bad); err == nil {
+			t.Errorf("%v decoded", bad)
+		}
+	}
+}
+
+func TestLabel(t *testing.T) {
+	yml := ParseDOSYML([]byte("cycles: max\r\ninput_pad_b: space Fire\r\ninput_wheel_1: f1 Help\r\ninput_pad_a: leftctrl+x Use Item\r\n"))
+	pads := []Pad{{Controls: map[string]string{"y": "space", "a": "x+leftctrl", "x": "leftctrl+x", "b": "enter Go"}, Wheel: []string{"f1"}}}
+	got := Label(pads, yml)
+	want := map[string]string{"y": "space Fire", "a": "x+leftctrl", "x": "leftctrl+x Use Item", "b": "enter Go"}
+	if !reflect.DeepEqual(got[0].Controls, want) || got[0].Wheel[0] != "f1 Help" {
+		t.Errorf("labelled %+v", got[0])
+	}
+}
