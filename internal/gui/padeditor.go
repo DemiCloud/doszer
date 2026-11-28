@@ -405,6 +405,18 @@ func (a *app) drawPadEditor() {
 		})
 		bx -= a.px(8)
 	}
+	if len(e.pads) > 1 {
+		bx -= a.buttonW("Remove port")
+		a.button("Remove port", bx, ly, btnNormal, func() {
+			n := e.port + 1
+			a.confirm("Remove port "+itoa(n)+"?", "Remove", func() {
+				e.pads = append(e.pads[:e.port], e.pads[e.port+1:]...)
+				e.port, e.wheelSel, e.changed = min(e.port, len(e.pads)-1), 0, true
+				a.selectPadControl(e, e.sel)
+			}, "Its mapping goes; the ports after it move up a number.")
+		})
+		bx -= a.px(8)
+	}
 	for i := len(e.pads) - 1; i >= 0; i-- {
 		pl := "Port " + itoa(i+1)
 		bx -= a.buttonW(pl)
@@ -555,6 +567,17 @@ func (a *app) drawController(e *padEditor, l *padLayout, x, y, w, h int32) {
 		a.round(cx-r, cy-r, 2*r, 2*r, r, rgba{38, 38, 43, 255})
 	}
 	s := max(a.px(22), int32(0.085*float64(bh)))
+	// The D-pad's cross, under its four buttons.
+	if up, ok := l.pos["up"]; ok {
+		down, left, right := l.pos["down"], l.pos["left"], l.pos["right"]
+		ux, uy := frac(up[0], up[1])
+		_, dy := frac(down[0], down[1])
+		lx, ly := frac(left[0], left[1])
+		rx, _ := frac(right[0], right[1])
+		plate := rgba{34, 34, 38, 255}
+		a.round(ux-s/2-a.px(3), uy-s/2-a.px(3), s+a.px(6), dy-uy+s+a.px(6), a.px(6), plate)
+		a.round(lx-s/2-a.px(3), ly-s/2-a.px(3), rx-lx+s+a.px(6), s+a.px(6), a.px(6), plate)
+	}
 	for key, c := range l.pos {
 		g := l.glyphs[key]
 		w := s
@@ -565,12 +588,14 @@ func (a *app) drawController(e *padEditor, l *padLayout, x, y, w, h int32) {
 		cx, cy := frac(c[0], c[1])
 		px, py := cx-w/2, cy-s/2
 		binding := e.cur().Controls[key]
-		bg := colButton
+		// Unbound: dark with a ring, so it reads as a button on the body;
+		// bound: the accent.
+		bg, ring, tc := rgba{26, 26, 30, 255}, rgba{88, 88, 96, 255}, colMuted
 		if binding != "" {
-			bg = colAccentDark
+			bg, ring, tc = colAccentDark, colAccent, colText
 		}
 		if a.hovered(px, py, w, s) {
-			bg = colCardSel
+			ring, tc = colText, colText
 			if binding != "" {
 				bg = colAccent
 			}
@@ -580,11 +605,11 @@ func (a *app) drawController(e *padEditor, l *padLayout, x, y, w, h int32) {
 			r = s / 2
 		}
 		if e.sel == key {
-			a.outline(px-a.px(3), py-a.px(3), w+a.px(6), s+a.px(6), r+a.px(3), a.px(2), colText, colPopup)
+			a.round(px-a.px(4), py-a.px(4), w+a.px(8), s+a.px(8), r+a.px(4), colText)
 		}
-		a.round(px, py, w, s, r, bg)
+		a.outline(px, py, w, s, r, a.px(1.5), ring, bg)
 		gw := a.textWidth(g, 11, true)
-		a.text(g, px+(w-gw)/2, py+(s-a.lineHeight(11, true))/2, 11, true, colText)
+		a.text(g, px+(w-gw)/2, py+(s-a.lineHeight(11, true))/2, 11, true, tc)
 		k := key
 		a.onClick(px, py, w, s, func(bool) { a.selectPadControl(e, k) })
 	}

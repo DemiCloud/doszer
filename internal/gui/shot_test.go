@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/DemiCloud/doszer/internal/builtin"
+	"github.com/DemiCloud/doszer/internal/padmap"
 )
 
 // TestScreenshot draws the window over a real ROM directory and saves it
@@ -130,6 +131,13 @@ func TestScreenshot(t *testing.T) {
 				a.padImport(filepath.Join("..", "..", "examples", "betrayal-in-antara", "DOSZ.TOML"))
 				a.padLayout = 1
 				a.selectPadControl(a.padEd, "rstick_left")
+			}
+		},
+		"padempty.png": func(a *App) { // a game with no mapping, two ports
+			if len(a.list) > 0 {
+				a.openPadEditor(&a.list[0])
+				a.padEd.pads = append(a.padEd.pads, padmap.Pad{Controls: map[string]string{}})
+				a.padEd.pads[0].Controls["b"] = "space Fire"
 			}
 		},
 		"padmenu.png": func(a *App) { // its Add action menu, Keyboard open
