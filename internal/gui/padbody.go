@@ -26,27 +26,29 @@ type padShape struct {
 	left  []curve
 }
 
+// The outlines, traced from photographs: on the body (0 to 1 down
+// it); path places the body under the drawing's trigger strip (by).
 var xboxShape = padShape{
-	start: [2]float64{0.50, 0.17},
+	start: [2]float64{0.50, 0.10},
 	left: []curve{
-		{{0.40, 0.17}, {0.30, 0.13}, {0.21, 0.16}},
-		{{0.12, 0.19}, {0.07, 0.27}, {0.055, 0.40}},
-		{{0.04, 0.55}, {0.05, 0.76}, {0.09, 0.90}},
-		{{0.11, 0.985}, {0.20, 1.00}, {0.245, 0.93}},
-		{{0.28, 0.86}, {0.32, 0.77}, {0.38, 0.75}},
-		{{0.44, 0.73}, {0.47, 0.73}, {0.50, 0.73}},
+		{{0.38, 0.10}, {0.27, 0.06}, {0.17, 0.08}},
+		{{0.09, 0.10}, {0.035, 0.19}, {0.02, 0.34}},
+		{{0.005, 0.50}, {0.012, 0.70}, {0.045, 0.85}},
+		{{0.075, 0.96}, {0.165, 1.00}, {0.215, 0.92}},
+		{{0.26, 0.83}, {0.33, 0.68}, {0.42, 0.665}},
+		{{0.46, 0.66}, {0.48, 0.66}, {0.50, 0.66}},
 	},
 }
 
 var steamShape = padShape{
-	start: [2]float64{0.50, 0.15},
+	start: [2]float64{0.50, 0.02},
 	left: []curve{
-		{{0.35, 0.15}, {0.20, 0.14}, {0.12, 0.18}},
-		{{0.06, 0.21}, {0.04, 0.30}, {0.035, 0.42}},
-		{{0.03, 0.60}, {0.05, 0.80}, {0.10, 0.92}},
-		{{0.13, 0.99}, {0.22, 1.00}, {0.26, 0.92}},
-		{{0.29, 0.86}, {0.31, 0.85}, {0.36, 0.85}},
-		{{0.44, 0.85}, {0.47, 0.85}, {0.50, 0.85}},
+		{{0.35, 0.02}, {0.22, 0.00}, {0.14, 0.03}},
+		{{0.07, 0.06}, {0.03, 0.16}, {0.02, 0.32}},
+		{{0.01, 0.52}, {0.02, 0.76}, {0.06, 0.90}},
+		{{0.09, 0.99}, {0.18, 1.00}, {0.23, 0.92}},
+		{{0.27, 0.85}, {0.30, 0.76}, {0.38, 0.74}},
+		{{0.44, 0.735}, {0.47, 0.735}, {0.50, 0.735}},
 	},
 }
 
@@ -55,7 +57,7 @@ var steamShape = padShape{
 func (s padShape) path(r *vector.Rasterizer, w, h, inset float32) {
 	sx, sy := (w-2*inset)/w, (h-2*inset)/h
 	pt := func(p [2]float64) (float32, float32) {
-		x, y := float32(p[0])*w, float32(p[1])*h
+		x, y := float32(p[0])*w, float32(by(p[1]))*h
 		return inset + x*sx, inset + y*sy
 	}
 	r.MoveTo(pt(s.start))
@@ -125,11 +127,17 @@ func padArt(l *padLayout, w, h int, button float32) *image.NRGBA {
 		p := l.pos[key]
 		return float32(p[0]) * fw, float32(p[1]) * fh
 	}
-	shape := xboxShape
-	if l.name == "Steam Controller" {
-		shape = steamShape
-	}
+	shape := l.shape
 	rim := float32(math.Max(2, float64(fw)/220))
+	// The bumpers, along the top edge: the body covers their lower half.
+	_, ly := at("l")
+	for _, b := range l.bumpers {
+		x0, x1 := float32(b[0])*fw, float32(b[1])*fw
+		fill(img, color.NRGBA{30, 30, 34, 255}, func(r *vector.Rasterizer) {
+			top := ly - button*0.75
+			roundRect(r, x0, top, x1-x0, float32(by(0.12))*fh-top, button*0.6)
+		})
+	}
 	fill(img, color.NRGBA{86, 86, 94, 255}, func(r *vector.Rasterizer) { shape.path(r, fw, fh, 0) })
 	fill(img, color.NRGBA{52, 52, 58, 255}, func(r *vector.Rasterizer) { shape.path(r, fw, fh, rim) })
 	// The Steam Controller's trackpads: drawn, not mapped.
@@ -141,8 +149,10 @@ func padArt(l *padLayout, w, h int, button float32) *image.NRGBA {
 	// Stick wells.
 	for _, k := range []string{"l3", "r3"} {
 		cx, cy := at(k)
-		fill(img, color.NRGBA{36, 36, 41, 255}, func(r *vector.Rasterizer) { circle(r, cx, cy, 0.17*fh) })
-		fill(img, color.NRGBA{44, 44, 50, 255}, func(r *vector.Rasterizer) { circle(r, cx, cy, 0.17*fh-rim) })
+		lx, _ := at(k[:1] + "stick_left")
+		rad := cx - lx + button*0.75 // round the direction buttons
+		fill(img, color.NRGBA{36, 36, 41, 255}, func(r *vector.Rasterizer) { circle(r, cx, cy, rad) })
+		fill(img, color.NRGBA{44, 44, 50, 255}, func(r *vector.Rasterizer) { circle(r, cx, cy, rad-rim) })
 	}
 	// The D-pad's cross.
 	ux, uy := at("up")
@@ -154,6 +164,12 @@ func padArt(l *padLayout, w, h int, button float32) *image.NRGBA {
 		roundRect(r, ux-half, uy-half, 2*half, dy-uy+2*half, half/3)
 		roundRect(r, lx-half, ly-half, rx-lx+2*half, 2*half, half/3)
 	})
+	// The Xbox or Steam button: drawn, not mapped.
+	if l.logo[2] > 0 {
+		cx, cy, rr := float32(l.logo[0])*fw, float32(l.logo[1])*fh, float32(l.logo[2])*fw
+		fill(img, color.NRGBA{86, 86, 94, 255}, func(r *vector.Rasterizer) { circle(r, cx, cy, rr) })
+		fill(img, color.NRGBA{34, 34, 38, 255}, func(r *vector.Rasterizer) { circle(r, cx, cy, rr-rim) })
+	}
 	// The face buttons' base.
 	fx, _ := at("y")
 	gx, _ := at("a")

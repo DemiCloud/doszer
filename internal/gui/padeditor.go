@@ -55,10 +55,14 @@ func (a *app) livePad(e *padEditor) *gamepad.Pad {
 // the RetroPad's bottom, right, left and top face buttons whatever the
 // controller calls them.
 type padLayout struct {
-	name   string
-	glyphs map[string]string
-	pos    map[string][2]float64
-	inert  [][4]float64 // x, y (centre), w, h
+	name    string
+	glyphs  map[string]string
+	pos     map[string][2]float64
+	inert   [][4]float64  // x, y (centre), w, h
+	shape   padShape      // the body's outline
+	aspect  float64       // the drawing's height over its width
+	logo    [3]float64    // the Xbox or Steam button: x, y, radius (of the width); drawn, not mapped
+	bumpers [2][2]float64 // each bumper's left and right edge, under the triggers
 }
 
 var xboxGlyphs = map[string]string{
@@ -70,42 +74,69 @@ var xboxGlyphs = map[string]string{
 	"rstick_up": "↑", "rstick_down": "↓", "rstick_left": "←", "rstick_right": "→",
 }
 
-// layoutAt places the controls: triggers and bumpers fixed, the sticks,
-// the D-pad, the face buttons and View/Menu where the controller has them.
-func layoutAt(lstick, rstick, dpad, face, view, menu [2]float64) map[string][2]float64 {
+// bodyTop is where a controller's body starts in its drawing: the
+// strip above is for the triggers, behind the bumpers.
+const bodyTop = 0.18
+
+// by turns a y measured on the controller's body (0 its top, 1 its
+// bottom) into the drawing's.
+func by(y float64) float64 { return bodyTop + (1-bodyTop)*y }
+
+// layoutAt places the controls, as fractions of a drawing aspect (its
+// height over its width) tall: triggers and bumpers at bumper, the rest
+// at their centres; offsets are fractions of the width, made the same
+// length up and down.
+func layoutAt(aspect float64, bumper [2]float64, lstick, rstick, dpad, face, view, menu [2]float64, stickR, dpadR, faceR float64) map[string][2]float64 {
 	p := map[string][2]float64{
-		"l2": {0.22, 0.03}, "l": {0.22, 0.115}, "r2": {0.78, 0.03}, "r": {0.78, 0.115},
+		"l": bumper, "l2": {bumper[0], bumper[1] - 0.09},
+		"r": {1 - bumper[0], bumper[1]}, "r2": {1 - bumper[0], bumper[1] - 0.09},
 		"select": view, "start": menu,
 	}
-	cross := func(c [2]float64, dx, dy float64, up, down, left, right, mid string) {
+	cross := func(c [2]float64, d float64, up, down, left, right, mid string) {
+		dy := d / aspect
 		p[up] = [2]float64{c[0], c[1] - dy}
 		p[down] = [2]float64{c[0], c[1] + dy}
-		p[left] = [2]float64{c[0] - dx, c[1]}
-		p[right] = [2]float64{c[0] + dx, c[1]}
+		p[left] = [2]float64{c[0] - d, c[1]}
+		p[right] = [2]float64{c[0] + d, c[1]}
 		if mid != "" {
 			p[mid] = c
 		}
 	}
-	cross(lstick, 0.068, 0.115, "lstick_up", "lstick_down", "lstick_left", "lstick_right", "l3")
-	cross(rstick, 0.068, 0.115, "rstick_up", "rstick_down", "rstick_left", "rstick_right", "r3")
-	cross(dpad, 0.042, 0.072, "up", "down", "left", "right", "")
-	cross(face, 0.05, 0.085, "x", "b", "y", "a", "")
+	cross(lstick, stickR, "lstick_up", "lstick_down", "lstick_left", "lstick_right", "l3")
+	cross(rstick, stickR, "rstick_up", "rstick_down", "rstick_left", "rstick_right", "r3")
+	cross(dpad, dpadR, "up", "down", "left", "right", "")
+	cross(face, faceR, "x", "b", "y", "a", "")
 	return p
 }
+
+// Measured from photographs of the controllers: positions on the body,
+// as fractions of its width and height.
+var (
+	xboxAspect  = 0.753 / (1 - bodyTop)
+	steamAspect = 0.683 / (1 - bodyTop)
+)
 
 // padLayouts are the controllers the editor draws; the first is the
 // default.
 var padLayouts = []padLayout{
 	{
-		name:   "Xbox",
-		glyphs: xboxGlyphs,
-		pos:    layoutAt([2]float64{0.265, 0.40}, [2]float64{0.615, 0.61}, [2]float64{0.40, 0.62}, [2]float64{0.735, 0.39}, [2]float64{0.44, 0.31}, [2]float64{0.56, 0.31}),
+		name: "Xbox", glyphs: xboxGlyphs, shape: xboxShape, aspect: xboxAspect,
+		pos: layoutAt(xboxAspect, [2]float64{0.25, 0.145},
+			[2]float64{0.247, by(0.248)}, [2]float64{0.645, by(0.448)}, [2]float64{0.373, by(0.464)},
+			[2]float64{0.771, by(0.248)}, [2]float64{0.434, by(0.248)}, [2]float64{0.584, by(0.248)},
+			0.088, 0.056, 0.066),
+		logo:    [3]float64{0.506, by(0.104), 0.036},
+		bumpers: [2][2]float64{{0.12, 0.40}, {0.60, 0.88}},
 	},
 	{
-		name:   "Steam Controller",
-		glyphs: xboxGlyphs,
-		pos:    layoutAt([2]float64{0.37, 0.46}, [2]float64{0.63, 0.46}, [2]float64{0.17, 0.34}, [2]float64{0.83, 0.34}, [2]float64{0.40, 0.22}, [2]float64{0.60, 0.22}),
-		inert:  [][4]float64{{0.37, 0.72, 0.17, 0.22}, {0.63, 0.72, 0.17, 0.22}},
+		name: "Steam Controller", glyphs: xboxGlyphs, shape: steamShape, aspect: steamAspect,
+		pos: layoutAt(steamAspect, [2]float64{0.21, 0.135},
+			[2]float64{0.355, by(0.268)}, [2]float64{0.645, by(0.268)}, [2]float64{0.17, by(0.20)},
+			[2]float64{0.83, by(0.17)}, [2]float64{0.33, by(0.05)}, [2]float64{0.67, by(0.05)},
+			0.068, 0.045, 0.056),
+		inert:   [][4]float64{{0.322, by(0.545), 0.233, 0.325 * (1 - bodyTop)}, {0.678, by(0.545), 0.233, 0.325 * (1 - bodyTop)}},
+		logo:    [3]float64{0.50, by(0.22), 0.032},
+		bumpers: [2][2]float64{{0.08, 0.34}, {0.66, 0.92}},
 	},
 }
 
@@ -477,8 +508,11 @@ func (a *app) drawPadEditor() {
 	a.drawPadPanel(e, l, padGroups[1], x+w-p-side, top, side, bottom-top)
 
 	// Centre: the controller, the binding being edited, the wheel.
-	editH := a.px(128)
-	drawH := min((bottom-top)*45/100, cw*62/100)
+	// The controller takes what the binding editor and two rows of
+	// wheel items leave.
+	editH := a.px(106)
+	wheelH := a.px(118)
+	drawH := max(a.px(160), bottom-top-editH-wheelH-2*gap)
 	a.drawController(e, l, cx, top, cw, drawH)
 	ey := top + drawH + gap
 	a.drawBindingEditor(e, l, cx, ey, cw, editH)
@@ -578,15 +612,15 @@ func bindingShown(binding string) string {
 // drawController draws the controller and its controls, in a box of the
 // controller's proportions inside x, y, w, h.
 func (a *app) drawController(e *padEditor, l *padLayout, x, y, w, h int32) {
-	bw, bh := w, w*58/100
+	bw, bh := w, int32(float64(w)*l.aspect)
 	if bh > h {
-		bh, bw = h, h*100/58
+		bh, bw = h, int32(float64(h)/l.aspect)
 	}
 	bx, by := x+(w-bw)/2, y+(h-bh)/2
 	frac := func(fx, fy float64) (int32, int32) {
 		return bx + int32(fx*float64(bw)), by + int32(fy*float64(bh))
 	}
-	s := max(a.px(22), int32(0.085*float64(bh)))
+	s := min(max(a.px(18), int32(0.062*float64(bw))), a.px(30))
 	live := a.livePad(e)
 	if t := a.padArtTexture(l, bw, bh, s); t != nil {
 		t.used = a.frame
