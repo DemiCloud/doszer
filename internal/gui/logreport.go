@@ -83,6 +83,26 @@ func (rp *reporter) pair(s, right string, c rgba) {
 	rp.y += rp.lh
 }
 
+// link draws a link under the last row's value, opening something when
+// clicked (not selected: it's a link).
+func (rp *reporter) link(label string, open func()) {
+	a := rp.a
+	if !canOpen() {
+		return
+	}
+	x := rp.x + rp.labelW()
+	w := a.textWidth(label, 13, false)
+	c := colAccent
+	if a.hovered(x, rp.y, w, rp.lh) {
+		c = colText
+	}
+	rp.y -= a.px(2)
+	a.text(label, x, rp.y, 13, false, c)
+	a.fill(x, rp.y+a.lineHeight(13, false)-a.px(1), w, a.px(1), c)
+	a.clipHit(x, rp.y, w, rp.lh, func(bool) { open() })
+	rp.y += rp.lh
+}
+
 // gap adds space.
 func (rp *reporter) gap(n float64) { rp.y += rp.a.px(n) }
 
@@ -233,6 +253,7 @@ func (a *app) drawRunReport(r *runlog.Report, x, y, w int32) int32 {
 		switch {
 		case d.Verified:
 			rp.row("Redump", "Verified: "+d.Redump, colDOS)
+			rp.link("Redump page", func() { a.openRedump(d.Redump, d.Link) })
 		case d.Redump != "":
 			rp.row("Redump", fmt.Sprintf("Not verified: closest %s (%d matching)", d.Redump, d.Matching), colShell)
 		case d.Datfile != nil:
@@ -283,6 +304,7 @@ func (a *app) drawRunReport(r *runlog.Report, x, y, w int32) int32 {
 			rp.heading("Disc " + m.ID)
 			if m.RedumpName != "" {
 				rp.row("Redump", m.RedumpName, colText)
+				rp.link("Redump page", func() { a.openRedump(m.RedumpName, m.Redump) })
 			}
 			if m.Image != "" {
 				rp.row("Image", m.Image, colText)

@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 const testDat = `<?xml version="1.0"?>
 <datafile>
 	<header><name>IBM - PC compatible</name><date>2026-06-15 06-43-57</date></header>
-	<game name="Example Game (USA)">
+	<game name="Example Game (USA)" id="4428">
 		<rom name="Example Game (USA).cue" size="200" crc="0" md5="0" sha1="cccccccccccccccccccccccccccccccccccccccc"/>
 		<rom name="Example Game (USA) (Track 1).bin" size="4" sha1="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"/>
 		<rom name="Example Game (USA) (Track 2).bin" size="5" sha1="BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"/>
@@ -53,7 +54,7 @@ func TestMatch(t *testing.T) {
 	if err != nil || !m.Verified || m.Disc.Name != "Example Game (USA)" {
 		t.Fatalf("exact: %+v, %v", m, err)
 	}
-	if m.Link != "http://redump.org/discs/quicksearch/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/" {
+	if m.Link != "https://redump.info/disc/4428/" {
 		t.Fatalf("link %s", m.Link)
 	}
 
@@ -98,7 +99,7 @@ func TestWriteParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Version != db.Version || got.Name != db.Name || len(got.Discs) != len(db.Discs) {
+	if got.Version != db.Version || got.Name != db.Name || len(got.Discs) != len(db.Discs) || got.Discs[0].ID != "4428" || got.Discs[1].ID != "" {
 		t.Fatalf("round trip %+v", got)
 	}
 	for i, d := range db.Discs {
@@ -121,5 +122,24 @@ func TestSelectExternal(t *testing.T) {
 	sel, err := Select(p)
 	if err != nil || sel.Source != "external" || len(sel.DB.Discs) != 2 {
 		t.Fatalf("%+v, %v", sel, err)
+	}
+}
+
+func TestNormalizeLink(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"http://redump.org/disc/4428/", "https://redump.info/disc/4428/"},
+		{"http://redump.org/disc/4428", "https://redump.info/disc/4428/"},
+		{"http://redump.org/discs/quicksearch/" + strings.Repeat("a", 40) + "/", ""},
+		{"https://redump.info/disc/4428/", "https://redump.info/disc/4428/"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := NormalizeLink(tt.in); got != tt.want {
+			t.Errorf("NormalizeLink(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+	db := load(t)
+	if d := db.ByName("Example Game (USA)"); d == nil || d.URL() != "https://redump.info/disc/4428/" {
+		t.Errorf("ByName: %+v", d)
 	}
 }

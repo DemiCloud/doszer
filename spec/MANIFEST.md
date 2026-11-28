@@ -142,7 +142,7 @@ Zero or more entries identifying disc images.
 |---|---|---|---|
 | `id` | string | yes | Identifier referenced by `[[extract]]`. Unique within the manifest. |
 | `label` | string | no | Human-readable name, e.g. the original file name. |
-| `redump` | string | no | Reference to the disc's [Redump](http://redump.org) entry, e.g. a disc page URL. Informational only; Redump hashes are not normalized track hashes (§7.2). |
+| `redump` | string | no | Reference to the disc's [Redump](https://redump.info) entry, e.g. its disc page URL (`https://redump.info/disc/<id>/`). Informational only; Redump hashes are not normalized track hashes (§7.2). |
 | `redump_name` | string | no | The disc's name in Redump's datfile, recorded when the dump's tracks matched that entry. Informational. |
 | `tracks` | array of tables | yes | One entry per track, in track order. |
 

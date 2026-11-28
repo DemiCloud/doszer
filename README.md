@@ -316,8 +316,13 @@ The dump is then checked against Redump's IBM PC datfile, matching every
 track's size and SHA-1: `Verified`, or the closest disc and the tracks
 that differ, or no match (a bad dump, or a disc not in Redump yet). The
 datfile is, in order: `--dat`/`build.redump_dat` (any Logiqx datfile); a copy
-fetched from redump.org at most weekly and cached in the user cache
-directory; the snapshot built into doszer (`make dat`). `doszer redump`
+fetched from redump.info (Redump's home since it left redump.org) at
+most weekly and cached in the user cache directory; the snapshot built
+into doszer (`make dat`). Its discs carry their Redump IDs, so a match
+links straight to the disc's page (`https://redump.info/disc/<id>/`);
+the window opens it from a game's Tools > Redump page and from a log's
+disc and dump sections - an older manifest's redump.org link is
+followed to redump.info, by the disc's name if need be. `doszer redump`
 shows which is in use, `--update` fetches the current one, and given
 SHA-1s, track files, a disc image (a CUE sheet, or a zip of one) or an
 archive (its discs rebuilt as Redump has them) it looks them up.
@@ -583,7 +588,7 @@ result for one.
    with the next disc of a multi-disc game. doszer carries
    [redumper](https://github.com/superg/redumper), which corrects the
    drive's read offset, so the dump matches anyone else's of the same disc,
-   and then checks it against [Redump](http://redump.org)'s database:
+   and then checks it against [Redump](https://redump.info)'s database:
    `Verified` means every track matches a disc others have dumped and
    cross-checked, so the dump is exact. Under WSL it runs the Windows
    redumper, since WSL can't reach optical drives; `--drive E:` picks a

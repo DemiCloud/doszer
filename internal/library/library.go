@@ -35,23 +35,24 @@ const (
 
 // Game is one archive.
 type Game struct {
-	Path     string        // absolute
-	Root     string        // the ROM directory it was found under
-	Rel      string        // relative to Root, slash-separated
-	Name     string        // the manifest's, else the file name without extension
-	Kind     Kind          //
-	System   string        // the shell or OS image it boots, without directories ("Windows 98"), or ""
-	Boot     string        // the same as boot.shell or boot.os has it ("dosbox_pure/Windows 98"), or ""
-	Size     int64         //
-	Modified time.Time     //
-	Icon     []byte        // DOSZ.ICO, or nil
-	Err      string        // why the archive couldn't be read, if it couldn't
-	Parents  []string      // its parent chain, nearest first, by file name
-	Broken   string        // why the parent chain can't be followed, or ""
-	Need     platform.Need // what its programs need (its own, else its parents')
-	Disc     string        // its first disc's first data track SHA-1 (the manifest's [[source.media]]), or ""
-	Redump   string        // that disc's Redump name, if Redump has it
-	Verified bool          // every disc it declares has a Redump match; false with none to check
+	Path       string        // absolute
+	Root       string        // the ROM directory it was found under
+	Rel        string        // relative to Root, slash-separated
+	Name       string        // the manifest's, else the file name without extension
+	Kind       Kind          //
+	System     string        // the shell or OS image it boots, without directories ("Windows 98"), or ""
+	Boot       string        // the same as boot.shell or boot.os has it ("dosbox_pure/Windows 98"), or ""
+	Size       int64         //
+	Modified   time.Time     //
+	Icon       []byte        // DOSZ.ICO, or nil
+	Err        string        // why the archive couldn't be read, if it couldn't
+	Parents    []string      // its parent chain, nearest first, by file name
+	Broken     string        // why the parent chain can't be followed, or ""
+	Need       platform.Need // what its programs need (its own, else its parents')
+	Disc       string        // its first disc's first data track SHA-1 (the manifest's [[source.media]]), or ""
+	Redump     string        // that disc's Redump name, if Redump has it
+	Verified   bool          // every disc it declares has a Redump match; false with none to check
+	RedumpLink string        // that disc's Redump page, as its manifest records it (redump.NormalizeLink it)
 
 	LastPlayed time.Time
 	PlayTime   time.Duration
@@ -182,7 +183,7 @@ func read(dir, p string) Game {
 							}
 						}
 						md := m.Source.Media[0]
-						g.Redump = md.RedumpName
+						g.Redump, g.RedumpLink = md.RedumpName, md.Redump
 						for _, t := range md.Tracks {
 							if t.Type == manifest.TrackData {
 								g.Disc = t.SHA1

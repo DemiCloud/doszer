@@ -9,7 +9,6 @@ import (
 	iofs "io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/DemiCloud/doszer/internal/manifest"
@@ -341,7 +340,7 @@ func TestIdentifyMediaRedump(t *testing.T) {
 	sum := sha1.Sum(raw)
 	dat := fmt.Sprintf(`<?xml version="1.0"?>
 <datafile><header><name>IBM - PC compatible</name><version>2026-01-01</version></header>
-<game name="Test Disc (USA)"><rom name="Test Disc (USA).bin" size="%d" sha1="%x"/></game>
+<game name="Test Disc (USA)" id="77"><rom name="Test Disc (USA).bin" size="%d" sha1="%x"/></game>
 </datafile>`, len(raw), sum)
 	db, err := redump.Parse([]byte(dat))
 	if err != nil {
@@ -356,7 +355,7 @@ func TestIdentifyMediaRedump(t *testing.T) {
 		byLabel[m.Label] = m
 	}
 	good := byLabel["good"]
-	if good.RedumpName != "Test Disc (USA)" || good.Tracks[0].RedumpSHA1 != fmt.Sprintf("%x", sum) || !strings.Contains(good.Redump, "redump.org") {
+	if good.RedumpName != "Test Disc (USA)" || good.Tracks[0].RedumpSHA1 != fmt.Sprintf("%x", sum) || good.Redump != "https://redump.info/disc/77/" {
 		t.Errorf("good: %+v", good)
 	}
 	if o := byLabel["other"]; o.RedumpName != "" || o.Tracks[0].RedumpSHA1 != "" {

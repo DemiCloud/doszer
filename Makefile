@@ -74,7 +74,7 @@ PRESSKEY                := $(BUILTIN)/guest/PRESSKEY.EXE $(BUILTIN)/guest/PRESSK
 # verification (internal/redump; doszer fetches newer ones at run time).
 # Not pinned: it's a snapshot of a database that grows. `make dat` again
 # to refresh it.
-REDUMP_DAT_URL := http://redump.org/datfile/pc/
+REDUMP_DAT_URL := https://redump.info/datfile/PC
 REDUMP_DAT     := internal/redump/data/pc.dat.gz
 
 # Every core build writes the same output file in $(DBP_SRC).

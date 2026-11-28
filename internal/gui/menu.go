@@ -26,6 +26,10 @@ func (a *app) gameMenu(g *library.Game) {
 		{label: "Verify", fn: func() { a.runDoszer("Verify: "+name, []string{"verify", path}, nil) }},
 		{label: "Lint", fn: func() { a.lint(path, name) }},
 	}
+	if g.Redump != "" && canOpen() {
+		rn, rl := g.Redump, g.RedumpLink
+		tools = append(tools, menuItem{label: "Redump page", fn: func() { a.openRedump(rn, rl) }})
+	}
 	if r := runlog.Latest(a.runs, path); r != nil {
 		id := r.ID
 		tools = append(tools, menuItem{label: "Build log", fn: func() { a.showRun(id) }})

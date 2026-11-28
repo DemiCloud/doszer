@@ -1,5 +1,5 @@
 // Package redump verifies disc dumps against Redump's database
-// (redump.org), whose entries are discs dumped and cross-checked by
+// (redump.info, formerly redump.org), whose entries are discs dumped and cross-checked by
 // several people on different drives: a dump whose every track matches
 // one is known to be exact. The database is Redump's public "IBM - PC
 // compatible" datfile: a snapshot embedded at build time (`make dat`), a
@@ -27,9 +27,32 @@ import (
 
 // DatURL is Redump's IBM PC compatible datfile (a zip holding one Logiqx
 // XML datfile).
-const DatURL = "http://redump.org/datfile/pc/"
+const DatURL = "https://redump.info/datfile/PC"
 
-// UserAgent identifies doszer's requests to redump.org.
+// Site is Redump's home (it moved from redump.org to redump.info in
+// 2026), DiscURL a disc's page there.
+const Site = "https://redump.info"
+
+// DiscURL is the page of the disc with Redump ID id.
+func DiscURL(id string) string { return Site + "/disc/" + id + "/" }
+
+// NormalizeLink turns a link to a disc's redump.org page into its
+// redump.info one; a search link redump.info doesn't serve (redump.org's
+// /discs/quicksearch/) becomes "", to be found again by the disc's name
+// (DB.ByName); any other link is returned as it is.
+func NormalizeLink(link string) string {
+	for _, old := range []string{"http://redump.org/disc/", "https://redump.org/disc/", "http://www.redump.org/disc/"} {
+		if id, ok := strings.CutPrefix(link, old); ok {
+			return DiscURL(strings.TrimSuffix(id, "/"))
+		}
+	}
+	if strings.Contains(link, "redump.org/discs/quicksearch/") {
+		return ""
+	}
+	return link
+}
+
+// UserAgent identifies doszer's requests to Redump.
 var UserAgent = "doszer"
 
 // Rom is one file of a disc entry.
@@ -43,7 +66,26 @@ type Rom struct {
 // whose file names differ from dump to dump, left out).
 type Disc struct {
 	Name   string
+	ID     string // Redump's disc ID (the datfile's game id; redump.info's include it), "" if unknown
 	Tracks []Rom
+}
+
+// URL is the disc's Redump page, or "" without its ID.
+func (d *Disc) URL() string {
+	if d == nil || d.ID == "" {
+		return ""
+	}
+	return DiscURL(d.ID)
+}
+
+// ByName returns the disc named name, or nil.
+func (db *DB) ByName(name string) *Disc {
+	for i := range db.Discs {
+		if db.Discs[i].Name == name {
+			return &db.Discs[i]
+		}
+	}
+	return nil
 }
 
 // PCName is the name of Redump's IBM PC datfile, the one doszer uses:
@@ -144,7 +186,7 @@ func parseXML(r io.Reader) (*DB, error) {
 			case "name":
 				inName = inHeader && cur == nil
 			case "game":
-				db.Discs = append(db.Discs, Disc{Name: attr(t, "name")})
+				db.Discs = append(db.Discs, Disc{Name: attr(t, "name"), ID: attr(t, "id")})
 				cur = &db.Discs[len(db.Discs)-1]
 			case "rom":
 				if cur == nil || strings.HasSuffix(strings.ToLower(attr(t, "name")), ".cue") {
@@ -192,7 +234,7 @@ func (db *DB) index() (*DB, error) {
 }
 
 // Write writes db in a compact form, about a third of Redump's zip: a
-// gzipped list of "V<tab>version", "N<tab>name", then per disc "D<tab>name" and per
+// gzipped list of "V<tab>version", "N<tab>name", then per disc "D<tab>name<tab>id" (the id when known) and per
 // track "<size><tab><sha1>". Track file names aren't kept: a match is by
 // size and SHA-1.
 func (db *DB) Write(w io.Writer) error {
@@ -206,7 +248,11 @@ func (db *DB) Write(w io.Writer) error {
 		fmt.Fprintf(bw, "N\t%s\n", db.Name)
 	}
 	for _, d := range db.Discs {
-		fmt.Fprintf(bw, "D\t%s\n", d.Name)
+		if d.ID != "" {
+			fmt.Fprintf(bw, "D\t%s\t%s\n", d.Name, d.ID)
+		} else {
+			fmt.Fprintf(bw, "D\t%s\n", d.Name)
+		}
 		for _, r := range d.Tracks {
 			fmt.Fprintf(bw, "%d\t%s\n", r.Size, r.SHA1)
 		}
@@ -233,7 +279,8 @@ func parseCompact(r io.Reader) (*DB, error) {
 		case k == "N" && len(db.Discs) == 0:
 			db.Name = v
 		case k == "D":
-			db.Discs = append(db.Discs, Disc{Name: v})
+			name, id, _ := strings.Cut(v, "\t")
+			db.Discs = append(db.Discs, Disc{Name: name, ID: id})
 		case len(db.Discs) > 0:
 			size, err := strconv.ParseInt(k, 10, 64)
 			if err != nil {
@@ -303,7 +350,7 @@ type Match struct {
 	Disc     *Disc  // the matching entry, or the closest one (most tracks matching)
 	Matching int    // tracks matching Disc's
 	Differ   []int  // indexes of the dump's tracks that match none of Disc's
-	Link     string // the disc's Redump search page
+	Link     string // the disc's Redump page, "" if the datfile doesn't give its ID
 }
 
 // ErrNoMatch is returned by Match when no track matches any disc: a bad
@@ -334,7 +381,7 @@ func (db *DB) Match(tracks []Track) (*Match, error) {
 		return nil, ErrNoMatch
 	}
 	disc := &db.Discs[best]
-	m := &Match{Disc: disc, Matching: bestCount, Link: "http://redump.org/discs/quicksearch/" + disc.Tracks[0].SHA1 + "/"}
+	m := &Match{Disc: disc, Matching: bestCount, Link: disc.URL()}
 	for i, t := range tracks {
 		if !hasRom(*disc, t) {
 			m.Differ = append(m.Differ, i)

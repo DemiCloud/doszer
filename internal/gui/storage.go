@@ -9,6 +9,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/config"
 	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/library"
+	"github.com/DemiCloud/doszer/internal/redump"
 	"github.com/DemiCloud/doszer/internal/runlog"
 )
 
@@ -505,4 +506,23 @@ func (a *app) deleteSaves(paths []string) {
 		a.saveMulti.clear()
 		a.rescanStorage()
 	}, lines...)
+}
+
+// openRedump opens a disc's Redump page: its recorded link, made a
+// redump.info one, else found by its name in the datfile in use.
+func (a *app) openRedump(name, link string) {
+	if u := redump.NormalizeLink(link); u != "" {
+		a.open(u)
+		return
+	}
+	sel, err := redump.Current(a.cfg.Build.RedumpDAT)
+	if err != nil || sel == nil {
+		a.say("No Redump datfile to find "+name+" in", true)
+		return
+	}
+	if d := sel.DB.ByName(name); d != nil && d.URL() != "" {
+		a.open(d.URL())
+		return
+	}
+	a.say(name+": no Redump page in the datfile in use", true)
 }
