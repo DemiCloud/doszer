@@ -55,6 +55,7 @@ func (a *app) gameMenu(g *library.Game) {
 	items := []menuItem{
 		{label: "Play", fn: a.play},
 		{label: "Edit…", fn: func() { a.openEditor(g) }},
+		{label: "Gamepad…", fn: func() { a.openPadEditor(g) }},
 		{label: "Saves…", fn: func() { a.showSaves(path) }},
 		{label: "-"},
 		{label: "Tools", sub: tools},

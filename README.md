@@ -473,6 +473,14 @@ each binding labelled as the manifest or the archive's `DOS.YML` labels
 the same actions, and `--apply` writes it into the archive's manifest.
 `doszer pad FILE.dosz` prints the manifest's own.
 
+In the window, a game's menu > Gamepad edits `[[input.pad]]` on a drawn
+controller, a port at a time: click a control, then type its binding or
+build it with Add action (DOSBox Pure's keys, mouse, joystick and
+frontend actions, grouped), with the label it should show; bound
+controls show their labels. The action wheel's items are listed beside
+it. From save takes the mapping made in the Controller Mapper, as
+`doszer pad --from-save` does; Save repacks the archive with it.
+
 In RetroArch, each port's device type (Quick Menu, Controls) must be the
 default, "Use Gamepad Mapper" (it may show as `[Pad Mapper] ...`); a preset
 there ignores the archive's mapping for that port.

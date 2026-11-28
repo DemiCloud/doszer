@@ -110,6 +110,30 @@ func TestScreenshot(t *testing.T) {
 				a.deleteArchives([]string{a.list[a.view[0]].Path})
 			}
 		},
+		"padedit.png": func(a *App) { // the gamepad editor on the first game with a mapping, else the first
+			for i := range a.list {
+				if strings.Contains(a.list[i].Name, "Pad") || i == len(a.list)-1 {
+					a.openPadEditor(&a.list[i])
+					break
+				}
+			}
+		},
+		"padmenu.png": func(a *App) { // its Add action menu, Keyboard open
+			for i := range a.list {
+				if strings.Contains(a.list[i].Name, "Pad") || i == len(a.list)-1 {
+					a.openPadEditor(&a.list[i])
+					break
+				}
+			}
+			if a.padEd != nil {
+				a.render()
+				items := a.actionMenu(a.padEd)
+				a.openMenuItems(a.w/3, a.h/2, items)
+				p := a.popup
+				p.child, p.childOf = p.sub(0), 0
+				p.child.x, p.child.y, p.child.childOf = a.w/3+a.px(200), a.h/2, -1
+			}
+		},
 		"logsscroll.png": func(a *App) {
 			a.Show("logs")
 			for _, r := range a.runs {

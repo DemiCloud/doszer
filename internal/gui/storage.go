@@ -53,10 +53,7 @@ func (a *app) rescanStorage() {
 		srcDir = config.SourcesDirOf(a.cfg).Path
 	}
 	games := append([]library.Game(nil), a.list...)
-	configured := a.o.SaveDir
-	if configured == "" {
-		configured = a.cfg.Paths.Saves
-	}
+	configured := a.saveDirSetting()
 	go func() {
 		r := storeResult{sourcesDir: srcDir}
 		if srcDir != "" {
@@ -80,6 +77,15 @@ func (a *app) storageScanned(r storeResult) {
 	a.srcSel = min(a.srcSel, len(a.sources)-1)
 	a.saveSel = min(a.saveSel, len(a.shownSaves())-1)
 	a.dirty = true
+}
+
+// saveDirSetting is the save folder set for the window: --save-dir,
+// else paths.saves, else "" (each game's own, install.GameSaveDir).
+func (a *app) saveDirSetting() string {
+	if a.o.SaveDir != "" {
+		return a.o.SaveDir
+	}
+	return a.cfg.Paths.Saves
 }
 
 // samePath reports whether two paths name the same file, as the system

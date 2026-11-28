@@ -114,6 +114,7 @@ type app struct {
 	setup *setupDialog
 	add   *addGame
 	edit  *editDialog
+	padEd *padEditor
 	// The text area typing goes to (the editor's), and the one under the
 	// mouse (the wheel scrolls it).
 	focusArea, areaUnderMouse *textArea
@@ -503,6 +504,10 @@ func (a *app) key(sc int32, mod uint16) {
 		a.setupKey(sc)
 		return
 	}
+	if a.padEd != nil && a.dialog == nil {
+		a.padKey(sc, ctrl)
+		return
+	}
 	if a.edit != nil && a.dialog == nil {
 		a.editKey(sc, ctrl)
 		return
@@ -669,6 +674,7 @@ func (a *app) render() {
 	a.drawStatus()
 	a.drawSettingsDialog()
 	a.drawEditor()
+	a.drawPadEditor()
 	a.drawExport()
 	a.drawChild()
 	a.drawSetup()

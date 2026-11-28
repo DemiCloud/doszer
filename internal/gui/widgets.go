@@ -36,7 +36,7 @@ func (a *app) top() int {
 	switch {
 	case a.popup != nil:
 		return layerPopup
-	case a.setup != nil || a.dialog != nil || a.add != nil || a.settingsOpen || a.edit != nil:
+	case a.setup != nil || a.dialog != nil || a.add != nil || a.settingsOpen || a.edit != nil || a.padEd != nil:
 		return layerModal
 	}
 	return layerPage
