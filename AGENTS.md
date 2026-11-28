@@ -568,10 +568,10 @@ session using "Save Difference Per Content", `install.templates` only matter for
   developer is to be approached, if at all, by the user, not by tooling.
   If it ships: one-way aliases only (never swaps, so a pad binding means
   what it says), and a warning where a pad binding uses an aliased key.
-- **The action wheel drawn as a wheel: dropped.** The editor's wheel
-  area is about 100 pixels across and a wheel holds up to 100 items;
-  the list shows each item's label in order, which a circle that small
-  can't.
+- **The action wheel drawn as a wheel: a Preview, not the list.** The
+  editor's wheel area is about 100 pixels across and a wheel holds up to
+  100 items, so the editor keeps a (scrolling) list; Preview draws the
+  wheel full size, as DOSBox Pure lays it out.
 
 Raised by a real retrofit attempt (repacking a legacy archive):
 
