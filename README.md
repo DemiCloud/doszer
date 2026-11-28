@@ -488,7 +488,9 @@ Pure's keys, mouse, joystick and frontend actions, grouped) or Press
 key (the next key pressed, Esc included; Press key again cancels),
 with the label it should show. The controller's names are its own (A is the
 bottom face button, the manifest's `b`); the editor names the key. The
-action wheel's items are listed under it. Import (or dropping files on
+action wheel's items are listed under it (scrolled with the mouse
+wheel); Preview shows them round a circle as DOSBox Pure lays its wheel
+out, the first at the top, clockwise. Import (or dropping files on
 the editor) takes a mapping from a `DOSZ.TOML`, a `PADMAP.DBP`, a
 `DOS.YML` or an archive holding them; a `PADMAP.DBP` and a `DOS.YML`
 together make one labelled mapping, in either order. From save takes

@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"math"
 	"os"
 	"strings"
 
@@ -36,6 +37,10 @@ type padEditor struct {
 	device     *gamepad.Pad // the controller shown live: the last pressed, else the first
 	capture    bool         // Press key: the next key pressed is added as an action
 	refocus    bool         // give the binding field focus back at the next draw
+	wheelTop   int          // the wheel list's first row shown
+	wheelSeen  int          // the item last scrolled into view
+	wheelRect  [4]int32     // the wheel list, for the mouse wheel
+	preview    bool         // the wheel's preview is open
 }
 
 // livePad is the controller whose presses the editor shows, or nil.
@@ -368,6 +373,12 @@ func (e *padEditor) padErrors() []string {
 }
 
 func (a *app) padKey(sc int32, ctrl bool) {
+	if e := a.padEd; e.preview {
+		if sc == scEscape || sc == scReturn || sc == scKPEnter {
+			e.preview = false
+		}
+		return
+	}
 	if e := a.padEd; e.capture {
 		// Any key, Esc too (a DOS key like any other): it's added.
 		if name := scancodeActions[sc]; name != "" {
@@ -570,6 +581,57 @@ func (a *app) drawPadEditor() {
 	a.button("Save", sx, by, btnAccent, save)
 	sx -= a.buttonW("Cancel") + a.px(8)
 	a.button("Cancel", sx, by, btnNormal, func() { a.padEd, a.focus = nil, nil })
+	if e.preview {
+		a.drawWheelPreview(e)
+	}
+}
+
+// drawWheelPreview draws the port's action wheel as DOSBox Pure lays it
+// out: its items round a circle, the first at the top, clockwise; past
+// a dozen, in more rings. A click or Esc closes it.
+func (a *app) drawWheelPreview(e *padEditor) {
+	items := e.cur().Wheel
+	a.fill(0, 0, a.w, a.h, rgba{0, 0, 0, 200})
+	a.onClick(0, 0, a.w, a.h, func(bool) { e.preview = false })
+	cx, cy := a.w/2, a.h/2
+	outer := float64(min(a.w, a.h)) * 0.38
+	const perRing = 12
+	rings := max(1, (len(items)+perRing-1)/perRing)
+	// The wheel's face, and its centre.
+	r := int32(outer) + a.px(30)
+	a.round(cx-r, cy-r, 2*r, 2*r, r, rgba{40, 40, 46, 255})
+	cr := a.px(54)
+	a.round(cx-cr, cy-cr, 2*cr, 2*cr, cr, rgba{30, 30, 34, 255})
+	title := "Port " + itoa(e.port+1)
+	a.text(title, cx-a.textWidth(title, 13, true)/2, cy-a.lineHeight(13, true)/2, 13, true, colMuted)
+	n := len(items)
+	for ring := 0; ring < rings; ring++ {
+		first := ring * perRing
+		count := min(perRing, n-first)
+		// Inner rings first: the last ring is the outer one.
+		rad := outer
+		if rings > 1 {
+			rad = outer * (0.45 + 0.55*float64(ring)/float64(rings-1))
+		}
+		for k := 0; k < count; k++ {
+			ang := -math.Pi/2 + 2*math.Pi*float64(k)/float64(count)
+			ix := cx + int32(rad*math.Cos(ang))
+			iy := cy + int32(rad*math.Sin(ang))
+			label := bindingShown(items[first+k])
+			if strings.TrimSpace(label) == "" {
+				label = "(empty)"
+			}
+			label = a.ellipsize(label, a.px(150), 12, false)
+			bw := a.textWidth(label, 12, false) + a.px(20)
+			bh := a.lineHeight(12, false) + a.px(12)
+			bg := colCard
+			if e.sel == "wheel" && e.wheelSel == first+k {
+				bg = colAccentDark
+			}
+			a.round(ix-bw/2, iy-bh/2, bw, bh, bh/2, bg)
+			a.text(label, ix-bw/2+a.px(10), iy-bh/2+a.px(6), 12, false, colText)
+		}
+	}
 }
 
 // drawPadPanel draws a side's groups of controls, each a row with its
@@ -766,6 +828,11 @@ func (a *app) drawWheelList(e *padEditor, x, y, w, h int32) {
 		})
 		bx -= a.px(6)
 	}
+	if len(pd.Wheel) > 0 {
+		bx -= a.buttonW("Preview")
+		a.button("Preview", bx, y+a.px(6), btnNormal, func() { e.preview = true })
+		bx -= a.px(6)
+	}
 	if len(pd.Wheel) < padmap.MaxWheel {
 		bx -= a.buttonW("Add item")
 		a.button("Add item", bx, y+a.px(6), btnNormal, func() {
@@ -781,12 +848,29 @@ func (a *app) drawWheelList(e *padEditor, x, y, w, h int32) {
 		a.text("No items: the wheel action opens a menu of these", hx, ly+a.px(4), 12, false, colFaint)
 		return
 	}
-	// Items in two columns.
-	colW := (w - a.px(28) - a.px(8)) / 2
+	// Items in two columns, scrolled a row at a time; a newly selected
+	// item is brought into view.
+	colW := (w - a.px(28) - a.px(14)) / 2
 	rh := a.px(28)
+	rows := (len(pd.Wheel) + 1) / 2
+	visible := max(1, int((h-a.px(48))/(rh+a.px(4))))
+	if e.sel == "wheel" && e.wheelSel != e.wheelSeen {
+		e.wheelSeen = e.wheelSel
+		if r := e.wheelSel / 2; r < e.wheelTop {
+			e.wheelTop = r
+		} else if r >= e.wheelTop+visible {
+			e.wheelTop = r - visible + 1
+		}
+	}
+	e.wheelTop = max(0, min(e.wheelTop, rows-visible))
+	e.wheelRect = [4]int32{x, y + a.px(44), w, h - a.px(48)}
+	a.scrollbar(x+w-a.px(10), ly, h-a.px(52), e.wheelTop, visible, rows)
 	for i, item := range pd.Wheel {
+		if i/2 < e.wheelTop || i/2 >= e.wheelTop+visible {
+			continue
+		}
 		cx := hx + int32(i%2)*(colW+a.px(8))
-		cy := ly + int32(i/2)*(rh+a.px(4))
+		cy := ly + int32(i/2-e.wheelTop)*(rh+a.px(4))
 		sel := e.sel == "wheel" && e.wheelSel == i
 		bg := colField
 		switch {

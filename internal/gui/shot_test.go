@@ -140,6 +140,21 @@ func TestScreenshot(t *testing.T) {
 				a.padEd.pads[0].Controls["b"] = "space Fire"
 			}
 		},
+		"padwheel.png": func(a *App) { // the action wheel's preview
+			if len(a.list) > 0 {
+				a.openPadEditor(&a.list[0])
+				a.padImport(filepath.Join("..", "..", "examples", "betrayal-in-antara", "DOSZ.TOML"))
+				a.padEd.preview = true
+			}
+		},
+		"padwheelscroll.png": func(a *App) { // the last wheel item selected: the list scrolls to it
+			if len(a.list) > 0 {
+				a.openPadEditor(&a.list[0])
+				a.padImport(filepath.Join("..", "..", "examples", "betrayal-in-antara", "DOSZ.TOML"))
+				a.padEd.wheelSel = len(a.padEd.cur().Wheel) - 1
+				a.selectPadControl(a.padEd, "wheel")
+			}
+		},
 		"padmenu.png": func(a *App) { // its Add action menu, Keyboard open
 			for i := range a.list {
 				if strings.Contains(a.list[i].Name, "Pad") || i == len(a.list)-1 {

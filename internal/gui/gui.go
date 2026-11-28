@@ -473,6 +473,8 @@ func (a *app) event(e *sdl.Event) {
 			}
 		} else if a.add != nil && a.add.page == 2 {
 			a.add.scroll = max(0, a.add.scroll+int(e.Wheel())*3)
+		} else if pe := a.padEd; pe != nil && a.popup == nil && a.mx >= pe.wheelRect[0] && a.mx < pe.wheelRect[0]+pe.wheelRect[2] && a.my >= pe.wheelRect[1] && a.my < pe.wheelRect[1]+pe.wheelRect[3] {
+			pe.wheelTop -= int(e.Wheel())
 		} else if a.page == pageLogs && a.mx >= a.logSplit && a.popup == nil && a.setup == nil && a.add == nil {
 			a.scrollLog(-e.Wheel() * a.px(72))
 		} else if a.settingsOpen && a.popup == nil {
