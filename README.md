@@ -484,8 +484,9 @@ time: every control's binding listed by group down both sides
 drawn controller between them - an Xbox controller, or a Steam
 Controller - and the binding being edited below it. Click a control or
 its row, then type its binding or build it with Add action (DOSBox
-Pure's keys, mouse, joystick and frontend actions, grouped), with the
-label it should show. The controller's names are its own (A is the
+Pure's keys, mouse, joystick and frontend actions, grouped) or Press
+key (the next key pressed, Esc included; Press key again cancels),
+with the label it should show. The controller's names are its own (A is the
 bottom face button, the manifest's `b`); the editor names the key. The
 action wheel's items are listed under it. Import (or dropping files on
 the editor) takes a mapping from a `DOSZ.TOML`, a `PADMAP.DBP`, a
@@ -1304,7 +1305,9 @@ mapping, DOSBox Pure's built-in ones and its Controller Mapper (L3, by
 default, opens its menu) all apply as in RetroArch. Buttons go by
 position: the bottom face button is the RetroPad's B, whatever the
 controller prints on it. In the window's gamepad editor, pressing a
-button, a trigger or a stick picks that control, and held ones light up.
+button, a trigger or a stick picks that control, held ones light up,
+the stick caps follow the sticks and the triggers fill as they're
+pulled.
 
 #### Hotkeys
 

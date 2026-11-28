@@ -260,3 +260,23 @@ func (s *Set) byID(id int32) *Pad {
 	}
 	return nil
 }
+
+// Stick is a stick's position, each axis -1 to 1 (left and up negative):
+// the left stick's, or the right's.
+func (p *Pad) Stick(left bool) (x, y float64) {
+	ax, ay := int32(axisLeftX), int32(axisLeftY)
+	if !left {
+		ax, ay = axisRightX, axisRightY
+	}
+	return float64(sdl.GameControllerGetAxis(p.gc, ax)) / 32768, float64(sdl.GameControllerGetAxis(p.gc, ay)) / 32768
+}
+
+// Trigger is how far a trigger is pulled, 0 to 1: the left's, or the
+// right's.
+func (p *Pad) Trigger(left bool) float64 {
+	a := int32(axisTriggerLeft)
+	if !left {
+		a = axisTriggerRight
+	}
+	return float64(sdl.GameControllerGetAxis(p.gc, a)) / 32767
+}

@@ -34,6 +34,8 @@ type padEditor struct {
 	savedFrom  string // where the save's mapping is, "" if there's none
 	changed    bool
 	device     *gamepad.Pad // the controller shown live: the last pressed, else the first
+	capture    bool         // Press key: the next key pressed is added as an action
+	refocus    bool         // give the binding field focus back at the next draw
 }
 
 // livePad is the controller whose presses the editor shows, or nil.
@@ -276,7 +278,7 @@ func (e *padEditor) cur() *padmap.Pad { return &e.pads[e.port] }
 
 // selectPadControl makes key (a control, or "wheel") the one edited.
 func (a *app) selectPadControl(e *padEditor, key string) {
-	e.sel = key
+	e.sel, e.capture = key, false
 	text := ""
 	if key == "wheel" {
 		if e.wheelSel < len(e.cur().Wheel) {
@@ -366,6 +368,16 @@ func (e *padEditor) padErrors() []string {
 }
 
 func (a *app) padKey(sc int32, ctrl bool) {
+	if e := a.padEd; e.capture {
+		// Any key, Esc too (a DOS key like any other): it's added.
+		if name := scancodeActions[sc]; name != "" {
+			a.addAction(e, name)
+		}
+		// Focus comes back at the next draw, once the key's text input
+		// event (right behind this one) has gone nowhere.
+		e.capture, e.refocus = false, true
+		return
+	}
 	if a.focus != nil && sc != scEscape && a.focus.key(sc, ctrl) {
 		return
 	}
@@ -424,6 +436,9 @@ func (a *app) drawPadEditor() {
 	e := a.padEd
 	if e == nil {
 		return
+	}
+	if e.refocus {
+		a.focus, e.refocus = &e.binding, false
 	}
 	a.layer = layerModal
 	defer func() { a.layer = layerPage }()
@@ -639,6 +654,14 @@ func (a *app) drawController(e *padEditor, l *padLayout, x, y, w, h int32) {
 			w = max(s, a.textWidth(g, 11, true)+a.px(14))
 		}
 		cx, cy := frac(c[0], c[1])
+		// The stick caps follow the sticks, as far as the direction
+		// buttons around them.
+		if live != nil && (key == "l3" || key == "r3") {
+			sx, sy := live.Stick(key == "l3")
+			reach := float64(bw) * 0.05
+			cx += int32(sx * reach)
+			cy += int32(sy * reach)
+		}
 		px, py := cx-w/2, cy-s/2
 		binding := e.cur().Controls[key]
 		// Unbound: dark with a ring, so it reads as a button on the body;
@@ -667,6 +690,13 @@ func (a *app) drawController(e *padEditor, l *padLayout, x, y, w, h int32) {
 			a.round(px-a.px(4), py-a.px(4), w+a.px(8), s+a.px(8), r+a.px(4), colText)
 		}
 		a.outline(px, py, w, s, r, a.px(1.5), ring, bg)
+		// The triggers fill as they're pulled.
+		if live != nil && (key == "l2" || key == "r2") {
+			if v := live.Trigger(key == "l2"); v > 0.02 {
+				fh := int32(v * float64(s-a.px(4)))
+				a.round(px+a.px(2), py+s-a.px(2)-fh, w-a.px(4), fh, a.px(3), rgba{60, 130, 70, 200})
+			}
+		}
 		gw := a.textWidth(g, 11, true)
 		a.text(g, px+(w-gw)/2, py+(s-a.lineHeight(11, true))/2, 11, true, tc)
 		k := key
@@ -686,8 +716,21 @@ func (a *app) drawBindingEditor(e *padEditor, l *padLayout, x, y, w, h int32) {
 	}
 	a.text(a.ellipsize(title, iw, 14, true), ix, y+a.px(12), 14, true, colText)
 	fy := y + a.px(42)
-	addW, clrW := a.buttonW("Add action ▼"), a.buttonW("Clear")
-	a.drawField(&e.binding, ix, fy, iw-addW-clrW-a.px(16))
+	addW, clrW, keyW := a.buttonW("Add action ▼"), a.buttonW("Clear"), a.buttonW("Press key")
+	a.drawField(&e.binding, ix, fy, iw-addW-clrW-keyW-a.px(24))
+	kx := ix + iw - addW - clrW - keyW - a.px(16)
+	style := btnNormal
+	if e.capture {
+		style = btnOn
+	}
+	a.button("Press key", kx, fy, style, func() {
+		e.capture = !e.capture
+		if e.capture {
+			a.focus = nil // the key's typed text mustn't land in the field
+		} else {
+			a.focus = &e.binding
+		}
+	})
 	axx := ix + iw - addW - clrW - a.px(8)
 	a.button("Add action ▼", axx, fy, btnNormal, func() {
 		a.openMenuItems(axx, fy+a.px(36), a.actionMenu(e))

@@ -64,3 +64,25 @@ func TestImportPads(t *testing.T) {
 		t.Error("imported a text file")
 	}
 }
+
+// Every key Press key can add is one of DOSBox Pure's actions, and every
+// keyboard action has a key.
+func TestScancodeActions(t *testing.T) {
+	seen := map[string]bool{}
+	for sc, name := range scancodeActions {
+		if _, err := padmap.ParseBinding(name); err != nil {
+			t.Errorf("scancode %d: %q: %v", sc, name, err)
+		}
+		seen[name] = true
+	}
+	if len(seen) != len(scancodeActions) {
+		t.Error("two keys add the same action")
+	}
+	for _, g := range actionGroups[0].sub { // Keyboard
+		for _, act := range g.actions {
+			if !seen[act] {
+				t.Errorf("%s: no key adds it", act)
+			}
+		}
+	}
+}
