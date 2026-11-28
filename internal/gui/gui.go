@@ -106,17 +106,19 @@ type app struct {
 	romDirs []config.Dir
 	sysDir  config.Dir
 
-	page  page
-	layer int
-	hits  []hit
-	clips []sdl.Rect
-	focus *field
-	popup *popup
-	setup *setupDialog
-	add   *addGame
-	edit  *editDialog
-	padEd *padEditor
-	pads  *gamepad.Set // controllers, for the gamepad editor
+	page      page
+	layer     int
+	hits      []hit
+	clips     []sdl.Rect
+	focus     *field
+	popup     *popup
+	setup     *setupDialog
+	add       *addGame
+	edit      *editDialog
+	padEd     *padEditor
+	padArtTex *texture // the gamepad editor's controller art, for padArtKey
+	padArtKey string
+	pads      *gamepad.Set // controllers, for the gamepad editor
 	// The text area typing goes to (the editor's), and the one under the
 	// mouse (the wheel scrolls it).
 	focusArea, areaUnderMouse *textArea

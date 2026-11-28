@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 
+	"unsafe"
+
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/DemiCloud/doszer/internal/gamepad"
@@ -12,6 +14,7 @@ import (
 	"github.com/DemiCloud/doszer/internal/manifest"
 	"github.com/DemiCloud/doszer/internal/padmap"
 	"github.com/DemiCloud/doszer/internal/repack"
+	"github.com/DemiCloud/doszer/internal/sdl"
 )
 
 // The gamepad editor: a game's [[input.pad]] (spec §5.9), a port at a
@@ -56,7 +59,6 @@ type padLayout struct {
 	glyphs map[string]string
 	pos    map[string][2]float64
 	inert  [][4]float64 // x, y (centre), w, h
-	body   [][4]float64 // the outline, as rounded rectangles: x, y, w, h
 }
 
 var xboxGlyphs = map[string]string{
@@ -72,7 +74,7 @@ var xboxGlyphs = map[string]string{
 // the D-pad, the face buttons and View/Menu where the controller has them.
 func layoutAt(lstick, rstick, dpad, face, view, menu [2]float64) map[string][2]float64 {
 	p := map[string][2]float64{
-		"l2": {0.24, 0.05}, "l": {0.24, 0.15}, "r2": {0.76, 0.05}, "r": {0.76, 0.15},
+		"l2": {0.22, 0.03}, "l": {0.22, 0.115}, "r2": {0.78, 0.03}, "r": {0.78, 0.115},
 		"select": view, "start": menu,
 	}
 	cross := func(c [2]float64, dx, dy float64, up, down, left, right, mid string) {
@@ -86,7 +88,7 @@ func layoutAt(lstick, rstick, dpad, face, view, menu [2]float64) map[string][2]f
 	}
 	cross(lstick, 0.068, 0.115, "lstick_up", "lstick_down", "lstick_left", "lstick_right", "l3")
 	cross(rstick, 0.068, 0.115, "rstick_up", "rstick_down", "rstick_left", "rstick_right", "r3")
-	cross(dpad, 0.05, 0.085, "up", "down", "left", "right", "")
+	cross(dpad, 0.042, 0.072, "up", "down", "left", "right", "")
 	cross(face, 0.05, 0.085, "x", "b", "y", "a", "")
 	return p
 }
@@ -97,16 +99,19 @@ var padLayouts = []padLayout{
 	{
 		name:   "Xbox",
 		glyphs: xboxGlyphs,
-		pos:    layoutAt([2]float64{0.30, 0.40}, [2]float64{0.60, 0.68}, [2]float64{0.40, 0.68}, [2]float64{0.72, 0.40}, [2]float64{0.44, 0.38}, [2]float64{0.56, 0.38}),
-		body:   [][4]float64{{0.08, 0.22, 0.84, 0.56}, {0.10, 0.45, 0.30, 0.52}, {0.60, 0.45, 0.30, 0.52}},
+		pos:    layoutAt([2]float64{0.265, 0.40}, [2]float64{0.615, 0.61}, [2]float64{0.40, 0.62}, [2]float64{0.735, 0.39}, [2]float64{0.44, 0.31}, [2]float64{0.56, 0.31}),
 	},
 	{
 		name:   "Steam Controller",
 		glyphs: xboxGlyphs,
 		pos:    layoutAt([2]float64{0.37, 0.46}, [2]float64{0.63, 0.46}, [2]float64{0.17, 0.34}, [2]float64{0.83, 0.34}, [2]float64{0.40, 0.22}, [2]float64{0.60, 0.22}),
-		inert:  [][4]float64{{0.37, 0.76, 0.17, 0.26}, {0.63, 0.76, 0.17, 0.26}},
-		body:   [][4]float64{{0.06, 0.20, 0.88, 0.62}, {0.08, 0.45, 0.26, 0.52}, {0.66, 0.45, 0.26, 0.52}},
+		inert:  [][4]float64{{0.37, 0.72, 0.17, 0.22}, {0.63, 0.72, 0.17, 0.22}},
 	},
+}
+
+// faceColours are an Xbox controller's face letters' colours.
+var faceColours = map[string]rgba{
+	"A": {110, 200, 110, 255}, "B": {235, 95, 85, 255}, "X": {90, 150, 245, 255}, "Y": {240, 200, 70, 255},
 }
 
 // padGroups are the controls the side lists show, by side and group, in
@@ -146,22 +151,19 @@ func padRowName(l *padLayout, key string) string {
 	return l.glyphs[key]
 }
 
-// padTitle is a control's full name: what the controller calls it, what
-// the RetroPad does, and the manifest's key.
+// padTitle is a control's name as the controller has it: "A", "LT",
+// "Left stick ↑".
 func padTitle(l *padLayout, key string) string {
-	where := map[string]string{
-		"b": "bottom face button", "a": "right face button", "y": "left face button", "x": "top face button",
-		"l": "left bumper", "r": "right bumper", "l2": "left trigger", "r2": "right trigger",
-		"l3": "left stick click", "r3": "right stick click", "select": "select", "start": "start",
-		"up": "D-pad up", "down": "D-pad down", "left": "D-pad left", "right": "D-pad right",
-		"lstick_up": "left stick up", "lstick_down": "left stick down", "lstick_left": "left stick left", "lstick_right": "left stick right",
-		"rstick_up": "right stick up", "rstick_down": "right stick down", "rstick_left": "right stick left", "rstick_right": "right stick right",
-	}[key]
 	g := l.glyphs[key]
-	if g == "" || strings.ContainsAny(g, "↑↓←→") {
-		return strings.ToUpper(where[:1]) + where[1:] + " (" + key + ")"
+	switch {
+	case strings.HasPrefix(key, "lstick_"):
+		return "Left stick " + g
+	case strings.HasPrefix(key, "rstick_"):
+		return "Right stick " + g
+	case key == "up" || key == "down" || key == "left" || key == "right":
+		return "D-pad " + g
 	}
-	return g + ", " + where + " (" + key + ")"
+	return g
 }
 
 // actionGroups are DOSBox Pure's actions (spec §5.9) as the Add action
@@ -248,7 +250,7 @@ func (a *app) selectPadControl(e *padEditor, key string) {
 	} else {
 		text = e.cur().Controls[key]
 	}
-	e.binding = field{placeholder: "Actions joined by +, then a label: leftctrl+x Use Item", onChange: func() { a.padBindingChanged(e) }}
+	e.binding = field{placeholder: "action+action Label", onChange: func() { a.padBindingChanged(e) }}
 	e.binding.set(text)
 	a.focus = &e.binding
 }
@@ -444,12 +446,9 @@ func (a *app) drawPadEditor() {
 	if len(e.pads) > 1 {
 		bx -= a.buttonW("Remove port")
 		a.button("Remove port", bx, ly, btnNormal, func() {
-			n := e.port + 1
-			a.confirm("Remove port "+itoa(n)+"?", "Remove", func() {
-				e.pads = append(e.pads[:e.port], e.pads[e.port+1:]...)
-				e.port, e.wheelSel, e.changed = min(e.port, len(e.pads)-1), 0, true
-				a.selectPadControl(e, e.sel)
-			}, "Its mapping goes; the ports after it move up a number.")
+			e.pads = append(e.pads[:e.port], e.pads[e.port+1:]...)
+			e.port, e.wheelSel, e.changed = min(e.port, len(e.pads)-1), 0, true
+			a.selectPadControl(e, e.sel)
 		})
 		bx -= a.px(8)
 	}
@@ -587,35 +586,12 @@ func (a *app) drawController(e *padEditor, l *padLayout, x, y, w, h int32) {
 	frac := func(fx, fy float64) (int32, int32) {
 		return bx + int32(fx*float64(bw)), by + int32(fy*float64(bh))
 	}
-	body := rgba{50, 50, 55, 255}
-	for _, r := range l.body {
-		rx, ry := frac(r[0], r[1])
-		a.round(rx, ry, int32(r[2]*float64(bw)), int32(r[3]*float64(bh)), int32(0.14*float64(bh)), body)
-	}
-	for _, r := range l.inert {
-		rw, rh := int32(r[2]*float64(bw)), int32(r[3]*float64(bh))
-		rx, ry := frac(r[0], r[1])
-		a.round(rx-rw/2, ry-rh/2, rw, rh, a.px(10), rgba{40, 40, 45, 255})
-	}
-	// Stick wells.
-	for _, k := range []string{"l3", "r3"} {
-		c := l.pos[k]
-		r := int32(0.18 * float64(bh))
-		cx, cy := frac(c[0], c[1])
-		a.round(cx-r, cy-r, 2*r, 2*r, r, rgba{38, 38, 43, 255})
-	}
 	s := max(a.px(22), int32(0.085*float64(bh)))
 	live := a.livePad(e)
-	// The D-pad's cross, under its four buttons.
-	if up, ok := l.pos["up"]; ok {
-		down, left, right := l.pos["down"], l.pos["left"], l.pos["right"]
-		ux, uy := frac(up[0], up[1])
-		_, dy := frac(down[0], down[1])
-		lx, ly := frac(left[0], left[1])
-		rx, _ := frac(right[0], right[1])
-		plate := rgba{34, 34, 38, 255}
-		a.round(ux-s/2-a.px(3), uy-s/2-a.px(3), s+a.px(6), dy-uy+s+a.px(6), a.px(6), plate)
-		a.round(lx-s/2-a.px(3), ly-s/2-a.px(3), rx-lx+s+a.px(6), s+a.px(6), a.px(6), plate)
+	if t := a.padArtTexture(l, bw, bh, s); t != nil {
+		t.used = a.frame
+		dst := sdl.Rect{X: bx, Y: by, W: bw, H: bh}
+		sdl.RenderCopy(a.ren, t.t, nil, unsafe.Pointer(&dst))
 	}
 	for key, c := range l.pos {
 		g := l.glyphs[key]
@@ -630,6 +606,9 @@ func (a *app) drawController(e *padEditor, l *padLayout, x, y, w, h int32) {
 		// Unbound: dark with a ring, so it reads as a button on the body;
 		// bound: the accent; held on the controller: lit.
 		bg, ring, tc := rgba{26, 26, 30, 255}, rgba{88, 88, 96, 255}, colMuted
+		if c, ok := faceColours[g]; ok && l.name == "Xbox" {
+			tc = c
+		}
 		if binding != "" {
 			bg, ring, tc = colAccentDark, colAccent, colText
 		}
@@ -679,17 +658,11 @@ func (a *app) drawBindingEditor(e *padEditor, l *padLayout, x, y, w, h int32) {
 		e.binding.set("")
 		a.padBindingChanged(e)
 	})
-	msg, c := "Actions joined by +, then the label DOSBox Pure shows", colFaint
 	if t := strings.TrimSpace(e.binding.text); t != "" {
-		if b, err := padmap.ParseBinding(t); err != nil {
-			msg, c = err.Error(), colError
-		} else if b.Label == "" {
-			msg, c = "No label: DOSBox Pure shows the actions", colMuted
-		} else {
-			msg, c = "Shown as “"+b.Label+"”", colMuted
+		if _, err := padmap.ParseBinding(t); err != nil {
+			a.text(a.ellipsize(err.Error(), iw, 12, false), ix, fy+a.px(44), 12, false, colError)
 		}
 	}
-	a.text(a.ellipsize(msg, iw, 12, false), ix, fy+a.px(44), 12, false, c)
 }
 
 // drawWheelList draws the action wheel's items, Add and Remove.
