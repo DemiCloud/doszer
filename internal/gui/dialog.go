@@ -499,6 +499,7 @@ const (
 	fileDisc    = iota // a CUE sheet or a zip of one
 	fileArchive        // a .dosz or .dosp
 	fileIcon           // an ICO file, or a Windows program to take one from
+	filePad            // a gamepad mapping: a manifest, PADMAP.DBP, DOS.YML or an archive holding them
 )
 
 // copyAll is a job dialog's Copy button: its command lines and output,

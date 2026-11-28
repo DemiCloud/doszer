@@ -118,6 +118,20 @@ func TestScreenshot(t *testing.T) {
 				}
 			}
 		},
+		"padimport.png": func(a *App) { // Betrayal in Antara's example mapping imported
+			if len(a.list) > 0 {
+				a.openPadEditor(&a.list[0])
+				a.padImport(filepath.Join("..", "..", "examples", "betrayal-in-antara", "DOSZ.TOML"))
+			}
+		},
+		"padsteam.png": func(a *App) { // the same, drawn as a Steam Controller
+			if len(a.list) > 0 {
+				a.openPadEditor(&a.list[0])
+				a.padImport(filepath.Join("..", "..", "examples", "betrayal-in-antara", "DOSZ.TOML"))
+				a.padLayout = 1
+				a.selectPadControl(a.padEd, "rstick_left")
+			}
+		},
 		"padmenu.png": func(a *App) { // its Add action menu, Keyboard open
 			for i := range a.list {
 				if strings.Contains(a.list[i].Name, "Pad") || i == len(a.list)-1 {

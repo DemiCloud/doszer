@@ -98,6 +98,8 @@ func pickFilesMulti(title string, kind int, multi bool) []string {
 		pat, name = "*.dosz *.DOSZ *.dosp *.DOSP", "DOSBox Pure archives"
 	case fileIcon:
 		pat, name = "*.ico *.ICO *.exe *.EXE *.dll *.DLL", "Icons and programs"
+	case filePad:
+		pat, name = "*.toml *.TOML *.dbp *.DBP *.yml *.YML *.yaml *.YAML *.dosz *.DOSZ *.zip *.ZIP", "Gamepad mappings"
 	}
 	var cmd *exec.Cmd
 	switch picker() {

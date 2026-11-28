@@ -170,6 +170,11 @@ func (a *app) drop(p string) {
 	if a.setup != nil || a.dialog != nil || a.settingsOpen {
 		return
 	}
+	if a.padEd != nil {
+		// Onto the gamepad editor: a mapping to import.
+		a.padImport(p)
+		return
+	}
 	fi, err := os.Stat(p)
 	if err != nil {
 		a.say(err.Error(), true)

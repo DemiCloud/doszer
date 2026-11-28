@@ -31,43 +31,122 @@ type padEditor struct {
 	changed    bool
 }
 
-// padControl is a control on the drawn controller: where (as fractions
-// of the controller's box), what it shows, and what it is.
-type padControl struct {
-	key        string
-	x, y       float64
-	glyph      string
-	name       string
-	round, big bool
+// padLayout is a controller to draw the RetroPad's controls as: the
+// labels its buttons carry and where they are (fractions of the drawing),
+// and its inert parts (a Steam Controller's trackpads). b, a, y, x are
+// the RetroPad's bottom, right, left and top face buttons whatever the
+// controller calls them.
+type padLayout struct {
+	name   string
+	glyphs map[string]string
+	pos    map[string][2]float64
+	inert  [][4]float64 // x, y (centre), w, h
+	body   [][4]float64 // the outline, as rounded rectangles: x, y, w, h
 }
 
-// padControls are the RetroPad's controls laid out as a gamepad: b, a,
-// y, x are the bottom, right, left and top face buttons.
-var padControls = []padControl{
-	{"l2", 0.16, 0.06, "L2", "Left trigger", false, false},
-	{"r2", 0.84, 0.06, "R2", "Right trigger", false, false},
-	{"l", 0.16, 0.17, "L", "Left shoulder", false, false},
-	{"r", 0.84, 0.17, "R", "Right shoulder", false, false},
-	{"up", 0.20, 0.34, "↑", "D-pad up", false, false},
-	{"down", 0.20, 0.54, "↓", "D-pad down", false, false},
-	{"left", 0.12, 0.44, "←", "D-pad left", false, false},
-	{"right", 0.28, 0.44, "→", "D-pad right", false, false},
-	{"select", 0.42, 0.40, "Select", "Select", false, false},
-	{"start", 0.58, 0.40, "Start", "Start", false, false},
-	{"x", 0.80, 0.32, "X", "Top face button", true, false},
-	{"b", 0.80, 0.56, "B", "Bottom face button", true, false},
-	{"y", 0.72, 0.44, "Y", "Left face button", true, false},
-	{"a", 0.88, 0.44, "A", "Right face button", true, false},
-	{"lstick_up", 0.35, 0.64, "↑", "Left stick up", true, false},
-	{"lstick_down", 0.35, 0.88, "↓", "Left stick down", true, false},
-	{"lstick_left", 0.27, 0.76, "←", "Left stick left", true, false},
-	{"lstick_right", 0.43, 0.76, "→", "Left stick right", true, false},
-	{"l3", 0.35, 0.76, "L3", "Left stick click", true, true},
-	{"rstick_up", 0.65, 0.64, "↑", "Right stick up", true, false},
-	{"rstick_down", 0.65, 0.88, "↓", "Right stick down", true, false},
-	{"rstick_left", 0.57, 0.76, "←", "Right stick left", true, false},
-	{"rstick_right", 0.73, 0.76, "→", "Right stick right", true, false},
-	{"r3", 0.65, 0.76, "R3", "Right stick click", true, true},
+var xboxGlyphs = map[string]string{
+	"b": "A", "a": "B", "y": "X", "x": "Y",
+	"l": "LB", "r": "RB", "l2": "LT", "r2": "RT", "l3": "LS", "r3": "RS",
+	"select": "View", "start": "Menu",
+	"up": "↑", "down": "↓", "left": "←", "right": "→",
+	"lstick_up": "↑", "lstick_down": "↓", "lstick_left": "←", "lstick_right": "→",
+	"rstick_up": "↑", "rstick_down": "↓", "rstick_left": "←", "rstick_right": "→",
+}
+
+// layoutAt places the controls: triggers and bumpers fixed, the sticks,
+// the D-pad, the face buttons and View/Menu where the controller has them.
+func layoutAt(lstick, rstick, dpad, face, view, menu [2]float64) map[string][2]float64 {
+	p := map[string][2]float64{
+		"l2": {0.24, 0.05}, "l": {0.24, 0.15}, "r2": {0.76, 0.05}, "r": {0.76, 0.15},
+		"select": view, "start": menu,
+	}
+	cross := func(c [2]float64, dx, dy float64, up, down, left, right, mid string) {
+		p[up] = [2]float64{c[0], c[1] - dy}
+		p[down] = [2]float64{c[0], c[1] + dy}
+		p[left] = [2]float64{c[0] - dx, c[1]}
+		p[right] = [2]float64{c[0] + dx, c[1]}
+		if mid != "" {
+			p[mid] = c
+		}
+	}
+	cross(lstick, 0.068, 0.115, "lstick_up", "lstick_down", "lstick_left", "lstick_right", "l3")
+	cross(rstick, 0.068, 0.115, "rstick_up", "rstick_down", "rstick_left", "rstick_right", "r3")
+	cross(dpad, 0.05, 0.085, "up", "down", "left", "right", "")
+	cross(face, 0.05, 0.085, "x", "b", "y", "a", "")
+	return p
+}
+
+// padLayouts are the controllers the editor draws; the first is the
+// default.
+var padLayouts = []padLayout{
+	{
+		name:   "Xbox",
+		glyphs: xboxGlyphs,
+		pos:    layoutAt([2]float64{0.30, 0.40}, [2]float64{0.60, 0.68}, [2]float64{0.40, 0.68}, [2]float64{0.72, 0.40}, [2]float64{0.44, 0.38}, [2]float64{0.56, 0.38}),
+		body:   [][4]float64{{0.08, 0.22, 0.84, 0.56}, {0.10, 0.45, 0.30, 0.52}, {0.60, 0.45, 0.30, 0.52}},
+	},
+	{
+		name:   "Steam Controller",
+		glyphs: xboxGlyphs,
+		pos:    layoutAt([2]float64{0.37, 0.46}, [2]float64{0.63, 0.46}, [2]float64{0.17, 0.34}, [2]float64{0.83, 0.34}, [2]float64{0.40, 0.22}, [2]float64{0.60, 0.22}),
+		inert:  [][4]float64{{0.37, 0.76, 0.17, 0.26}, {0.63, 0.76, 0.17, 0.26}},
+		body:   [][4]float64{{0.06, 0.20, 0.88, 0.62}, {0.08, 0.45, 0.26, 0.52}, {0.66, 0.45, 0.26, 0.52}},
+	},
+}
+
+// padGroups are the controls the side lists show, by side and group, in
+// the order the controller has them.
+var padGroups = [2][]struct {
+	title string
+	keys  []string
+}{
+	{
+		{"Left", []string{"l2", "l"}},
+		{"Left stick", []string{"l3", "lstick_up", "lstick_down", "lstick_left", "lstick_right"}},
+		{"D-pad", []string{"up", "down", "left", "right"}},
+	},
+	{
+		{"Right", []string{"r2", "r"}},
+		{"Face buttons", []string{"x", "y", "a", "b"}},
+		{"Right stick", []string{"r3", "rstick_up", "rstick_down", "rstick_left", "rstick_right"}},
+		{"Menu buttons", []string{"select", "start"}},
+	},
+}
+
+// padRowName is a control's name in its group: a direction, Click, or
+// what the controller calls it.
+func padRowName(l *padLayout, key string) string {
+	switch {
+	case strings.HasSuffix(key, "_up") || key == "up":
+		return "Up"
+	case strings.HasSuffix(key, "_down") || key == "down":
+		return "Down"
+	case strings.HasSuffix(key, "_left") || key == "left":
+		return "Left"
+	case strings.HasSuffix(key, "_right") || key == "right":
+		return "Right"
+	case key == "l3" || key == "r3":
+		return "Click (" + l.glyphs[key] + ")"
+	}
+	return l.glyphs[key]
+}
+
+// padTitle is a control's full name: what the controller calls it, what
+// the RetroPad does, and the manifest's key.
+func padTitle(l *padLayout, key string) string {
+	where := map[string]string{
+		"b": "bottom face button", "a": "right face button", "y": "left face button", "x": "top face button",
+		"l": "left bumper", "r": "right bumper", "l2": "left trigger", "r2": "right trigger",
+		"l3": "left stick click", "r3": "right stick click", "select": "select", "start": "start",
+		"up": "D-pad up", "down": "D-pad down", "left": "D-pad left", "right": "D-pad right",
+		"lstick_up": "left stick up", "lstick_down": "left stick down", "lstick_left": "left stick left", "lstick_right": "left stick right",
+		"rstick_up": "right stick up", "rstick_down": "right stick down", "rstick_left": "right stick left", "rstick_right": "right stick right",
+	}[key]
+	g := l.glyphs[key]
+	if g == "" || strings.ContainsAny(g, "↑↓←→") {
+		return strings.ToUpper(where[:1]) + where[1:] + " (" + key + ")"
+	}
+	return g + ", " + where + " (" + key + ")"
 }
 
 // actionGroups are DOSBox Pure's actions (spec §5.9) as the Add action
@@ -298,18 +377,28 @@ func (a *app) drawPadEditor() {
 	defer func() { a.layer = layerPage }()
 	a.fill(0, 0, a.w, a.h, rgba{0, 0, 0, 170})
 	a.onClick(0, 0, a.w, a.h, func(bool) {})
-	w, h := min(a.w-a.px(60), a.px(1040)), a.h-a.px(60)
+	w, h := min(a.w-a.px(40), a.px(1180)), a.h-a.px(40)
 	x, y := (a.w-w)/2, (a.h-h)/2
 	a.round(x-a.px(1), y-a.px(1), w+a.px(2), h+a.px(2), a.px(14), colLine)
 	a.round(x, y, w, h, a.px(14), colPopup)
-	p := a.px(20)
-	a.text(a.ellipsize(e.name+": gamepad", w/2, 17, true), x+p, y+p, 17, true, colText)
+	p := a.px(18)
+	l := &padLayouts[min(a.padLayout, len(padLayouts)-1)]
 
-	// The ports: one button each, and one to add another.
+	// Header: the game, the controller drawn, the ports.
+	tx := x + p + a.text(a.ellipsize(e.name, w/3, 17, true), x+p, y+p, 17, true, colText) + a.px(16)
+	label := l.name + " ▼"
+	lx, ly := tx, y+p-a.px(6)
+	names := make([]string, len(padLayouts))
+	for i, pl := range padLayouts {
+		names[i] = pl.name
+	}
+	a.button(label, lx, ly, btnNormal, func() {
+		a.openPopup(lx, ly, a.px(200), names, a.padLayout, func(i int) { a.padLayout = i })
+	})
 	bx := x + w - p
 	if len(e.pads) < padmap.MaxPads {
 		bx -= a.buttonW("Add port")
-		a.button("Add port", bx, y+p-a.px(6), btnNormal, func() {
+		a.button("Add port", bx, ly, btnNormal, func() {
 			e.pads = append(e.pads, padmap.Pad{Controls: map[string]string{}})
 			e.port, e.changed = len(e.pads)-1, true
 			a.selectPadControl(e, "b")
@@ -317,132 +406,46 @@ func (a *app) drawPadEditor() {
 		bx -= a.px(8)
 	}
 	for i := len(e.pads) - 1; i >= 0; i-- {
-		label := "Port " + itoa(i+1)
-		bx -= a.buttonW(label)
+		pl := "Port " + itoa(i+1)
+		bx -= a.buttonW(pl)
 		style := btnNormal
 		if i == e.port {
 			style = btnOn
 		}
 		port := i
-		a.button(label, bx, y+p-a.px(6), style, func() {
+		a.button(pl, bx, ly, style, func() {
 			e.port, e.wheelSel = port, 0
-			a.selectPadControl(e, "b")
+			a.selectPadControl(e, e.sel)
 		})
 		bx -= a.px(4)
 	}
 
-	top := y + p + a.px(44)
-	bottom := y + h - p - a.px(44)
-	rightW := a.px(300)
-	lw := w - 2*p - rightW - p
-	editH := a.px(150)
+	top := y + p + a.px(42)
+	bottom := y + h - p - a.px(46)
+	side := a.px(250)
+	gap := a.px(14)
+	cx, cw := x+p+side+gap, w-2*p-2*side-2*gap
 
-	// The controller.
-	cx, cy, cw, ch := x+p, top, lw, bottom-top-editH-p
-	a.drawPadBody(cx, cy, cw, ch)
-	for _, c := range padControls {
-		a.drawPadButton(e, c, cx, cy, cw, ch)
-	}
+	a.drawPadPanel(e, l, padGroups[0], x+p, top, side, bottom-top)
+	a.drawPadPanel(e, l, padGroups[1], x+w-p-side, top, side, bottom-top)
 
-	// The selected binding.
-	ey := bottom - editH
-	a.round(x+p, ey, lw, editH, a.px(10), colCard)
-	ix, iw := x+p+a.px(16), lw-a.px(32)
-	title := "Wheel item " + itoa(e.wheelSel+1)
-	if e.sel != "wheel" {
-		for _, c := range padControls {
-			if c.key == e.sel {
-				title = c.name + " (" + c.key + ")"
-			}
-		}
-	}
-	a.text(title, ix, ey+a.px(14), 14, true, colText)
-	fy := ey + a.px(44)
-	addW := a.buttonW("Add action ▼")
-	clrW := a.buttonW("Clear")
-	a.drawField(&e.binding, ix, fy, iw-addW-clrW-a.px(16))
-	axx, axy := ix+iw-addW-clrW-a.px(8), fy
-	a.button("Add action ▼", axx, axy, btnNormal, func() {
-		a.openMenuItems(axx, axy+a.px(36), a.actionMenu(e))
-	})
-	a.button("Clear", ix+iw-clrW, fy, btnNormal, func() {
-		e.binding.set("")
-		a.padBindingChanged(e)
-	})
-	if t := strings.TrimSpace(e.binding.text); t != "" {
-		msg, c := "", colMuted
-		if b, err := padmap.ParseBinding(t); err != nil {
-			msg, c = err.Error(), colError
-		} else if b.Label == "" {
-			msg = "No label: DOSBox Pure shows the actions"
-		} else {
-			msg = "Shown as " + b.Label
-		}
-		a.text(a.ellipsize(msg, iw, 12, false), ix, fy+a.px(46), 12, false, c)
-	}
+	// Centre: the controller, the binding being edited, the wheel.
+	editH := a.px(128)
+	drawH := min((bottom-top)*45/100, cw*62/100)
+	a.drawController(e, l, cx, top, cw, drawH)
+	ey := top + drawH + gap
+	a.drawBindingEditor(e, l, cx, ey, cw, editH)
+	wy := ey + editH + gap
+	a.drawWheelList(e, cx, wy, cw, bottom-wy)
 
-	// The action wheel.
-	rx := x + w - p - rightW
-	a.round(rx, top, rightW, bottom-top, a.px(10), colCard)
-	a.text("Action wheel", rx+a.px(16), top+a.px(14), 14, true, colText)
-	wy := top + a.px(46)
-	lh := a.px(34)
-	pd := e.cur()
-	for i, item := range pd.Wheel {
-		if wy+lh > bottom-a.px(52) {
-			break
-		}
-		sel := e.sel == "wheel" && e.wheelSel == i
-		bg := colCard
-		switch {
-		case sel:
-			bg = colCardSel
-		case a.hovered(rx+a.px(8), wy, rightW-a.px(16), lh):
-			bg = colCardHover
-		}
-		a.round(rx+a.px(8), wy, rightW-a.px(16), lh, a.px(6), bg)
-		label := item
-		if b, err := padmap.ParseBinding(item); err == nil && b.Label != "" {
-			label = b.Label
-		}
-		if strings.TrimSpace(label) == "" {
-			label = "(empty)"
-		}
-		a.text(a.ellipsize(itoa(i+1)+".  "+label, rightW-a.px(40), 13, false), rx+a.px(18), wy+(lh-a.lineHeight(13, false))/2, 13, false, colText)
-		idx := i
-		a.onClick(rx+a.px(8), wy, rightW-a.px(16), lh, func(bool) {
-			e.wheelSel = idx
-			a.selectPadControl(e, "wheel")
-		})
-		wy += lh + a.px(4)
-	}
-	if len(pd.Wheel) == 0 {
-		a.text("No items", rx+a.px(16), wy, 13, false, colFaint)
-	}
-	wb := bottom - a.px(40)
-	bx2 := rx + a.px(16)
-	if len(pd.Wheel) < padmap.MaxWheel {
-		bx2 += a.button("Add item", bx2, wb, btnNormal, func() {
-			pd.Wheel = append(pd.Wheel, "")
-			e.wheelSel, e.changed = len(pd.Wheel)-1, true
-			a.selectPadControl(e, "wheel")
-		}) + a.px(8)
-	}
-	if e.sel == "wheel" && e.wheelSel < len(pd.Wheel) {
-		a.button("Remove", bx2, wb, btnNormal, func() {
-			pd.Wheel = append(pd.Wheel[:e.wheelSel], pd.Wheel[e.wheelSel+1:]...)
-			e.wheelSel, e.changed = max(0, e.wheelSel-1), true
-			if len(pd.Wheel) == 0 {
-				a.selectPadControl(e, "b")
-			} else {
-				a.selectPadControl(e, "wheel")
-			}
-		})
-	}
-
-	// Footer: the save's mapping, problems, Cancel and Save.
+	// Footer: import, the save's mapping, problems, Cancel and Save.
 	by := y + h - p - a.px(32)
 	fx := x + p
+	fx += a.button("Import…", fx, by, btnNormal, func() {
+		for _, path := range pickFiles("Import a gamepad mapping", filePad) {
+			a.padImport(path)
+		}
+	}) + a.px(8)
 	if e.savedFrom != "" {
 		fx += a.button("From save", fx, by, btnNormal, func() {
 			a.confirm("Take the mapping from the save?", "Take it", func() {
@@ -453,11 +456,11 @@ func (a *app) drawPadEditor() {
 				e.port, e.wheelSel, e.changed = 0, 0, true
 				a.selectPadControl(e, "b")
 			}, "The mapping made in DOSBox Pure's Controller Mapper replaces this one:", e.savedFrom)
-		}) + a.px(12)
+		}) + a.px(8)
 	}
 	errs := e.padErrors()
 	if len(errs) > 0 {
-		a.text(a.ellipsize(errs[0], w-2*p-(fx-x-p)-a.px(220), 12, false), fx, by+a.px(8), 12, false, colError)
+		a.text(a.ellipsize(errs[0], x+w-p-a.px(200)-fx-a.px(8), 12, false), fx+a.px(8), by+a.px(8), 12, false, colError)
 	}
 	sx := x + w - p - a.buttonW("Save")
 	var save func()
@@ -469,66 +472,218 @@ func (a *app) drawPadEditor() {
 	a.button("Cancel", sx, by, btnNormal, func() { a.padEd, a.focus = nil, nil })
 }
 
-// drawPadBody draws the controller's outline: a body with two grips.
-func (a *app) drawPadBody(x, y, w, h int32) {
-	body := rgba{50, 50, 55, 255}
-	a.round(x+w*6/100, y+h*24/100, w*88/100, h*50/100, h*12/100, body)
-	a.round(x+w*16/100, y+h*50/100, w*30/100, h*48/100, h*16/100, body)
-	a.round(x+w*54/100, y+h*50/100, w*30/100, h*48/100, h*16/100, body)
-	// Stick wells.
-	for _, sx := range []float64{0.35, 0.65} {
-		r := min(w, h) * 15 / 100
-		a.round(x+int32(sx*float64(w))-r, y+int32(0.76*float64(h))-r, 2*r, 2*r, r, rgba{36, 36, 40, 255})
+// drawPadPanel draws a side's groups of controls, each a row with its
+// binding; a click edits it.
+func (a *app) drawPadPanel(e *padEditor, l *padLayout, groups []struct {
+	title string
+	keys  []string
+}, x, y, w, h int32) {
+	a.round(x, y, w, h, a.px(10), colCard)
+	a.pushClip(x, y, w, h)
+	defer a.popClip()
+	rh := a.px(28)
+	nameW := a.px(76)
+	yy := y + a.px(10)
+	for _, g := range groups {
+		a.text(g.title, x+a.px(14), yy+a.px(4), 12, true, colMuted)
+		yy += a.px(24)
+		for _, k := range g.keys {
+			sel := e.sel == k
+			rx, rw := x+a.px(6), w-a.px(12)
+			if sel {
+				a.round(rx, yy, rw, rh, a.px(6), colCardSel)
+			} else if a.hovered(rx, yy, rw, rh) {
+				a.round(rx, yy, rw, rh, a.px(6), colCardHover)
+			}
+			a.text(padRowName(l, k), x+a.px(14), yy+(rh-a.lineHeight(13, false))/2, 13, false, colText)
+			bx, bw := x+a.px(14)+nameW, w-a.px(28)-nameW
+			binding := e.cur().Controls[k]
+			box := colField
+			if binding != "" {
+				box = rgba{40, 64, 104, 255}
+			}
+			a.round(bx, yy+a.px(3), bw, rh-a.px(6), a.px(5), box)
+			shown, c := "—", colFaint
+			if binding != "" {
+				shown, c = bindingShown(binding), colText
+			}
+			sw := a.textWidth(a.ellipsize(shown, bw-a.px(12), 12, false), 12, false)
+			a.text(a.ellipsize(shown, bw-a.px(12), 12, false), bx+(bw-sw)/2, yy+(rh-a.lineHeight(12, false))/2, 12, false, c)
+			key := k
+			a.clipHit(rx, yy, rw, rh, func(bool) { a.selectPadControl(e, key) })
+			yy += rh + a.px(2)
+		}
+		yy += a.px(8)
 	}
 }
 
-// drawPadButton draws one control, bound or not, selected or not, with
-// its binding's label beside it; a click edits it.
-func (a *app) drawPadButton(e *padEditor, c padControl, x, y, w, h int32) {
-	s := a.px(34)
-	bw := s
-	if !c.round {
-		bw = max(s, a.textWidth(c.glyph, 12, true)+a.px(16))
+// bindingShown is what a binding shows: its label, else its actions.
+func bindingShown(binding string) string {
+	if b, err := padmap.ParseBinding(binding); err == nil && b.Label != "" {
+		return b.Label
 	}
-	if c.big {
-		s, bw = a.px(30), a.px(30)
+	keys, _, _ := strings.Cut(strings.TrimSpace(binding), " ")
+	return keys
+}
+
+// drawController draws the controller and its controls, in a box of the
+// controller's proportions inside x, y, w, h.
+func (a *app) drawController(e *padEditor, l *padLayout, x, y, w, h int32) {
+	bw, bh := w, w*58/100
+	if bh > h {
+		bh, bw = h, h*100/58
 	}
-	bx := x + int32(c.x*float64(w)) - bw/2
-	by := y + int32(c.y*float64(h)) - s/2
-	binding := e.cur().Controls[c.key]
-	bg := colButton
-	if binding != "" {
-		bg = colAccentDark
+	bx, by := x+(w-bw)/2, y+(h-bh)/2
+	frac := func(fx, fy float64) (int32, int32) {
+		return bx + int32(fx*float64(bw)), by + int32(fy*float64(bh))
 	}
-	if a.hovered(bx, by, bw, s) {
-		bg = colCardSel
+	body := rgba{50, 50, 55, 255}
+	for _, r := range l.body {
+		rx, ry := frac(r[0], r[1])
+		a.round(rx, ry, int32(r[2]*float64(bw)), int32(r[3]*float64(bh)), int32(0.14*float64(bh)), body)
+	}
+	for _, r := range l.inert {
+		rw, rh := int32(r[2]*float64(bw)), int32(r[3]*float64(bh))
+		rx, ry := frac(r[0], r[1])
+		a.round(rx-rw/2, ry-rh/2, rw, rh, a.px(10), rgba{40, 40, 45, 255})
+	}
+	// Stick wells.
+	for _, k := range []string{"l3", "r3"} {
+		c := l.pos[k]
+		r := int32(0.18 * float64(bh))
+		cx, cy := frac(c[0], c[1])
+		a.round(cx-r, cy-r, 2*r, 2*r, r, rgba{38, 38, 43, 255})
+	}
+	s := max(a.px(22), int32(0.085*float64(bh)))
+	for key, c := range l.pos {
+		g := l.glyphs[key]
+		w := s
+		round := !strings.ContainsAny(key, "_") && len(g) == 1 || key == "l3" || key == "r3" || strings.Contains(key, "stick")
+		if !round {
+			w = max(s, a.textWidth(g, 11, true)+a.px(14))
+		}
+		cx, cy := frac(c[0], c[1])
+		px, py := cx-w/2, cy-s/2
+		binding := e.cur().Controls[key]
+		bg := colButton
 		if binding != "" {
-			bg = colAccent
+			bg = colAccentDark
+		}
+		if a.hovered(px, py, w, s) {
+			bg = colCardSel
+			if binding != "" {
+				bg = colAccent
+			}
+		}
+		r := a.px(5)
+		if round {
+			r = s / 2
+		}
+		if e.sel == key {
+			a.outline(px-a.px(3), py-a.px(3), w+a.px(6), s+a.px(6), r+a.px(3), a.px(2), colText, colPopup)
+		}
+		a.round(px, py, w, s, r, bg)
+		gw := a.textWidth(g, 11, true)
+		a.text(g, px+(w-gw)/2, py+(s-a.lineHeight(11, true))/2, 11, true, colText)
+		k := key
+		a.onClick(px, py, w, s, func(bool) { a.selectPadControl(e, k) })
+	}
+}
+
+// drawBindingEditor draws the selected control's (or wheel item's)
+// binding: its text, Add action, Clear, and what it shows or what's
+// wrong with it.
+func (a *app) drawBindingEditor(e *padEditor, l *padLayout, x, y, w, h int32) {
+	a.round(x, y, w, h, a.px(10), colCard)
+	ix, iw := x+a.px(14), w-a.px(28)
+	title := "Wheel item " + itoa(e.wheelSel+1)
+	if e.sel != "wheel" {
+		title = padTitle(l, e.sel)
+	}
+	a.text(a.ellipsize(title, iw, 14, true), ix, y+a.px(12), 14, true, colText)
+	fy := y + a.px(42)
+	addW, clrW := a.buttonW("Add action ▼"), a.buttonW("Clear")
+	a.drawField(&e.binding, ix, fy, iw-addW-clrW-a.px(16))
+	axx := ix + iw - addW - clrW - a.px(8)
+	a.button("Add action ▼", axx, fy, btnNormal, func() {
+		a.openMenuItems(axx, fy+a.px(36), a.actionMenu(e))
+	})
+	a.button("Clear", ix+iw-clrW, fy, btnNormal, func() {
+		e.binding.set("")
+		a.padBindingChanged(e)
+	})
+	msg, c := "Actions joined by +, then the label DOSBox Pure shows", colFaint
+	if t := strings.TrimSpace(e.binding.text); t != "" {
+		if b, err := padmap.ParseBinding(t); err != nil {
+			msg, c = err.Error(), colError
+		} else if b.Label == "" {
+			msg, c = "No label: DOSBox Pure shows the actions", colMuted
+		} else {
+			msg, c = "Shown as “"+b.Label+"”", colMuted
 		}
 	}
-	r := a.px(6)
-	if c.round {
-		r = s / 2
+	a.text(a.ellipsize(msg, iw, 12, false), ix, fy+a.px(44), 12, false, c)
+}
+
+// drawWheelList draws the action wheel's items, Add and Remove.
+func (a *app) drawWheelList(e *padEditor, x, y, w, h int32) {
+	a.round(x, y, w, h, a.px(10), colCard)
+	pd := e.cur()
+	hx := x + a.px(14)
+	a.text("Action wheel", hx, y+a.px(12), 14, true, colText)
+	bx := x + w - a.px(14)
+	if e.sel == "wheel" && e.wheelSel < len(pd.Wheel) {
+		bx -= a.buttonW("Remove")
+		a.button("Remove", bx, y+a.px(6), btnNormal, func() {
+			pd.Wheel = append(pd.Wheel[:e.wheelSel], pd.Wheel[e.wheelSel+1:]...)
+			e.wheelSel, e.changed = max(0, e.wheelSel-1), true
+			if len(pd.Wheel) == 0 {
+				a.selectPadControl(e, "b")
+			} else {
+				a.selectPadControl(e, "wheel")
+			}
+		})
+		bx -= a.px(6)
 	}
-	if e.sel == c.key {
-		a.outline(bx-a.px(3), by-a.px(3), bw+a.px(6), s+a.px(6), r+a.px(3), a.px(2), colText, colPopup)
+	if len(pd.Wheel) < padmap.MaxWheel {
+		bx -= a.buttonW("Add item")
+		a.button("Add item", bx, y+a.px(6), btnNormal, func() {
+			pd.Wheel = append(pd.Wheel, "")
+			e.wheelSel, e.changed = len(pd.Wheel)-1, true
+			a.selectPadControl(e, "wheel")
+		})
 	}
-	a.round(bx, by, bw, s, r, bg)
-	gw := a.textWidth(c.glyph, 12, true)
-	a.text(c.glyph, bx+(bw-gw)/2, by+(s-a.lineHeight(12, true))/2, 12, true, colText)
-	key := c.key
-	a.onClick(bx, by, bw, s, func(bool) { a.selectPadControl(e, key) })
-	if binding == "" {
+	a.pushClip(x, y+a.px(44), w, h-a.px(48))
+	defer a.popClip()
+	ly := y + a.px(46)
+	if len(pd.Wheel) == 0 {
+		a.text("No items: the wheel action opens a menu of these", hx, ly+a.px(4), 12, false, colFaint)
 		return
 	}
-	label := binding
-	if b, err := padmap.ParseBinding(binding); err == nil {
-		label = b.Label
-		if label == "" {
-			label, _, _ = strings.Cut(strings.TrimSpace(binding), " ")
+	// Items in two columns.
+	colW := (w - a.px(28) - a.px(8)) / 2
+	rh := a.px(28)
+	for i, item := range pd.Wheel {
+		cx := hx + int32(i%2)*(colW+a.px(8))
+		cy := ly + int32(i/2)*(rh+a.px(4))
+		sel := e.sel == "wheel" && e.wheelSel == i
+		bg := colField
+		switch {
+		case sel:
+			bg = colCardSel
+		case a.hovered(cx, cy, colW, rh):
+			bg = colCardHover
 		}
+		a.round(cx, cy, colW, rh, a.px(6), bg)
+		shown := bindingShown(item)
+		if strings.TrimSpace(shown) == "" {
+			shown = "(empty)"
+		}
+		a.text(a.ellipsize(itoa(i+1)+".  "+shown, colW-a.px(16), 12, false), cx+a.px(10), cy+(rh-a.lineHeight(12, false))/2, 12, false, colText)
+		idx := i
+		a.clipHit(cx, cy, colW, rh, func(bool) {
+			e.wheelSel = idx
+			a.selectPadControl(e, "wheel")
+		})
 	}
-	label = a.ellipsize(label, a.px(96), 11, false)
-	lw := a.textWidth(label, 11, false)
-	a.text(label, bx+(bw-lw)/2, by+s+a.px(3), 11, false, colMuted)
 }

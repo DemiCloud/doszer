@@ -142,6 +142,7 @@ type app struct {
 	mx, my          int32
 	scroll          [pages]int32   // per page, pixels
 	libView         page           // the Library view shown last
+	padLayout       int            // the controller the gamepad editor draws (padLayouts; window.json)
 	dashboardH      int32          // the Dashboard's height, as last drawn
 	parentList      []library.Game // the .dosp archives
 	parentSel       int
@@ -207,6 +208,11 @@ func Run(o Options) error {
 		o: o, win: win, ren: ren, dirty: true,
 		faces: map[faceKey]font.Face{}, texts: map[textKey]*texture{}, icons: map[string]*texture{},
 		runCh: make(chan runResult, 1), selText: map[string][]string{}, selSeps: map[string][]string{},
+	}
+	for i, l := range padLayouts {
+		if l.name == st.PadLayout {
+			a.padLayout = i
+		}
 	}
 	a.initGames(st)
 	a.initSystems()
@@ -836,6 +842,7 @@ type guiState struct {
 	ExportZip  string `json:"export_zip,omitempty"`  // the folder its last ZIP went in
 	ExportFlat bool   `json:"export_flat,omitempty"` // its last ZIP had one roms folder
 	Page       string `json:"page,omitempty"`        // the page shown last
+	PadLayout  string `json:"pad_layout,omitempty"`  // the controller the gamepad editor draws
 }
 
 func statePath() string {
@@ -868,7 +875,7 @@ func (a *app) saveState() {
 	}
 	var ww, wh int32
 	sdl.GetWindowSize(a.win, &ww, &wh)
-	data, _ := json.MarshalIndent(guiState{Width: ww, Height: wh, Grid: a.grid, Sort: a.sort.String(), Export: a.exportDir, ExportZip: a.exportZipDir, ExportFlat: a.exportFlat, Page: pageNames[a.page]}, "", "  ")
+	data, _ := json.MarshalIndent(guiState{Width: ww, Height: wh, Grid: a.grid, Sort: a.sort.String(), Export: a.exportDir, ExportZip: a.exportZipDir, ExportFlat: a.exportFlat, Page: pageNames[a.page], PadLayout: padLayouts[min(a.padLayout, len(padLayouts)-1)].name}, "", "  ")
 	os.MkdirAll(filepath.Dir(p), 0o755)
 	os.WriteFile(p, append(data, '\n'), 0o644)
 }

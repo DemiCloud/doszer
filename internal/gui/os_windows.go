@@ -175,13 +175,18 @@ func pickFilesFlags(title string, kind int, flags uint32) []string {
 		types = [][2]string{{"DOSBox Pure archives (*.dosz, *.dosp)", "*.dosz;*.dosp"}, {"All files", "*.*"}}
 	case fileIcon:
 		types = [][2]string{{"Icons and programs (*.ico, *.exe, *.dll)", "*.ico;*.exe;*.dll"}, {"All files", "*.*"}}
+	case filePad:
+		types = [][2]string{{"Gamepad mappings (DOSZ.TOML, PADMAP.DBP, DOS.YML, *.dosz)", "*.toml;*.dbp;*.yml;*.yaml;*.dosz;*.zip"}, {"All files", "*.*"}}
 	}
 	if paths, err := shellDialog(false, false, flags&0x200 != 0, title, "", "", "", types); err == nil {
 		return paths
 	}
 	filter := utf16z("Disc images and game archives (*.cue, *.iso, *.zip, *.dosz, *.img, *.ima, *.vfd)\x00*.cue;*.iso;*.zip;*.dosz;*.img;*.ima;*.vfd\x00All files\x00*.*\x00")
-	if kind == fileArchive {
+	switch kind {
+	case fileArchive:
 		filter = utf16z("DOSBox Pure archives (*.dosz, *.dosp)\x00*.dosz;*.dosp\x00All files\x00*.*\x00")
+	case filePad:
+		filter = utf16z("Gamepad mappings (DOSZ.TOML, PADMAP.DBP, DOS.YML, *.dosz)\x00*.toml;*.dbp;*.yml;*.yaml;*.dosz;*.zip\x00All files\x00*.*\x00")
 	}
 	return fileDialog(getOpenFileName, title, filter, "", "", flags|0x1000|0x800|0x8|0x80000) // OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER
 }
