@@ -6,7 +6,9 @@ import (
 	"strings"
 
 	"github.com/DemiCloud/doszer/internal/chain"
+	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/library"
+	"github.com/DemiCloud/doszer/internal/platform"
 	"github.com/DemiCloud/doszer/internal/runlog"
 )
 
@@ -49,13 +51,7 @@ func (a *app) gameMenu(g *library.Game) {
 			{label: "Edit DOSZ.TOML…", fn: func() { a.openEditorMode(g, editToml) }},
 		}},
 	}...)
-	change := []menuItem{{label: "Parent", sub: a.parentItems(g)}}
-	switch g.Kind {
-	case library.KindOS:
-		change = append(change, menuItem{label: "OS image", sub: a.systemItems(g, false)})
-	case library.KindShell:
-		change = append(change, menuItem{label: "Shell", sub: a.systemItems(g, true)})
-	}
+	change := []menuItem{{label: "Parent", sub: a.parentItems(g)}, {label: "Boots", sub: a.bootItems(g)}}
 	items := []menuItem{
 		{label: "Play", fn: a.play},
 		{label: "Edit…", fn: func() { a.openEditor(g) }},
@@ -122,35 +118,80 @@ func (a *app) parentItems(g *library.Game) []menuItem {
 	return items
 }
 
-// systemItems are the system directory's shells or OS images to boot g.
-func (a *app) systemItems(g *library.Game, shell bool) []menuItem {
-	what, flag := "OS image", "--os"
-	if shell {
-		what, flag = "shell", "--shell"
-	}
+// bootItems are what g can boot: DOS, each shell and each OS image in
+// the system folder, its current one marked. One of its own model is
+// swapped in directly (doszer set); one of another model opens Edit on
+// it, chosen, for the program it starts. Those the game's programs need a
+// newer Windows than are greyed, as is DOS for a Windows-only game.
+func (a *app) bootItems(g *library.Game) []menuItem {
 	path, name := g.Path, g.Name
-	var items []menuItem
-	for _, f := range a.files {
-		if f.Shell != shell || f.missing {
-			continue
+	need := g.Need.Game
+	tooOld := func(f systemFile) bool {
+		if need.Platform == platform.NotProgram || g.Need.DOS {
+			return false
 		}
-		if f.Name == g.Boot {
-			items = append(items, menuItem{label: "• " + f.Name})
-			continue
-		}
-		n := f.Name
-		items = append(items, menuItem{label: n, fn: func() {
-			a.confirm("Change "+name+"'s "+what+"?", "Change", func() {
-				a.runDoszer(strings.ToUpper(what[:1])+what[1:]+": "+name, []string{"set", flag, n, path}, func(err error) {
-					if err == nil {
-						a.rescan()
-					}
-				})
-			}, "Boots "+n+" instead of "+g.Boot+".")
-		}})
+		have := install.GuessOS(f.SystemFile)
+		return have.Platform != platform.NotProgram && !install.Satisfies(have, need)
 	}
-	if len(items) == 0 {
-		items = []menuItem{{label: "None in the system folder"}}
+	editAs := func(model int, system string) func() {
+		return func() {
+			a.openEditor(g)
+			if e := a.edit; e != nil {
+				e.model, e.changed = model, true
+				switch model {
+				case 1:
+					e.shell = system
+				case 2:
+					e.os = system
+				}
+				a.regenerate()
+			}
+		}
+	}
+	var items []menuItem
+	switch {
+	case g.Kind == library.KindDOS:
+		items = append(items, menuItem{label: "• DOS"})
+	case (need.Platform == platform.Win16 || need.Platform == platform.Win32) && !g.Need.DOS:
+		items = append(items, menuItem{label: "DOS", keys: "needs Windows", off: true})
+	default:
+		items = append(items, menuItem{label: "DOS", fn: editAs(0, "")})
+	}
+	for _, shell := range []bool{true, false} {
+		kind, flag, model := library.KindShell, "--shell", 1
+		if !shell {
+			kind, flag, model = library.KindOS, "--os", 2
+		}
+		var group []menuItem
+		for _, f := range a.files {
+			if f.Shell != shell || f.missing {
+				continue
+			}
+			n := f.Name
+			switch {
+			case g.Kind == kind && n == g.Boot:
+				group = append(group, menuItem{label: "• " + n})
+			case tooOld(f):
+				group = append(group, menuItem{label: n, keys: "too old", off: true})
+			case g.Kind == kind:
+				group = append(group, menuItem{label: n, fn: func() {
+					if a.saving(path) {
+						a.say("Still saving "+name, false)
+						return
+					}
+					a.runBackground("Saving "+name, path, name+" boots "+n, []string{"set", flag, n, path}, func(err error) {
+						if err == nil {
+							a.rescan()
+						}
+					})
+				}})
+			default:
+				group = append(group, menuItem{label: n, fn: editAs(model, n)})
+			}
+		}
+		if len(group) > 0 {
+			items = append(append(items, menuItem{label: "-"}), group...)
+		}
 	}
 	return items
 }

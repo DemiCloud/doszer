@@ -156,6 +156,26 @@ func TestScreenshot(t *testing.T) {
 				p.child.x, p.child.y, p.child.childOf = a.w/3+a.px(200), a.h/2, -1
 			}
 		},
+		"bootsmenu.png": func(a *App) { // a game's Change > Boots
+			a.OpenGameMenu(0)
+			p := a.popup
+			if p == nil {
+				return
+			}
+			for i, it := range p.items {
+				if strings.HasPrefix(it, "Change") {
+					p.child, p.childOf = p.sub(i), i
+					p.child.x, p.child.y, p.child.childOf, p.child.parentX = p.x+a.px(196), p.y+a.px(140), -1, p.x
+					c := p.child
+					for j, cit := range c.items {
+						if strings.HasPrefix(cit, "Boots") {
+							c.child, c.childOf = c.sub(j), j
+							c.child.x, c.child.y, c.child.childOf, c.child.parentX = c.x+a.px(196), c.y+a.px(34), -1, c.x
+						}
+					}
+				}
+			}
+		},
 		"logsscroll.png": func(a *App) {
 			a.Show("logs")
 			for _, r := range a.runs {

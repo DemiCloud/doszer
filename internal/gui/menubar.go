@@ -24,6 +24,7 @@ type menuItem struct {
 	label, keys string
 	fn          func()
 	sub         []menuItem
+	off         bool // greyed: can't be chosen (keys says why)
 }
 
 type menu struct {
@@ -142,7 +143,13 @@ func (a *app) menuPopup(x, y int32, items []menuItem) *popup {
 			labels[i] += "\t" + it.keys
 		}
 	}
-	return &popup{x: x, y: y, w: a.px(200), items: labels, current: -1, childOf: -1,
+	off := map[int]bool{}
+	for i, it := range items {
+		if it.off {
+			off[i] = true
+		}
+	}
+	return &popup{x: x, y: y, w: a.px(200), items: labels, current: -1, childOf: -1, off: off,
 		pick: func(i int) {
 			if items[i].fn != nil {
 				items[i].fn()

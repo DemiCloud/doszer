@@ -329,8 +329,9 @@ type popup struct {
 	sub     func(i int) *popup // the submenu item i opens, or nil
 	child   *popup             // the submenu open
 	childOf int
-	parentX int32 // a submenu's parent's left edge: it opens on that side when the right has no room
-	bar     int   // a menu bar menu's index + 1; 0 for any other popup
+	parentX int32        // a submenu's parent's left edge: it opens on that side when the right has no room
+	bar     int          // a menu bar menu's index + 1; 0 for any other popup
+	off     map[int]bool // items greyed out
 }
 
 // openPopup opens a dropdown under a button at x, y.
@@ -397,6 +398,16 @@ func (a *app) drawPopupLevel(p *popup) {
 		if it == "-" {
 			a.fill(x+a.px(10), iy+a.px(4), w-a.px(20), a.px(1), colLine)
 			iy += a.px(9)
+			continue
+		}
+		if p.off[i] {
+			label, keys, _ := strings.Cut(it, "\t")
+			a.text(label, x+a.px(28), iy+(ih-lh)/2, 13, false, colFaint)
+			if keys != "" {
+				a.textRight(keys, x+w-a.px(14), iy+(ih-lh)/2, 12, false, colFaint)
+			}
+			a.onClick(x, iy, w, ih, func(bool) {})
+			iy += ih
 			continue
 		}
 		hasSub := p.sub != nil && p.sub(i) != nil

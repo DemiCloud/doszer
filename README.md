@@ -1157,8 +1157,11 @@ A right click on a game opens its menu, submenus cascading: Play, Edit,
 Tools (Info, Dependencies, Verify, Lint, Build log - its newest run in
 Logs, when one was recorded -, Repack, Export, Convert to parent, Advanced:
 edit WINDOWS.BAT or DOSZ.TOML as text), Change (Parent - the `.dosp`
-files beside it -, OS image or Shell, each listing its choices), Show in
-folder, Delete. A submenu with no room on the right opens on the left.
+files beside it -, and Boots: DOS, each shell and each OS image, the
+current one marked; one of the game's own model is swapped in at once,
+one of another opens Edit on it for the program it starts; those the
+game's programs need a newer Windows than are greyed, as is DOS for a
+Windows-only game), Show in folder, Delete. A submenu with no room on the right opens on the left.
 A parent's menu also exports the games using it; a shell's or OS
 image's exports the games booting it, prepares it, or deletes it.
 Every action is the doszer command that does it, run in its own process
