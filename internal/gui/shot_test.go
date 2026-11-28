@@ -18,6 +18,7 @@ import (
 // (where the PNGs go), DOSZER_GUI_SYSTEM (a system directory, optional),
 // DOSZER_GUI_STATS (a play time file, optional, only read),
 // DOSZER_GUI_LOGS (a run logs folder, optional, only read),
+// DOSZER_GUI_SOURCES, DOSZER_GUI_SAVES (sources and saves folders, optional, only read),
 // DOSZER_GUI_ONLY (shot names, comma-separated: only those),
 // DOSZER_GUI_EXE (a doszer binary, optional: shots running a command),
 // DOSZER_GUI_CUE (a disc image, optional: Import a disc; with DOSZER_GUI_BUILD
@@ -101,6 +102,13 @@ func TestScreenshot(t *testing.T) {
 			a.openBarMenu(0, a.px(8), m[0].items)
 			a.mx = a.px(8) + a.textWidth(m[0].title, 13, false) + a.px(20) + a.px(10)
 			a.my = a.menuH() / 2
+		},
+		"sources.png": func(a *App) { a.Show("sources") },
+		"saves.png":   func(a *App) { a.Show("saves") },
+		"deletegame.png": func(a *App) { // delete a game: its saves and source offered
+			if len(a.view) > 0 {
+				a.deleteArchives([]string{a.list[a.view[0]].Path})
+			}
 		},
 		"logsscroll.png": func(a *App) {
 			a.Show("logs")
@@ -265,6 +273,8 @@ func TestScreenshot(t *testing.T) {
 			SDL:        sdlLibs,
 			StatsPath:  stats,
 			LogsDir:    os.Getenv("DOSZER_GUI_LOGS"),
+			SourcesDir: os.Getenv("DOSZER_GUI_SOURCES"),
+			SaveDir:    os.Getenv("DOSZER_GUI_SAVES"),
 			Screenshot: filepath.Join(out, name),
 			Setup:      setup,
 			Exe:        exe,

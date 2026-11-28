@@ -140,6 +140,7 @@ func (a *app) scanned(r scanResult) {
 	}
 	a.refilter(keep)
 	a.rescanSystems() // which games use which system
+	a.rescanStorage() // whose saves are whose
 }
 
 // refilter recomputes the view after the games, query or sort changed,
@@ -344,8 +345,12 @@ func (a *app) gamesToolbar(x, y int32) {
 		})
 	}) + a.px(4)
 
-	fw := min(a.px(320), a.w/4)
-	a.drawField(&a.search, a.w-a.pad()-fw, y, fw)
+	// The search field takes the room left, up to its width, never over
+	// the buttons before it.
+	fw := min(a.px(320), a.w/4, a.w-a.pad()-x-a.px(8))
+	if fw >= a.px(120) {
+		a.drawField(&a.search, a.w-a.pad()-fw, y, fw)
+	}
 }
 
 func (a *app) gamesStatus() string {

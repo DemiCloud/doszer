@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -180,7 +181,13 @@ func (a *app) drawRunReport(r *runlog.Report, x, y, w int32) int32 {
 	}) + a.px(4)
 	bx += a.button("Export…", bx, rp.y, btnNormal, func() { a.exportRun(r) }) + a.px(4)
 	if canOpen() {
-		a.button("Open folder", bx, rp.y, btnNormal, func() { a.open(r.Folder()) })
+		bx += a.button("Open folder", bx, rp.y, btnNormal, func() { a.open(r.Folder()) }) + a.px(4)
+	}
+	if a.inSources(r.Source) {
+		if fi, err := os.Stat(r.Source); err == nil && fi.IsDir() {
+			src := r.Source
+			a.button("Source", bx, rp.y, btnNormal, func() { a.showSource(src) })
+		}
 	}
 	rp.gap(50)
 

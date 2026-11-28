@@ -157,7 +157,7 @@ func (a *app) dragSel() {
 
 // endDrags ends every list's drag.
 func (a *app) endDrags() {
-	for _, m := range []*multiSel{&a.logMulti, &a.gameMulti, &a.parentMulti, &a.sysMulti} {
+	for _, m := range []*multiSel{&a.logMulti, &a.gameMulti, &a.parentMulti, &a.sysMulti, &a.srcMulti, &a.saveMulti} {
 		m.drag = false
 	}
 }

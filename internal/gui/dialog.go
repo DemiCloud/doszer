@@ -30,6 +30,14 @@ type dialog struct {
 	imageS  int32    // its size, logical pixels
 	onImage func()   // a right click on the image (its menu)
 	center  bool     // centre the title and lines
+	checks  []dialogCheck
+}
+
+// dialogCheck is a checkbox below a dialog's message: an option of the
+// action its buttons take (also delete the saves).
+type dialogCheck struct {
+	label string
+	on    *bool
 }
 
 // dialogRow is a row of a dialog's table: a name, a value, and a link
@@ -220,6 +228,7 @@ func (a *app) jobDone(d *dialog) {
 		j.after(j.err)
 	}
 	a.readLogs() // the command may have recorded a run
+	a.rescanStorage()
 	a.dirty = true
 }
 
@@ -307,6 +316,10 @@ func (a *app) drawDialog() {
 	if d.field != nil {
 		h += a.px(44)
 	}
+	h += int32(len(d.checks)) * a.px(36)
+	if len(d.checks) > 0 {
+		h += a.px(8)
+	}
 	if d.image != nil {
 		h += a.px(float64(d.imageS) + 16)
 	}
@@ -362,6 +375,17 @@ func (a *app) drawDialog() {
 
 	if d.field != nil {
 		a.drawField(d.field, x+p, ty+a.px(4), w-2*p)
+	}
+	if len(d.checks) > 0 {
+		cy := ty + a.px(8)
+		if d.field != nil {
+			cy += a.px(44)
+		}
+		for _, c := range d.checks {
+			on := c.on
+			a.checkbox(x+p, cy, *on, a.ellipsize(c.label, w-2*p-a.px(36), 13, false), func() { *on = !*on })
+			cy += a.px(36)
+		}
 	}
 	if len(d.rows) > 0 {
 		c1, c2 := int32(0), int32(0)

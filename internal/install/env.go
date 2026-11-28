@@ -76,6 +76,19 @@ func PlaySaveDir(archive string) (string, error) {
 	return dir, os.MkdirAll(dir, 0o755)
 }
 
+// GameSaveDir is the folder Play keeps archive's saves in, without
+// creating it: configured (paths.saves or --save-dir), else
+// PlaySaveDirNoCreate's, else doszer's cache.
+func GameSaveDir(archive, configured string) (string, error) {
+	if configured != "" {
+		return configured, nil
+	}
+	if d, err := PlaySaveDirNoCreate(archive); err != nil || d != "" {
+		return d, err
+	}
+	return config.CacheSaveDir()
+}
+
 // PlaySaveDirNoCreate is PlaySaveDir without creating the directory.
 func PlaySaveDirNoCreate(archive string) (string, error) {
 	if d := config.FindSaveDir(); d.Path != "" {

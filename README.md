@@ -1043,7 +1043,8 @@ valid, an old one (its format) - and offers to import it, to come out
 with a valid one, or to play it as it is. A message cut short in the status bar
 shows whole when clicked. Below the menu bar, three tabs
 (Ctrl+1 to Ctrl+3), the page shown last coming back next time:
-Dashboard, Library - its Games, Parents and Systems views - and Logs.
+Dashboard, Library - its Games, Parents, Systems, Sources and Saves
+views - and Logs.
 
 - **Dashboard** (the first page on a first run): the totals (games,
   parents, systems, size, play time), each opening its page; the
@@ -1089,6 +1090,20 @@ game declares; else, or with no disc at all, a muted Unverified: no
   the folder hasn't. The selected one can be made the default, or
   prepared: `doszer prepare` makes a game-ready copy beside it, under a
   name you choose, the original untouched.
+- **Library > Sources**: the folders in `paths.sources` - games dumped,
+  imported or installed, before they're built - with their size, and
+  what the logs say of them: built (and into which archive), last build
+  failed, or not built (a leftover). Its menu opens the folder, its
+  build log or the game, or deletes it; the archive stays.
+- **Library > Saves**: the DOSBox Pure saves the games keep (C: changes,
+  an OS image's C: and D: changes), each with its game - or "no game",
+  when its archive is gone - size and date; a game's menu > Saves shows
+  only its own. Its menu shows the game or the file, or deletes it.
+  Deleting a game offers to delete its saves too (unticked: they're
+  progress) and the source folder the logs say it was built from
+  (ticked); deleting runs in Logs offers their source folders
+  (unticked). A run's report has a Source button when its source folder
+  is still there.
 - **Logs**: the recorded runs (see [Logs](#logs)), newest first, one
   item per session - the commands one flow ran, e.g. Import a disc's
   dump, init, install, start and build, with its result and the time

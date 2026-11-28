@@ -214,12 +214,52 @@ func (a *app) deleteArchives(paths []string) {
 	if len(orphans) > 0 {
 		lines = append(lines, plural(len(orphans), "game")+" using them won't start.")
 	}
-	a.confirm("Delete "+what+"?", "Delete", func() {
+	// What goes with them, offered: their saves (progress: kept unless
+	// ticked) and the source folders they were built from (ticked).
+	saves := a.savesOf(paths)
+	var sources []string
+	for _, p := range paths {
+		if s := a.sourceOf(p); s != "" {
+			sources = append(sources, s)
+		}
+	}
+	delSaves, delSources := false, true
+	d := &dialog{title: "Delete " + what + "?", lines: lines}
+	if len(saves) > 0 {
+		var n int64
+		for _, s := range saves {
+			n += s.Size
+		}
+		whose := "their"
+		if len(paths) == 1 {
+			whose = "its"
+		}
+		d.checks = append(d.checks, dialogCheck{"Also delete " + whose + " saves (" + plural(len(saves), "file") + ", " + size(n) + ")", &delSaves})
+	}
+	if len(sources) > 0 {
+		label := "Also delete their source folders (" + plural(len(sources), "folder") + ")"
+		if len(sources) == 1 {
+			label = "Also delete its source folder (" + sources[0] + ")"
+		}
+		d.checks = append(d.checks, dialogCheck{label, &delSources})
+	}
+	d.buttons = []dialogButton{{label: "Cancel"}, {label: "Delete", style: btnAccent, fn: func() {
 		a.removeFiles(paths, what)
+		if delSaves {
+			var sp []string
+			for _, s := range saves {
+				sp = append(sp, s.Path)
+			}
+			a.removeFiles(sp, plural(len(sp), "save file"))
+		}
+		if delSources && len(sources) > 0 {
+			a.removeAll(sources, plural(len(sources), "source folder"))
+		}
 		a.gameMulti.clear()
 		a.parentMulti.clear()
 		a.rescan()
-	}, lines...)
+	}}}
+	a.dialog = d
 }
 
 // deleteSystems deletes shells and OS images from the system folder,

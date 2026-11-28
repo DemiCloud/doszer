@@ -610,11 +610,40 @@ func (a *app) deleteSelectedLogs() {
 	if len(ids) == 0 {
 		return
 	}
-	a.confirm("Delete "+plural(runs, "run")+"?", "Delete", func() {
+	// Their source folders, offered (unticked: a source can be built
+	// again, and other runs may share it).
+	var sources []string
+	seen := map[string]bool{}
+	for _, k := range a.logMulti.selected(a.logOrder(), a.curLog()) {
+		for _, g := range a.groups {
+			for _, r := range g.runs {
+				if (k == g.key || k == "run:"+r.ID) && a.inSources(r.Source) && !seen[r.Source] {
+					if fi, err := os.Stat(r.Source); err == nil && fi.IsDir() {
+						seen[r.Source] = true
+						sources = append(sources, r.Source)
+					}
+				}
+			}
+		}
+	}
+	delSources := false
+	d := &dialog{title: "Delete " + plural(runs, "run") + "?", lines: []string{"Their logs are deleted for good. The archives they built stay."}}
+	if len(sources) > 0 {
+		label := "Also delete their source folders (" + plural(len(sources), "folder") + ")"
+		if len(sources) == 1 {
+			label = "Also delete the source folder (" + sources[0] + ")"
+		}
+		d.checks = []dialogCheck{{label, &delSources}}
+	}
+	d.buttons = []dialogButton{{label: "Cancel"}, {label: "Delete", style: btnAccent, fn: func() {
+		if delSources {
+			a.removeAll(sources, plural(len(sources), "source folder"))
+		}
 		a.runDoszer("Delete logs", append([]string{"logs", "--delete"}, ids...), func(error) {
 			a.logMulti.clear()
 		})
-	}, "Their logs are deleted for good. The archives they built stay.")
+	}}}
+	a.dialog = d
 }
 
 // scrollLog scrolls the report, within its height.

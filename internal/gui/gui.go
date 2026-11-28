@@ -47,6 +47,7 @@ type Options struct {
 	Setup      func(a *App)
 	StatsPath  string // play time file instead of config.StatsPath's (tests)
 	LogsDir    string // run logs instead of config.LogsDir's (tests)
+	SourcesDir string // sources instead of paths.sources (tests)
 	Exe        string // the doszer that runs games and commands, instead of this one (tests)
 }
 
@@ -69,14 +70,18 @@ const (
 	pageSystems
 	pageDashboard
 	pageLogs
+	pageSources
+	pageSaves
 	pages
 )
 
 // pageNames name the pages, for window.json and Show.
-var pageNames = map[page]string{pageDashboard: "dashboard", pageGames: "games", pageParents: "parents", pageSystems: "systems", pageLogs: "logs"}
+var pageNames = map[page]string{pageDashboard: "dashboard", pageGames: "games", pageParents: "parents", pageSystems: "systems", pageLogs: "logs", pageSources: "sources", pageSaves: "saves"}
 
 // inLibrary reports whether p is one of the Library tab's views.
-func inLibrary(p page) bool { return p == pageGames || p == pageParents || p == pageSystems }
+func inLibrary(p page) bool {
+	return p == pageGames || p == pageParents || p == pageSystems || p == pageSources || p == pageSaves
+}
 
 type app struct {
 	o        Options
@@ -144,6 +149,7 @@ type app struct {
 	systems
 	settings
 	logs
+	storage
 
 	running string // archive being played, or ""
 	runCh   chan runResult
@@ -204,6 +210,7 @@ func Run(o Options) error {
 	a.initGames(st)
 	a.initSystems()
 	a.initLogs()
+	a.initStorage()
 	a.libView = pageGames
 	// The page shown last, else the Dashboard; screenshots start at Games.
 	if o.Screenshot == "" {
@@ -252,6 +259,8 @@ func Run(o Options) error {
 			a.finished(r)
 		case r := <-a.logsCh:
 			a.logsRead(r)
+		case r := <-a.storeCh:
+			a.storageScanned(r)
 		default:
 		}
 		a.pollJobs()
@@ -264,7 +273,7 @@ func Run(o Options) error {
 		if a.dirty {
 			a.draw()
 		}
-		if a.o.Screenshot != "" && !a.scanning && !a.sysScanning && !a.logsReading {
+		if a.o.Screenshot != "" && !a.scanning && !a.sysScanning && !a.logsReading && !a.storeScanning {
 			if a.o.Setup != nil && !a.setupDone {
 				a.o.Setup(a)
 				a.setupDone = true
@@ -580,6 +589,7 @@ func (a *app) refresh() {
 	a.rescan()
 	a.rescanSystems()
 	a.readLogs()
+	a.rescanStorage()
 }
 
 // show switches to page p.
@@ -605,6 +615,10 @@ func (a *app) contentH() int32 {
 		return a.dashboardH
 	case pageLogs:
 		return a.logsH()
+	case pageSources:
+		return a.sourcesH()
+	case pageSaves:
+		return a.savesH()
 	}
 	return a.gamesH()
 }
@@ -645,6 +659,10 @@ func (a *app) render() {
 		a.drawDashboard()
 	case pageLogs:
 		a.drawLogs()
+	case pageSources:
+		a.drawSources()
+	case pageSaves:
+		a.drawSaves()
 	}
 	a.popClip()
 	a.drawToolbar()
@@ -687,7 +705,7 @@ func (a *app) drawToolbar() {
 		for _, v := range []struct {
 			label string
 			pg    page
-		}{{"Games", pageGames}, {"Parents", pageParents}, {"Systems", pageSystems}} {
+		}{{"Games", pageGames}, {"Parents", pageParents}, {"Systems", pageSystems}, {"Sources", pageSources}, {"Saves", pageSaves}} {
 			style := btnNormal
 			if a.page == v.pg {
 				style = btnOn
@@ -707,6 +725,10 @@ func (a *app) drawToolbar() {
 		a.parentsToolbar(x, y)
 	case pageLogs:
 		a.logsToolbar(x, y)
+	case pageSources:
+		a.sourcesToolbar(x, y)
+	case pageSaves:
+		a.savesToolbar(x, y)
 	}
 }
 
@@ -731,6 +753,10 @@ func (a *app) drawStatus() {
 		left = a.dashboardStatus()
 	case pageLogs:
 		left = a.logsStatus()
+	case pageSources:
+		left = a.sourcesStatus()
+	case pageSaves:
+		left = a.savesStatus()
 	}
 	x := p + a.text(a.ellipsize(left, a.w/2, 12, false), p, ty, 12, false, colMuted)
 
