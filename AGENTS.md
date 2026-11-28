@@ -480,7 +480,8 @@ waits on a game that needs it.
    closed doszer; keyboard in Recoil. Not done yet: Ctrl+F10, gamepads
    (implemented 2026-11-27, internal/gamepad: the gamepad editor's
    detection and live view checked with an Xbox One controller on
-   Windows; play in doszer run not yet),
+   Windows, and Betrayal in Antara played with its mapping in doszer
+   run, 2026-11-27),
    fullscreen, fast-forward, a Linux/WSLg session, `install`.
 2. Finish the live `install` test against real DOSBox Pure. Passed
    (2026-11-13): a plain session (Descent II, 32 files from the
