@@ -552,6 +552,27 @@ session using "Save Difference Per Content", `install.templates` only matter for
   Windows 3.x and Windows (not 95 from 98), behind a free non-commercial
   API key: the better candidate, as an optional online lookup.
 
+- **Keyboard aliases (WASD for the arrow keys, 2026-11-27): deferred.**
+  DOSBox Pure has no keyboard-to-keyboard remapping: it dropped DOSBox's
+  key mapper (no `src/gui/sdl_mapper.cpp`), its options remap only
+  gamepads, and `DOSBOX.CONF` can't remap keys. A resident DOS program
+  in the archive could swap scan codes through the BIOS keyboard
+  intercept (DOSBox Pure's IRQ 1 handler calls INT 15h AH=4Fh with each
+  scan code, `src/ints/bios_keyboard.cpp`), but games with their own
+  INT 9 handler read port 60h directly - most action games, the ones
+  WASD matters for - so it would silently do nothing there. Remapping in
+  doszer's player alone would make archives behave differently in
+  RetroArch. The one place a remap works for every game is the core,
+  e.g. `DOS.YML` lines like `input_key_w: up` (it already reads DOS.YML
+  for the gamepad, `DOSYMLLoader`); that's DOSBox Pure's to add, and its
+  developer is to be approached, if at all, by the user, not by tooling.
+  If it ships: one-way aliases only (never swaps, so a pad binding means
+  what it says), and a warning where a pad binding uses an aliased key.
+- **The action wheel drawn as a wheel: dropped.** The editor's wheel
+  area is about 100 pixels across and a wheel holds up to 100 items;
+  the list shows each item's label in order, which a circle that small
+  can't.
+
 Raised by a real retrofit attempt (repacking a legacy archive):
 
 - **§8.2's fixed 1980-01-01 timestamp discarded original file dates.**
