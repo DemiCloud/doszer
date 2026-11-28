@@ -1289,6 +1289,17 @@ changed.
   session saves are throwaway, `paths.saves` or `doszer/saves` in the user
   cache directory.
 
+#### Controllers
+
+Game controllers work in `doszer run` and `install`: the first connected
+is port 1, the next port 2, and so on, plugged in before or during the
+game. Each is DOSBox Pure's RetroPad, so the archive's `[[input.pad]]`
+mapping, DOSBox Pure's built-in ones and its Controller Mapper (L3, by
+default, opens its menu) all apply as in RetroArch. Buttons go by
+position: the bottom face button is the RetroPad's B, whatever the
+controller prints on it. In the window's gamepad editor, pressing a
+button, a trigger or a stick picks that control, and held ones light up.
+
 #### Hotkeys
 
 | Keys | |

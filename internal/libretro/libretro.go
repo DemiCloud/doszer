@@ -24,6 +24,7 @@ import (
 	"github.com/ebitengine/purego"
 
 	"github.com/DemiCloud/doszer/internal/dl"
+	"github.com/DemiCloud/doszer/internal/gamepad"
 	"github.com/DemiCloud/doszer/internal/runlog"
 	"github.com/DemiCloud/doszer/internal/sdl"
 )
@@ -80,8 +81,10 @@ const (
 
 	pixelFormatXRGB8888 = 1
 
+	deviceJoypad   = 1
 	deviceMouse    = 2
 	deviceKeyboard = 3
+	deviceAnalog   = 5
 
 	mouseX, mouseY, mouseLeft, mouseRight, mouseWheelUp, mouseWheelDown, mouseMiddle = 0, 1, 2, 3, 4, 5, 6
 
@@ -134,6 +137,7 @@ type host struct {
 
 	keyboard func(down bool, keycode, character uint32, mods uint16)
 	quit     bool
+	pads     *gamepad.Set // controllers: port 1 the first connected
 
 	av       avInfo
 	window   uintptr
@@ -233,6 +237,8 @@ func Run(cfg Config) error {
 		return sdl.Error("SDL_Init")
 	}
 	defer sdl.Quit()
+	h.pads = gamepad.Open()
+	defer h.pads.Close()
 	var usable sdl.Rect
 	if sdl.GetDisplayUsableBounds(0, &usable) != 0 {
 		usable = sdl.Rect{W: 1600, H: 1000}
@@ -642,9 +648,23 @@ func inputPoll() uintptr {
 	return 0
 }
 
-// inputState is retro_input_state_t: the keyboard and the mouse; no
-// gamepad.
+// inputState is retro_input_state_t: the keyboard and the mouse (port
+// 1), and a controller per port, as the RetroPad (DOSBox Pure asks a
+// port's joypad buttons, its sticks, and its triggers as analog buttons:
+// dosbox_pure_libretro.cpp, retro_run).
 func inputState(port, device, index, id uint32) uintptr {
+	switch device & 0xFF {
+	case deviceJoypad:
+		if p := h.pads.Port(int(port)); p != nil && p.RetroButton(id) {
+			return 1
+		}
+		return 0
+	case deviceAnalog:
+		if p := h.pads.Port(int(port)); p != nil {
+			return uintptr(uint16(p.RetroAnalog(index, id)))
+		}
+		return 0
+	}
 	if port != 0 {
 		return 0
 	}
@@ -678,6 +698,9 @@ func inputState(port, device, index, id uint32) uintptr {
 // event handles one SDL event. Clicking the window captures the mouse
 // (relative mode); Ctrl+F10 or leaving the window releases it.
 func (h *host) event(e *sdl.Event, window uintptr) {
+	if h.pads.Event(e) {
+		return
+	}
 	switch e.Type() {
 	case sdl.EventQuit:
 		h.quit = true

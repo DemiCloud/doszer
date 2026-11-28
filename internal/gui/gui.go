@@ -26,6 +26,7 @@ import (
 	"golang.org/x/image/font"
 
 	"github.com/DemiCloud/doszer/internal/config"
+	"github.com/DemiCloud/doszer/internal/gamepad"
 	"github.com/DemiCloud/doszer/internal/library"
 	"github.com/DemiCloud/doszer/internal/libretro"
 	"github.com/DemiCloud/doszer/internal/sdl"
@@ -115,6 +116,7 @@ type app struct {
 	add   *addGame
 	edit  *editDialog
 	padEd *padEditor
+	pads  *gamepad.Set // controllers, for the gamepad editor
 	// The text area typing goes to (the editor's), and the one under the
 	// mouse (the wheel scrolls it).
 	focusArea, areaUnderMouse *textArea
@@ -175,6 +177,8 @@ func Run(o Options) error {
 		return sdl.Error("SDL_Init")
 	}
 	defer sdl.Quit()
+	pads := gamepad.Open()
+	defer pads.Close()
 
 	st := loadState()
 	dpi := 1.0
@@ -205,7 +209,7 @@ func Run(o Options) error {
 	sdl.SetRenderDrawBlendMode(ren, sdl.BlendModeBlend)
 
 	a := &app{
-		o: o, win: win, ren: ren, dirty: true,
+		o: o, win: win, ren: ren, dirty: true, pads: pads,
 		faces: map[faceKey]font.Face{}, texts: map[textKey]*texture{}, icons: map[string]*texture{},
 		runCh: make(chan runResult, 1), selText: map[string][]string{}, selSeps: map[string][]string{},
 	}
@@ -413,6 +417,15 @@ func (a *app) scrollBy(d, contentH int32) {
 
 func (a *app) event(e *sdl.Event) {
 	a.dirty = true
+	a.pads.Event(e)
+	if a.padEd != nil && a.popup == nil && a.dialog == nil {
+		// A controller's press selects that control in the editor.
+		if p, c := a.pads.Control(e); c != "" {
+			a.padEd.device = p
+			a.selectPadControl(a.padEd, c)
+			return
+		}
+	}
 	switch e.Type() {
 	case sdl.EventQuit:
 		a.quit = true

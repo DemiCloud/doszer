@@ -54,6 +54,7 @@ internal/library/    the window's game list: .dosz archives under the ROM direct
 internal/gui/        doszer gui: the SDL-drawn window, three tabs: Dashboard (dashboard.go: totals, problems incl. failed builds, recent games, recent builds from the logs, what they run on; each a link), Library - Games (list/grid, search, sort; games run as `doszer run` child processes), Parents (parents.go), Systems, Sources and Saves (storage.go: library.Sources/Saves, matched to builds through the logs and to games through install.GameSaveDir) -, Logs (logs.go: runs, the selected one's report and history, Transcript/Export as `doszer logs`; one session ID per flow, runlog.SessionEnv), Export (export.go), the Settings dialog, the first-run dialog, the menu bar (menubar.go: File, View, Build, Tools, Help; drag and drop), Gamepad (padeditor.go: [[input.pad]] on a drawn controller, a port at a time, the action wheel, From save; saved by repack --manifest), Edit (editor.go: a form over the manifest, WINDOWS.BAT and DOSZ.TOML in textarea.go, saved by repack --manifest), Build > Import a disc and Build a folder (addgame.go: dump/dump --from, init, install, start, build as step runs); widgets.go (fields, buttons, dropdowns, layers); os_*.go (Explorer/xdg-open, folder picker); TestScreenshot renders every page to PNGs (also as the Windows test binary through WSL interop)
 internal/libretro/   built-in frontend: hosts a libretro core in-process (environment, directory-only VFS, SDL window/input/audio)
 internal/sdl/        the few SDL2 functions internal/libretro uses, loaded at run time through purego
+internal/gamepad/    game controllers through SDL's GameController API, positional (A = RetroPad B = [[input.pad]] b): the player's RetroPad per port, the gamepad editor's press-to-pick and live view
 internal/dl/         dlopen/LoadLibrary without cgo
 internal/builtin/    programs embedded at build time, extracted to the user cache: the DOSBox Pure core (and SDL DLLs on Windows, `make core`), redumper (`make redumper`); guest programs, the same on every platform: RunExit, PRESSKEY (`make guest`)
 internal/flow/       the commands that make an archive (dump/import, init, install, extract, start, build, repack), planned once for doszer make and the window's Import a disc / Build a folder
@@ -290,6 +291,7 @@ against DOSBox Pure 1.0 Preview 8 (`dosbox_pure_libretro.cpp`) and its
 | Pixel format | XRGB8888 (SDL's `RGB888`), software rendered | `retro_load_game`, `SET_PIXEL_FORMAT` |
 | Disc swapping | `SET_DISK_CONTROL_EXT_INTERFACE` (else the plain one): images are every disc and floppy image in the content (`dbp_images`); a swap is `set_eject_state(true)`, `set_image_index`, `set_eject_state(false)`, called between `retro_run`s (it pauses the core's thread); `get_image_label` names the image file. Headless probe on a 3-disc archive under the OS image model: disc 2 mounted | `retro_init`, `disk_control_callback`; probe, 2026-11-25 |
 | `FRONTEND.DBP` | Ignored by the core (standalone only), so the built-in frontend passes core options itself | `init_dosbox`, `#ifdef DBP_STANDALONE` |
+| Gamepads | Ports 1-4 start in Gamepad Mapper mode (`dbp_port_mode`, set in `retro_init`), so the frontend need not call `retro_set_controller_port_device`. Each bind is read with `input_state(port, RETRO_DEVICE_JOYPAD, 0, id)` or, for sticks, `RETRO_DEVICE_ANALOG` index 0/1 id 0/1; analog-mapped buttons ask `RETRO_DEVICE_INDEX_ANALOG_BUTTON` first and fall back to the joypad when it's 0. The built-in frontend answers from SDL GameControllers, port N the Nth connected (internal/gamepad) | `retro_init`; `retro_run`; `dosbox_pure_pad.h`, `SetPortMode` |
 | Host cursor | Hidden while the mouse is captured (a transparent SDL cursor, `SDL_ShowCursor` as fallback), shown (the system arrow) while it isn't: released with Ctrl+F10, a hidden cursor left the user unable to see it over the window. Works on Windows; under WSLg the pointer stays visible (WSLg draws it through its RDP client, which ignored both), so test mouse feel with the Windows build | live tests, 2026-11-24/25 |
 
 `internal/libretro`'s `TestProbe` runs real content headless and saves a
@@ -475,7 +477,8 @@ waits on a game that needs it.
    Check keyboard (scancode table in `internal/libretro/keys.go`), mouse
    capture in Windows 9x, and audio. Checked live (2026-11-24/25, Windows
    build): Betrayal in Antara to its menu with audio and mouse, quitting
-   closed doszer; keyboard in Recoil. Not done yet: Ctrl+F10, gamepads,
+   closed doszer; keyboard in Recoil. Not done yet: Ctrl+F10, gamepads
+   (implemented 2026-11-27, internal/gamepad, untested with hardware),
    fullscreen, fast-forward, a Linux/WSLg session, `install`.
 2. Finish the live `install` test against real DOSBox Pure. Passed
    (2026-11-13): a plain session (Descent II, 32 files from the

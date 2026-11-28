@@ -6,6 +6,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
+	"github.com/DemiCloud/doszer/internal/gamepad"
 	"github.com/DemiCloud/doszer/internal/install"
 	"github.com/DemiCloud/doszer/internal/library"
 	"github.com/DemiCloud/doszer/internal/manifest"
@@ -29,6 +30,20 @@ type padEditor struct {
 	saved      []padmap.Pad
 	savedFrom  string // where the save's mapping is, "" if there's none
 	changed    bool
+	device     *gamepad.Pad // the controller shown live: the last pressed, else the first
+}
+
+// livePad is the controller whose presses the editor shows, or nil.
+func (a *app) livePad(e *padEditor) *gamepad.Pad {
+	if a.pads == nil {
+		return nil
+	}
+	for _, p := range a.pads.Pads {
+		if p == e.device {
+			return p
+		}
+	}
+	return a.pads.Port(0)
 }
 
 // padLayout is a controller to draw the RetroPad's controls as: the
@@ -392,9 +407,30 @@ func (a *app) drawPadEditor() {
 	for i, pl := range padLayouts {
 		names[i] = pl.name
 	}
-	a.button(label, lx, ly, btnNormal, func() {
+	dx := lx + a.button(label, lx, ly, btnNormal, func() {
 		a.openPopup(lx, ly, a.px(200), names, a.padLayout, func(i int) { a.padLayout = i })
-	})
+	}) + a.px(12)
+	// The controller shown live: press a button on it to pick that
+	// control.
+	switch live := a.livePad(e); {
+	case live == nil:
+		a.text("No controller connected", dx, y+p+a.px(2), 12, false, colFaint)
+	case len(a.pads.Pads) == 1:
+		a.text(a.ellipsize(live.Name+": press a button to pick it", a.px(320), 12, false), dx, y+p+a.px(2), 12, false, colMuted)
+	default:
+		var devs []string
+		cur := 0
+		for i, pd := range a.pads.Pads {
+			devs = append(devs, pd.Name)
+			if pd == live {
+				cur = i
+			}
+		}
+		dl := a.ellipsize(live.Name, a.px(220), 13, false) + " ▼"
+		a.button(dl, dx, ly, btnNormal, func() {
+			a.openPopup(dx, ly, a.px(280), devs, cur, func(i int) { e.device = a.pads.Pads[i] })
+		})
+	}
 	bx := x + w - p
 	if len(e.pads) < padmap.MaxPads {
 		bx -= a.buttonW("Add port")
@@ -502,7 +538,9 @@ func (a *app) drawPadPanel(e *padEditor, l *padLayout, groups []struct {
 		for _, k := range g.keys {
 			sel := e.sel == k
 			rx, rw := x+a.px(6), w-a.px(12)
-			if sel {
+			if live := a.livePad(e); live != nil && live.Pressed(k) {
+				a.round(rx, yy, rw, rh, a.px(6), rgba{44, 84, 52, 255})
+			} else if sel {
 				a.round(rx, yy, rw, rh, a.px(6), colCardSel)
 			} else if a.hovered(rx, yy, rw, rh) {
 				a.round(rx, yy, rw, rh, a.px(6), colCardHover)
@@ -567,6 +605,7 @@ func (a *app) drawController(e *padEditor, l *padLayout, x, y, w, h int32) {
 		a.round(cx-r, cy-r, 2*r, 2*r, r, rgba{38, 38, 43, 255})
 	}
 	s := max(a.px(22), int32(0.085*float64(bh)))
+	live := a.livePad(e)
 	// The D-pad's cross, under its four buttons.
 	if up, ok := l.pos["up"]; ok {
 		down, left, right := l.pos["down"], l.pos["left"], l.pos["right"]
@@ -589,10 +628,13 @@ func (a *app) drawController(e *padEditor, l *padLayout, x, y, w, h int32) {
 		px, py := cx-w/2, cy-s/2
 		binding := e.cur().Controls[key]
 		// Unbound: dark with a ring, so it reads as a button on the body;
-		// bound: the accent.
+		// bound: the accent; held on the controller: lit.
 		bg, ring, tc := rgba{26, 26, 30, 255}, rgba{88, 88, 96, 255}, colMuted
 		if binding != "" {
 			bg, ring, tc = colAccentDark, colAccent, colText
+		}
+		if live != nil && live.Pressed(key) {
+			bg, ring, tc = rgba{60, 130, 70, 255}, colDOS, colText
 		}
 		if a.hovered(px, py, w, s) {
 			ring, tc = colText, colText

@@ -21,6 +21,9 @@ const (
 	InitAudio  = 0x00000010
 	InitEvents = 0x00004000
 
+	InitJoystick       = 0x00000200
+	InitGameController = 0x00002000
+
 	WindowPosCentered  = 0x2FFF0000
 	WindowShown        = 0x00000004
 	WindowHidden       = 0x00000008
@@ -127,6 +130,32 @@ func (e *Event) DropFile() string {
 	return string(b)
 }
 
+// Game controller events (SDL_events.h) and their parts
+// (SDL_ControllerAxisEvent, SDL_ControllerButtonEvent,
+// SDL_ControllerDeviceEvent: which at 8, the axis or button at 12, an
+// axis value at 16).
+const (
+	EventControllerAxisMotion   = 0x650
+	EventControllerButtonDown   = 0x651
+	EventControllerButtonUp     = 0x652
+	EventControllerDeviceAdded  = 0x653
+	EventControllerDeviceRemove = 0x654
+)
+
+// Which is a controller event's joystick: an instance ID, or, for
+// EventControllerDeviceAdded, a device index.
+func (e *Event) Which() int32 { return e.i32(8) }
+
+// ControllerButton is a controller button event's button
+// (SDL_GameControllerButton).
+func (e *Event) ControllerButton() uint8 { return e[12] }
+
+// ControllerAxis is a controller axis event's axis
+// (SDL_GameControllerAxis) and value.
+func (e *Event) ControllerAxis() (axis uint8, value int16) {
+	return e[12], *(*int16)(unsafe.Pointer(&e[16]))
+}
+
 // Text is a text input event's UTF-8 text (SDL_TextInputEvent).
 func (e *Event) Text() string {
 	b := e[12:44]
@@ -213,9 +242,20 @@ var (
 	GetClipboardText       func() *byte
 	SetClipboardText       func(text string) int32
 	GetModState            func() int32
-	Free                   func(p unsafe.Pointer)
-	SetWindowSize          func(w uintptr, width, height int32)
-	RenderReadPixels       func(r uintptr, rect *Rect, format uint32, pixels unsafe.Pointer, pitch int32) int32
+
+	InitSubSystem             func(flags uint32) int32
+	NumJoysticks              func() int32
+	IsGameController          func(index int32) int32
+	GameControllerOpen        func(index int32) uintptr
+	GameControllerClose       func(gc uintptr)
+	GameControllerName        func(gc uintptr) string
+	GameControllerGetButton   func(gc uintptr, button int32) uint8
+	GameControllerGetAxis     func(gc uintptr, axis int32) int16
+	GameControllerGetJoystick func(gc uintptr) uintptr
+	JoystickInstanceID        func(j uintptr) int32
+	Free                      func(p unsafe.Pointer)
+	SetWindowSize             func(w uintptr, width, height int32)
+	RenderReadPixels          func(r uintptr, rect *Rect, format uint32, pixels unsafe.Pointer, pitch int32) int32
 )
 
 var loaded bool
@@ -292,6 +332,16 @@ func Load(handle uintptr, sym func(uintptr, string) (uintptr, error)) (err error
 	bind(&GetClipboardText, "SDL_GetClipboardText")
 	bind(&SetClipboardText, "SDL_SetClipboardText")
 	bind(&GetModState, "SDL_GetModState")
+	bind(&InitSubSystem, "SDL_InitSubSystem")
+	bind(&NumJoysticks, "SDL_NumJoysticks")
+	bind(&IsGameController, "SDL_IsGameController")
+	bind(&GameControllerOpen, "SDL_GameControllerOpen")
+	bind(&GameControllerClose, "SDL_GameControllerClose")
+	bind(&GameControllerName, "SDL_GameControllerName")
+	bind(&GameControllerGetButton, "SDL_GameControllerGetButton")
+	bind(&GameControllerGetAxis, "SDL_GameControllerGetAxis")
+	bind(&GameControllerGetJoystick, "SDL_GameControllerGetJoystick")
+	bind(&JoystickInstanceID, "SDL_JoystickInstanceID")
 	bind(&Free, "SDL_free")
 	bind(&SetWindowSize, "SDL_SetWindowSize")
 	if err == nil {
