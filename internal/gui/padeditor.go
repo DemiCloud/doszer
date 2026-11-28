@@ -235,6 +235,10 @@ var actionGroups = []struct {
 
 // openPadEditor opens the gamepad editor on a game's archive.
 func (a *app) openPadEditor(g *library.Game) {
+	if a.saving(g.Path) {
+		a.say("Still saving "+g.Name, false)
+		return
+	}
 	data, _, err := repack.EmbeddedManifest(g.Path)
 	if err != nil {
 		a.alert("Can't edit "+g.Name+"'s gamepad mapping", err.Error())
@@ -408,7 +412,7 @@ func (a *app) savePadEditor() {
 	tmp.Close()
 	path, name := e.path, e.name
 	a.padEd, a.focus = nil, nil
-	a.runDoszer("Repack: "+name, []string{"repack", "--manifest", tmp.Name(), path, path}, func(err error) {
+	a.runBackground("Saving "+name, path, "Saved "+name, []string{"repack", "--manifest", tmp.Name(), path, path}, func(err error) {
 		os.Remove(tmp.Name())
 		if err == nil {
 			a.rescan()

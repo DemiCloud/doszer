@@ -250,6 +250,19 @@ func TestScreenshot(t *testing.T) {
 	if exe != "" {
 		shots["deps.png"] = func(a *App) { a.RunDeps(0) }
 	}
+	if exe != "" {
+		shots["bgsave.png"] = func(a *App) { // a gamepad edit saved in the background
+			for i := range a.list {
+				if strings.Contains(a.list[i].Name, "Pad") {
+					a.openPadEditor(&a.list[i])
+					a.padEd.binding.set("enter Go")
+					a.padBindingChanged(a.padEd)
+					a.savePadEditor()
+					break
+				}
+			}
+		}
+	}
 	if cue := os.Getenv("DOSZER_GUI_CUE"); cue != "" && exe != "" && os.Getenv("DOSZER_GUI_BUILD") != "" {
 		// Import a disc through to the archive, in the ROM folder: the shot
 		// shows the finished dialog.

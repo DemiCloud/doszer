@@ -31,6 +31,19 @@ type dialog struct {
 	onImage func()   // a right click on the image (its menu)
 	center  bool     // centre the title and lines
 	checks  []dialogCheck
+
+	// A background job's: what it works on (one at a time per key), and
+	// what to say when it's done. Its dialog shows only if it fails.
+	background bool
+	bgKey      string
+	bgDone     string
+}
+
+// bgWaiting are background jobs waiting for one on the same key.
+type bgItem struct {
+	title, key, done string
+	args             []string
+	after            func(error)
 }
 
 // dialogCheck is a checkbox below a dialog's message: an option of the
@@ -119,6 +132,50 @@ func (a *app) confirm(title, action string, fn func(), lines ...string) {
 // runs once it ends (rescan, ...).
 func (a *app) runDoszer(title string, args []string, after func(err error)) {
 	a.runSteps(title, []step{{args: args}}, after)
+}
+
+// runBackground runs a doszer command without a dialog - its progress
+// in the status bar, done said there - opening its dialog only if it
+// fails. Commands with the same key (an archive's path) run one after
+// another: two saves to one archive never overlap.
+func (a *app) runBackground(title, key, done string, args []string, after func(error)) {
+	for _, d := range a.jobs {
+		if d.background && d.bgKey == key {
+			a.bgWaiting = append(a.bgWaiting, bgItem{title, key, done, args, after})
+			return
+		}
+	}
+	j := &job{steps: []step{{args: args}}, after: after, notify: make(chan error, 1), session: newSession()}
+	d := &dialog{title: title, job: j, background: true, bgKey: key, bgDone: done}
+	a.jobs = append(a.jobs, d)
+	a.startStep(d)
+}
+
+// saving reports whether a background job on key is running or
+// waiting: an editor opened now would read the archive before it.
+func (a *app) saving(key string) bool {
+	for _, d := range a.jobs {
+		if d.background && d.bgKey == key && !d.job.done {
+			return true
+		}
+	}
+	for _, w := range a.bgWaiting {
+		if w.key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// backgroundStatus is what the status bar says of background jobs, or
+// "".
+func (a *app) backgroundStatus() string {
+	for _, d := range a.jobs {
+		if d.background && !d.job.done {
+			return d.title
+		}
+	}
+	return ""
 }
 
 // runSteps runs steps in one dialog, stopping at the first that fails.
@@ -226,6 +283,21 @@ func (a *app) jobDone(d *dialog) {
 	d.buttons = []dialogButton{a.copyAll(d), {label: "Close", style: btnAccent}}
 	if j.after != nil {
 		j.after(j.err)
+	}
+	if d.background {
+		if j.err != nil {
+			a.dialog = d // failed: its output says why
+		} else if d.bgDone != "" {
+			a.say(d.bgDone, false)
+		}
+		// The next waiting on the same key.
+		for i, w := range a.bgWaiting {
+			if w.key == d.bgKey {
+				a.bgWaiting = append(a.bgWaiting[:i], a.bgWaiting[i+1:]...)
+				defer a.runBackground(w.title, w.key, w.done, w.args, w.after)
+				break
+			}
+		}
 	}
 	a.readLogs() // the command may have recorded a run
 	a.rescanStorage()

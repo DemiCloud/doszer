@@ -76,6 +76,10 @@ func (a *app) openEditor(g *library.Game) { a.openEditorMode(g, editSettings) }
 // openEditorMode opens the editor on a game's archive, as the settings
 // form or one file's text.
 func (a *app) openEditorMode(g *library.Game, mode int) {
+	if a.saving(g.Path) {
+		a.say("Still saving "+g.Name, false)
+		return
+	}
 	data, bat, err := repack.EmbeddedManifest(g.Path)
 	if errors.Is(err, repack.ErrNoManifest) {
 		// Not built by doszer: a manifest to retrofit (repack --manifest).
@@ -403,7 +407,7 @@ func (a *app) saveEditor() {
 		sdl.DestroyTexture(e.iconTex.t)
 	}
 	a.edit, a.focusArea, a.focus = nil, nil, nil
-	a.runDoszer("Repack: "+name, append(args, path, path), func(err error) {
+	a.runBackground("Saving "+name, path, "Saved "+name, append(args, path, path), func(err error) {
 		os.Remove(tmp.Name())
 		if err == nil {
 			a.rescan()

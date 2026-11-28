@@ -124,6 +124,7 @@ type app struct {
 	focusArea, areaUnderMouse *textArea
 	dialog                    *dialog
 	jobs                      []*dialog // dialogs whose command is still running
+	bgWaiting                 []bgItem  // background jobs waiting their turn
 	menuAt                    func()    // the right-click menu of what was clicked last
 	rightClicking             bool      // the click being handled is a right click's
 	dragRows                  []dragRow // items a drag selection can reach, this frame
@@ -795,6 +796,8 @@ func (a *app) drawStatus() {
 			name = g.Name
 		}
 		right, rc = "Playing "+name+spinner(a.frame), colAccent
+	case a.backgroundStatus() != "":
+		right, rc = a.backgroundStatus()+spinner(a.frame), colAccent
 	case a.message != "":
 		right, rc = a.message, colMuted
 		if a.msgErr {

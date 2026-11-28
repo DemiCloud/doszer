@@ -1163,7 +1163,10 @@ A parent's menu also exports the games using it; a shell's or OS
 image's exports the games booting it, prepares it, or deletes it.
 Every action is the doszer command that does it, run in its own process
 and shown in a dialog with its command line and live output - the
-command line can do anything the window does. Repack and the changes ask
+command line can do anything the window does. Saving Edit or Gamepad is
+the exception: its repack runs in the background, the status bar showing
+it, and its dialog opens only if it fails; saves to one archive run one
+after another, and its editors open again once they're done. Repack and the changes ask
 first.
 
 Lists select several items, as file managers do: Ctrl+click adds or
